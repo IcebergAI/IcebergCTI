@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Dashboard · {{ app_name }}{% endblock %}
+{% block content %}
+{% if user.role == 'STAKEHOLDER' and feed_unread %}
+  <a href="/feed" class="block mb-4 bg-blue-600 text-white rounded-lg px-4 py-3 text-sm hover:bg-blue-700">
+    📨 You have {{ feed_unread }} new item{{ '' if feed_unread == 1 else 's' }} in your feed →
+  </a>
+{% endif %}
+<div class="grid md:grid-cols-3 gap-6">
+  <section class="md:col-span-2">
+    <div class="flex items-center justify-between mb-3">
+      <h1 class="text-xl font-bold">Notebooks</h1>
+    </div>
+    {% if notebooks %}
+      <div class="grid sm:grid-cols-2 gap-3">
+        {% for nb in notebooks %}
+          <a href="/notebooks/{{ nb.id }}"
+             class="block bg-white rounded-lg shadow p-4 hover:shadow-md">
+            <div class="font-semibold">{{ nb.title }}</div>
+            <div class="text-sm text-slate-500">{{ nb.topic or "No topic set" }}</div>
+          </a>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="text-slate-500">No notebooks yet.</p>
+    {% endif %}
+
+    {% if user.role != 'STAKEHOLDER' %}
+      <form method="post" action="/notebooks" class="mt-5 bg-white rounded-lg shadow p-4 space-y-3">
+        <h2 class="font-semibold">New notebook</h2>
+        <input name="title" required placeholder="Title"
+               class="w-full border rounded px-3 py-2 text-sm">
+        <input name="topic" placeholder="Topic (e.g. APT29 tracking)"
+               class="w-full border rounded px-3 py-2 text-sm">
+        <button class="bg-slate-800 text-white rounded px-4 py-2 text-sm">Create notebook</button>
+      </form>
+    {% endif %}
+  </section>
+
+  <section>
+    <h2 class="text-lg font-bold mb-3">Recent reports</h2>
+    <div class="space-y-2">
+      {% for r in recent_reports %}
+        <a href="/reports/{{ r.id }}" class="block bg-white rounded shadow p-3">
+          <div class="font-medium text-sm">{{ r.title }}</div>
+          <div class="mt-1 flex gap-1 flex-wrap">
+            {{ m.status_badge(r.status) }}
+            {{ m.level_badge(r.intel_level) }}
+            {{ m.tlp_badge(r.tlp) }}
+          </div>
+        </a>
+      {% else %}
+        <p class="text-slate-500 text-sm">No reports yet.</p>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+{% endblock %}

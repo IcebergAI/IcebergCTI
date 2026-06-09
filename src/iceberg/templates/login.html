@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Sign in · {{ app_name }}{% endblock %}
+{% block content %}
+<div class="max-w-md mx-auto mt-10 bg-white rounded-lg shadow p-6">
+  <h1 class="text-xl font-bold mb-1">Sign in to {{ app_name }}</h1>
+  <p class="text-sm text-slate-500 mb-6">Cyber threat intelligence platform</p>
+
+  {% if oidc_enabled %}
+    <a href="/auth/entra/login"
+       class="block w-full text-center bg-blue-600 hover:bg-blue-700 text-white rounded px-4 py-2 mb-4">
+      Sign in with Microsoft Entra ID
+    </a>
+  {% endif %}
+
+  {% if dev_login_enabled %}
+    <div class="border-t pt-4 mt-2">
+      <p class="text-xs uppercase tracking-wide text-amber-600 font-semibold mb-2">
+        Dev login (testing only)
+      </p>
+      <form method="post" action="/auth/dev-login" class="space-y-3">
+        <input name="name" value="{{ default_name }}"
+               class="w-full border rounded px-3 py-2 text-sm" placeholder="Name">
+        <input name="email" value="{{ default_email }}"
+               class="w-full border rounded px-3 py-2 text-sm" placeholder="Email">
+        <select name="role" class="w-full border rounded px-3 py-2 text-sm">
+          {% for r in roles %}
+            <option value="{{ r.value }}" {% if r.value == default_role %}selected{% endif %}>{{ r.value }}</option>
+          {% endfor %}
+        </select>
+        <button class="w-full bg-slate-800 hover:bg-slate-900 text-white rounded px-4 py-2">
+          Continue
+        </button>
+      </form>
+    </div>
+  {% endif %}
+
+  {% if not oidc_enabled and not dev_login_enabled %}
+    <p class="text-sm text-red-600">No login method is enabled. Set ICEBERG_OIDC_ENABLED or ICEBERG_DEV_AUTH.</p>
+  {% endif %}
+</div>
+{% endblock %}

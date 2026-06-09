@@ -1,0 +1,4 @@
+# Install the project (editable) with dev extras:
+#   pip install -e ".[dev]"
+# This file is provided for `pip install -r requirements.txt` workflows.
+-e .[dev]

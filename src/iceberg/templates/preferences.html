@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Preferences · {{ app_name }}{% endblock %}
+{% block content %}
+<div class="max-w-md mx-auto bg-white rounded-lg shadow p-6">
+  <h1 class="text-xl font-bold mb-1">Dissemination preferences</h1>
+  <p class="text-sm text-slate-500 mb-4">Choose which intelligence level you want
+    delivered to your feed. "All levels" receives everything you're eligible for.</p>
+  <form method="post" action="/preferences" class="space-y-3">
+    <select name="preferred_intel_level" class="w-full border rounded px-3 py-2 text-sm">
+      <option value="" {% if not user.preferred_intel_level %}selected{% endif %}>All levels</option>
+      {% for lvl in IntelLevel %}
+        <option value="{{ lvl.value }}"
+          {% if user.preferred_intel_level and user.preferred_intel_level == lvl %}selected{% endif %}>
+          {{ lvl.value }}
+        </option>
+      {% endfor %}
+    </select>
+    <button class="bg-slate-800 text-white rounded px-4 py-2 text-sm">Save preferences</button>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}{{ req.title }} · {{ app_name }}{% endblock %}
+{% block content %}
+<div class="max-w-3xl mx-auto">
+  <a href="/requirements" class="text-sm text-blue-600">← Requirements</a>
+  <div class="flex items-start justify-between mt-1">
+    <h1 class="text-2xl font-bold">{{ req.title }}</h1>
+    <div class="flex gap-1">
+      {{ m.req_status_badge(req.status) }}
+      {{ m.priority_badge(req.priority) }}
+      {{ m.level_badge(req.intel_level) }}
+    </div>
+  </div>
+  <p class="text-sm text-slate-500 mb-4">Submitted by {{ stakeholder.display_name }}
+    · {{ req.created_at.strftime('%Y-%m-%d') }}</p>
+
+  {% if req.description %}
+    <div class="bg-white rounded-lg shadow p-4 mb-4 whitespace-pre-wrap text-sm">{{ req.description }}</div>
+  {% endif %}
+
+  {% if can_triage %}
+    <div class="bg-white rounded-lg shadow p-3 mb-4 flex items-center gap-2">
+      <form method="post" action="/requirements/{{ req.id }}/status" class="flex items-center gap-2">
+        <span class="text-sm font-semibold text-slate-600">Set status:</span>
+        <select name="status" class="border rounded px-2 py-1.5 text-sm">
+          {% for s in RequirementStatus %}
+            <option value="{{ s.value }}" {% if s == req.status %}selected{% endif %}>{{ s.value.replace('_',' ') }}</option>
+          {% endfor %}
+        </select>
+        <button class="bg-slate-700 text-white rounded px-3 py-1.5 text-sm">Update</button>
+      </form>
+    </div>
+  {% endif %}
+
+  <!-- Traceability -->
+  <div class="grid sm:grid-cols-2 gap-4">
+    <section class="bg-white rounded-lg shadow p-4">
+      <h2 class="font-bold mb-2 text-sm">Reports satisfying this</h2>
+      <ul class="space-y-1 text-sm">
+        {% for r in reports %}
+          <li class="flex items-center gap-2">
+            <a href="/reports/{{ r.id }}" class="text-blue-600 flex-1">{{ r.title }}</a>
+            {{ m.status_badge(r.status) }}
+          </li>
+        {% else %}
+          <li class="text-slate-500">None linked yet. Analysts link reports from the report editor.</li>
+        {% endfor %}
+      </ul>
+    </section>
+    <section class="bg-white rounded-lg shadow p-4">
+      <h2 class="font-bold mb-2 text-sm">Notebooks addressing this</h2>
+      <ul class="space-y-1 text-sm">
+        {% for nb in notebooks %}
+          <li><a href="/notebooks/{{ nb.id }}" class="text-blue-600">{{ nb.title }}</a></li>
+        {% else %}
+          <li class="text-slate-500">None linked yet.</li>
+        {% endfor %}
+      </ul>
+    </section>
+  </div>
+
+  {% if can_edit %}
+    <details class="mt-4">
+      <summary class="text-sm text-slate-600 cursor-pointer">Edit / delete</summary>
+      <form method="post" action="/requirements/{{ req.id }}" class="bg-white rounded-lg shadow p-4 mt-2 space-y-2">
+        <input name="title" value="{{ req.title }}" class="w-full border rounded px-3 py-2 text-sm">
+        <textarea name="description" rows="3" class="w-full border rounded px-3 py-2 text-sm">{{ req.description }}</textarea>
+        <div class="flex gap-2">
+          <select name="intel_level" class="border rounded px-2 py-2 text-sm flex-1">
+            {% for lvl in IntelLevel %}<option value="{{ lvl.value }}" {% if lvl == req.intel_level %}selected{% endif %}>{{ lvl.value }}</option>{% endfor %}
+          </select>
+          <select name="priority" class="border rounded px-2 py-2 text-sm flex-1">
+            {% for p in Priority %}<option value="{{ p.value }}" {% if p == req.priority %}selected{% endif %}>{{ p.value }}</option>{% endfor %}
+          </select>
+        </div>
+        <button class="bg-slate-800 text-white rounded px-4 py-2 text-sm">Save changes</button>
+      </form>
+      <form method="post" action="/requirements/{{ req.id }}/delete" class="mt-2">
+        <button class="text-sm text-red-600">Delete requirement</button>
+      </form>
+    </details>
+  {% endif %}
+</div>
+{% endblock %}

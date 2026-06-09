@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ app_name }}{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen">
+  <nav class="bg-slate-900 text-slate-100">
+    <div class="max-w-6xl mx-auto px-4 py-3 flex items-center gap-6">
+      <a href="/" class="font-bold text-lg">🧊 {{ app_name }}</a>
+      {% if user is defined and user %}
+        <a href="/" class="text-sm hover:text-white">Dashboard</a>
+        <a href="/reports" class="text-sm hover:text-white">Reports</a>
+        <a href="/requirements" class="text-sm hover:text-white">{% if user.role == 'STAKEHOLDER' %}My Requirements{% else %}Tasking{% endif %}</a>
+        {% if user.role == 'STAKEHOLDER' %}
+          <a href="/feed" class="text-sm hover:text-white">Feed</a>
+          <a href="/preferences" class="text-sm hover:text-white">Preferences</a>
+        {% endif %}
+        <span class="ml-auto text-sm text-slate-300">{{ user.display_name }}
+          <span class="px-2 py-0.5 ml-1 rounded bg-slate-700 text-xs">{{ user.role }}</span>
+        </span>
+        <a href="/auth/logout" class="text-sm hover:text-white">Logout</a>
+      {% else %}
+        <a href="/auth/login" class="ml-auto text-sm hover:text-white">Login</a>
+      {% endif %}
+    </div>
+  </nav>
+  <main class="max-w-6xl mx-auto px-4 py-6">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Tasking board · {{ app_name }}{% endblock %}
+{% block content %}
+<h1 class="text-xl font-bold mb-4">Analyst tasking board</h1>
+<div class="grid md:grid-cols-4 gap-4">
+  {% for s in statuses %}
+    <div class="bg-slate-100 rounded-lg p-3">
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="font-semibold text-sm">{{ s.value.replace('_', ' ') }}</h2>
+        <span class="text-xs text-slate-500">{{ board[s] | length }}</span>
+      </div>
+      <div class="space-y-2">
+        {% for r in board[s] %}
+          <a href="/requirements/{{ r.id }}" class="block bg-white rounded shadow-sm p-3 hover:shadow">
+            <div class="text-sm font-medium">{{ r.title }}</div>
+            <div class="mt-1 flex gap-1 flex-wrap">
+              {{ m.priority_badge(r.priority) }}
+              {{ m.level_badge(r.intel_level) }}
+            </div>
+            <div class="mt-1 text-xs text-slate-400">{{ r.stakeholder.display_name }}</div>
+          </a>
+        {% else %}
+          <p class="text-xs text-slate-400">—</p>
+        {% endfor %}
+      </div>
+    </div>
+  {% endfor %}
+</div>
+{% endblock %}

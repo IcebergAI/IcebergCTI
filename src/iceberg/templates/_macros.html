@@ -1,0 +1,56 @@
+{# Shared presentational macros. #}
+
+{% macro tlp_badge(tlp) %}
+  {% set colors = {
+    'RED': 'bg-red-600 text-white',
+    'AMBER_STRICT': 'bg-amber-600 text-white',
+    'AMBER': 'bg-amber-400 text-slate-900',
+    'GREEN': 'bg-green-500 text-white',
+    'CLEAR': 'bg-slate-300 text-slate-800'
+  } %}
+  <span class="px-2 py-0.5 rounded text-xs font-semibold {{ colors.get(tlp.value, 'bg-slate-300') }}">
+    {{ tlp_label(tlp) }}
+  </span>
+{% endmacro %}
+
+{% macro status_badge(status) %}
+  {% set colors = {
+    'DRAFT': 'bg-slate-200 text-slate-700',
+    'IN_REVIEW': 'bg-yellow-200 text-yellow-800',
+    'APPROVED': 'bg-blue-200 text-blue-800',
+    'PUBLISHED': 'bg-green-200 text-green-800'
+  } %}
+  <span class="px-2 py-0.5 rounded text-xs font-semibold {{ colors.get(status.value, 'bg-slate-200') }}">
+    {{ status.value }}
+  </span>
+{% endmacro %}
+
+{% macro level_badge(level) %}
+  <span class="px-2 py-0.5 rounded text-xs font-semibold bg-indigo-100 text-indigo-800">
+    {{ level.value }}
+  </span>
+{% endmacro %}
+
+{% macro priority_badge(priority) %}
+  {% set colors = {
+    'CRITICAL': 'bg-red-600 text-white',
+    'HIGH': 'bg-orange-500 text-white',
+    'MEDIUM': 'bg-yellow-300 text-slate-900',
+    'LOW': 'bg-slate-200 text-slate-700'
+  } %}
+  <span class="px-2 py-0.5 rounded text-xs font-semibold {{ colors.get(priority.value, 'bg-slate-200') }}">
+    {{ priority.value }}
+  </span>
+{% endmacro %}
+
+{% macro req_status_badge(status) %}
+  {% set colors = {
+    'OPEN': 'bg-slate-200 text-slate-700',
+    'IN_PROGRESS': 'bg-blue-200 text-blue-800',
+    'SATISFIED': 'bg-green-200 text-green-800',
+    'CLOSED': 'bg-slate-300 text-slate-600'
+  } %}
+  <span class="px-2 py-0.5 rounded text-xs font-semibold {{ colors.get(status.value, 'bg-slate-200') }}">
+    {{ status.value.replace('_', ' ') }}
+  </span>
+{% endmacro %}

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}{{ report.title }} · {{ app_name }}{% endblock %}
+{% block content %}
+<article class="bg-white rounded-lg shadow p-6 max-w-3xl mx-auto">
+  <div class="flex gap-1 mb-2">
+    {{ m.status_badge(report.status) }}
+    {{ m.level_badge(report.intel_level) }}
+    {{ m.tlp_badge(report.tlp) }}
+  </div>
+  <h1 class="text-2xl font-bold">{{ report.title }}</h1>
+  <p class="text-sm text-slate-500 mb-4">
+    {% if report.published_at %}Published {{ report.published_at.strftime('%Y-%m-%d') }}{% else %}Draft{% endif %}
+  </p>
+  <div class="prose prose-sm max-w-none">{{ body_html | safe }}</div>
+
+  {% if cited_sources %}
+    <h2 class="text-lg font-bold mt-6 mb-2">Sources</h2>
+    <ul class="list-disc pl-5 text-sm space-y-1">
+      {% for s in cited_sources %}
+        <li><span class="font-medium">{{ s.title }}</span>
+          {% if s.reference %}— <span class="text-blue-600">{{ s.reference }}</span>{% endif %}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  {% if requirements %}
+    <h2 class="text-lg font-bold mt-6 mb-2">Requirements satisfied</h2>
+    <ul class="list-disc pl-5 text-sm space-y-1">
+      {% for r in requirements %}
+        <li><a href="/requirements/{{ r.id }}" class="text-blue-600">{{ r.title }}</a></li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  {% if products %}
+    <h2 class="text-lg font-bold mt-6 mb-2">Downloads</h2>
+    <ul class="text-sm space-y-1">
+      {% for p in products %}
+        <li><a class="text-blue-600" href="/reports/{{ report.id }}/products/{{ p.id }}/download">{{ p.format.value }} (PDF)</a></li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  {% if user.role != 'STAKEHOLDER' %}
+    {% if report.status.value == 'PUBLISHED' %}
+      <p class="mt-6 text-sm text-slate-500">📨 Disseminated to {{ dissemination_count }} stakeholder{{ '' if dissemination_count == 1 else 's' }}.</p>
+    {% endif %}
+    <a href="/reports/{{ report.id }}/edit" class="inline-block mt-4 text-sm text-blue-600">Edit this report</a>
+  {% endif %}
+</article>
+{% endblock %}

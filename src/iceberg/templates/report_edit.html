@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% set is_author = report.author_id == user.id %}
+{% set can_review = user.role in ['REVIEWER', 'ADMIN'] %}
+{% set can_edit = (is_author or user.role == 'ADMIN') and report.status.value != 'PUBLISHED' %}
+{% block title %}Edit · {{ report.title }}{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-4">
+  <div>
+    <a href="/notebooks/{{ notebook.id }}" class="text-sm text-blue-600">← {{ notebook.title }}</a>
+    <h1 class="text-2xl font-bold">{{ report.title }}</h1>
+    <div class="mt-1 flex gap-1">
+      {{ m.status_badge(report.status) }}
+      {{ m.level_badge(report.intel_level) }}
+      {{ m.tlp_badge(report.tlp) }}
+    </div>
+  </div>
+  <a href="/reports/{{ report.id }}" class="text-sm text-blue-600">View published page →</a>
+</div>
+
+<!-- Lifecycle controls -->
+<div class="bg-white rounded-lg shadow p-3 mb-4 flex flex-wrap gap-2 items-center">
+  <span class="text-sm font-semibold text-slate-600 mr-2">Lifecycle:</span>
+  {% macro transition_btn(target, label, cls) %}
+    <form method="post" action="/reports/{{ report.id }}/transition">
+      <input type="hidden" name="target" value="{{ target }}">
+      <button class="rounded px-3 py-1.5 text-sm {{ cls }}">{{ label }}</button>
+    </form>
+  {% endmacro %}
+  {% if report.status.value == 'DRAFT' and (is_author or user.role == 'ADMIN') %}
+    {{ transition_btn('IN_REVIEW', 'Submit for review', 'bg-yellow-500 text-white') }}
+  {% elif report.status.value == 'IN_REVIEW' and can_review %}
+    {{ transition_btn('APPROVED', 'Approve', 'bg-blue-600 text-white') }}
+    {{ transition_btn('DRAFT', 'Send back to draft', 'bg-slate-200') }}
+  {% elif report.status.value == 'APPROVED' and can_review %}
+    {{ transition_btn('PUBLISHED', 'Publish', 'bg-green-600 text-white') }}
+    {{ transition_btn('IN_REVIEW', 'Back to review', 'bg-slate-200') }}
+  {% elif report.status.value == 'PUBLISHED' %}
+    <span class="text-sm text-green-700">Published {{ report.published_at and report.published_at.strftime('%Y-%m-%d %H:%M') }}</span>
+  {% else %}
+    <span class="text-sm text-slate-400">No actions available for your role.</span>
+  {% endif %}
+</div>
+
+<div class="grid lg:grid-cols-2 gap-4" x-data='{
+       body: {{ report.body_md | tojson }},
+       previewHtml: {{ preview_html | tojson }},
+       timer: null,
+       schedule() { clearTimeout(this.timer); this.timer = setTimeout(() => this.refresh(), 350); },
+       async refresh() {
+         const res = await fetch("/api/preview", {
+           method: "POST",
+           headers: {"Content-Type": "application/json"},
+           body: JSON.stringify({markdown: this.body})
+         });
+         if (res.ok) { this.previewHtml = (await res.json()).html; }
+       }
+     }'>
+  <!-- Editor -->
+  <section class="bg-white rounded-lg shadow p-4">
+    {% if can_edit %}
+      <form method="post" action="/reports/{{ report.id }}" class="space-y-3">
+        <input name="title" value="{{ report.title }}"
+               class="w-full border rounded px-3 py-2 font-semibold">
+        <div class="flex gap-2">
+          <select name="intel_level" class="border rounded px-2 py-2 text-sm flex-1">
+            {% for lvl in IntelLevel %}
+              <option value="{{ lvl.value }}" {% if lvl == report.intel_level %}selected{% endif %}>{{ lvl.value }}</option>
+            {% endfor %}
+          </select>
+          <select name="tlp" class="border rounded px-2 py-2 text-sm flex-1">
+            {% for t in TLP %}
+              <option value="{{ t.value }}" {% if t == report.tlp %}selected{% endif %}>{{ tlp_label(t) }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <textarea name="body_md" rows="22" x-model="body" @input="schedule()"
+                  class="w-full border rounded px-3 py-2 font-mono text-sm"></textarea>
+        <button class="bg-slate-800 text-white rounded px-4 py-2 text-sm">Save</button>
+      </form>
+    {% else %}
+      <p class="text-slate-500 text-sm">This report is read-only for you
+        {% if report.status.value == 'PUBLISHED' %}(published){% endif %}.</p>
+      <div class="prose prose-sm max-w-none mt-3" x-html="previewHtml"></div>
+    {% endif %}
+  </section>
+
+  <!-- Live preview -->
+  {% if can_edit %}
+  <section class="bg-white rounded-lg shadow p-4">
+    <h2 class="text-sm font-semibold text-slate-500 mb-2">Live preview</h2>
+    <div class="prose prose-sm max-w-none" x-html="previewHtml"></div>
+  </section>
+  {% endif %}
+</div>
+
+<!-- Citations -->
+<section class="bg-white rounded-lg shadow p-4 mt-4">
+  <h2 class="font-bold mb-2">Cited sources</h2>
+  {% if sources %}
+    <form method="post" action="/reports/{{ report.id }}/citations" class="space-y-2">
+      {% for s in sources %}
+        <label class="flex items-start gap-2 text-sm">
+          <input type="checkbox" name="source_ids" value="{{ s.id }}"
+                 class="mt-1" {% if s.id in cited_ids %}checked{% endif %}
+                 {% if not can_edit %}disabled{% endif %}>
+          <span><span class="font-medium">{{ s.title }}</span>
+            {% if s.reference %}<span class="text-blue-600">— {{ s.reference }}</span>{% endif %}</span>
+        </label>
+      {% endfor %}
+      {% if can_edit %}
+        <button class="bg-slate-700 text-white rounded px-3 py-1.5 text-sm">Update citations</button>
+      {% endif %}
+    </form>
+  {% else %}
+    <p class="text-slate-500 text-sm">No sources in this notebook to cite yet.</p>
+  {% endif %}
+</section>
+
+<!-- Requirements satisfied -->
+<section class="bg-white rounded-lg shadow p-4 mt-4">
+  <h2 class="font-bold mb-2">Requirements satisfied</h2>
+  {% if all_requirements %}
+    <form method="post" action="/reports/{{ report.id }}/requirements" class="space-y-2">
+      {% for r in all_requirements %}
+        <label class="flex items-start gap-2 text-sm">
+          <input type="checkbox" name="requirement_ids" value="{{ r.id }}"
+                 class="mt-1" {% if r.id in linked_req_ids %}checked{% endif %}
+                 {% if not can_edit %}disabled{% endif %}>
+          <span><span class="font-medium">{{ r.title }}</span>
+            {{ m.priority_badge(r.priority) }} {{ m.level_badge(r.intel_level) }}</span>
+        </label>
+      {% endfor %}
+      {% if can_edit %}
+        <button class="bg-slate-700 text-white rounded px-3 py-1.5 text-sm">Update requirements</button>
+      {% endif %}
+    </form>
+  {% else %}
+    <p class="text-slate-500 text-sm">No open requirements to link.</p>
+  {% endif %}
+</section>
+
+<!-- Render products -->
+<section class="bg-white rounded-lg shadow p-4 mt-4">
+  <h2 class="font-bold mb-2">Rendered products (Typst)</h2>
+  {% if can_edit or user.role != 'STAKEHOLDER' %}
+    {% if typst_available %}
+      <form method="post" action="/reports/{{ report.id }}/render" class="flex gap-2 items-center mb-3">
+        <select name="format" class="border rounded px-2 py-2 text-sm">
+          {% for f in ProductFormat %}<option value="{{ f.value }}">{{ f.value }}</option>{% endfor %}
+        </select>
+        <button class="bg-indigo-600 text-white rounded px-4 py-2 text-sm">Render PDF</button>
+      </form>
+    {% else %}
+      <p class="text-amber-600 text-sm mb-3">Typst binary not found — install it to render PDFs.</p>
+    {% endif %}
+  {% endif %}
+  <ul class="space-y-1">
+    {% for p in products %}
+      <li class="flex items-center gap-3 text-sm border rounded px-3 py-2">
+        <span class="font-medium">{{ p.format.value }}</span>
+        <span class="text-slate-400">{{ p.rendered_at.strftime('%Y-%m-%d %H:%M') }}</span>
+        <a class="ml-auto text-blue-600"
+           href="/reports/{{ report.id }}/products/{{ p.id }}/download">Download</a>
+      </li>
+    {% else %}
+      <li class="text-slate-500 text-sm">Nothing rendered yet.</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endblock %}

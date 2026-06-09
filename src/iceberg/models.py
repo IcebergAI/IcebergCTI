@@ -1,0 +1,290 @@
+"""SQLModel domain models and enums for Iceberg.
+
+Kept in a single module so cross-model relationships resolve without circular
+imports. See the plan: User/Notebook/Source/Note/Report (+ links) form the
+authoring core; Requirement is modelled now, with its UI arriving in a later
+milestone.
+"""
+
+from datetime import datetime, timezone
+from enum import StrEnum
+
+from sqlmodel import Field, Relationship, SQLModel
+
+
+def utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+# --------------------------------------------------------------------------- #
+# Enums
+# --------------------------------------------------------------------------- #
+class Role(StrEnum):
+    ADMIN = "ADMIN"
+    ANALYST = "ANALYST"
+    REVIEWER = "REVIEWER"
+    STAKEHOLDER = "STAKEHOLDER"
+
+
+class IntelLevel(StrEnum):
+    STRATEGIC = "STRATEGIC"
+    TACTICAL = "TACTICAL"
+    OPERATIONAL = "OPERATIONAL"
+
+
+class TLP(StrEnum):
+    """TLP 2.0 markings. Stored by name; display label via :func:`tlp_label`."""
+
+    RED = "RED"
+    AMBER_STRICT = "AMBER_STRICT"
+    AMBER = "AMBER"
+    GREEN = "GREEN"
+    CLEAR = "CLEAR"
+
+
+_TLP_LABELS = {
+    TLP.RED: "TLP:RED",
+    TLP.AMBER_STRICT: "TLP:AMBER+STRICT",
+    TLP.AMBER: "TLP:AMBER",
+    TLP.GREEN: "TLP:GREEN",
+    TLP.CLEAR: "TLP:CLEAR",
+}
+
+
+def tlp_label(tlp: TLP) -> str:
+    return _TLP_LABELS[TLP(tlp)]
+
+
+# Restrictiveness ordering (higher = more sensitive) used for dissemination
+# routing: a report is auto-disseminated only when it is at or below the
+# configured maximum TLP.
+_TLP_RESTRICTIVENESS = {
+    TLP.RED: 4,
+    TLP.AMBER_STRICT: 3,
+    TLP.AMBER: 2,
+    TLP.GREEN: 1,
+    TLP.CLEAR: 0,
+}
+
+
+def tlp_rank(tlp: TLP) -> int:
+    return _TLP_RESTRICTIVENESS[TLP(tlp)]
+
+
+def is_disseminable(report_tlp: TLP, max_tlp: TLP) -> bool:
+    """True if a report's TLP is no more restrictive than the broadcast ceiling."""
+    return tlp_rank(report_tlp) <= tlp_rank(max_tlp)
+
+
+class ReportStatus(StrEnum):
+    DRAFT = "DRAFT"
+    IN_REVIEW = "IN_REVIEW"
+    APPROVED = "APPROVED"
+    PUBLISHED = "PUBLISHED"
+
+
+class ProductFormat(StrEnum):
+    FULL = "FULL"
+    EXEC_BRIEF = "EXEC_BRIEF"
+    ONE_PAGER = "ONE_PAGER"
+
+
+class Priority(StrEnum):
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+    CRITICAL = "CRITICAL"
+
+
+class RequirementStatus(StrEnum):
+    OPEN = "OPEN"
+    IN_PROGRESS = "IN_PROGRESS"
+    SATISFIED = "SATISFIED"
+    CLOSED = "CLOSED"
+
+
+# --------------------------------------------------------------------------- #
+# Link tables
+# --------------------------------------------------------------------------- #
+class ReportSource(SQLModel, table=True):
+    """Sources from a notebook that a report explicitly cites."""
+
+    report_id: int | None = Field(
+        default=None, foreign_key="report.id", ondelete="CASCADE", primary_key=True
+    )
+    source_id: int | None = Field(
+        default=None, foreign_key="source.id", ondelete="CASCADE", primary_key=True
+    )
+
+
+class NotebookRequirement(SQLModel, table=True):
+    """Traceability: a notebook addresses a stakeholder requirement."""
+
+    notebook_id: int | None = Field(
+        default=None, foreign_key="notebook.id", ondelete="CASCADE", primary_key=True
+    )
+    requirement_id: int | None = Field(
+        default=None,
+        foreign_key="requirement.id",
+        ondelete="CASCADE",
+        primary_key=True,
+    )
+
+
+class ReportRequirement(SQLModel, table=True):
+    """Traceability: a report satisfies a stakeholder requirement."""
+
+    report_id: int | None = Field(
+        default=None, foreign_key="report.id", ondelete="CASCADE", primary_key=True
+    )
+    requirement_id: int | None = Field(
+        default=None,
+        foreign_key="requirement.id",
+        ondelete="CASCADE",
+        primary_key=True,
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Core tables
+# --------------------------------------------------------------------------- #
+class User(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    sub: str | None = Field(default=None, index=True, unique=True)
+    email: str = Field(index=True, unique=True)
+    display_name: str
+    role: Role = Field(default=Role.ANALYST)
+    preferred_intel_level: IntelLevel | None = Field(default=None)
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class Notebook(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    title: str
+    topic: str = ""
+    owner_id: int = Field(foreign_key="user.id", index=True)
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+    sources: list["Source"] = Relationship(
+        back_populates="notebook", cascade_delete=True
+    )
+    notes: list["Note"] = Relationship(
+        back_populates="notebook", cascade_delete=True
+    )
+    reports: list["Report"] = Relationship(
+        back_populates="notebook", cascade_delete=True
+    )
+    requirements: list["Requirement"] = Relationship(
+        back_populates="notebooks", link_model=NotebookRequirement
+    )
+
+
+class Source(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    notebook_id: int = Field(
+        foreign_key="notebook.id", ondelete="CASCADE", index=True
+    )
+    title: str
+    reference: str = ""  # URL or citation reference
+    summary: str = ""
+    captured_at: datetime = Field(default_factory=utcnow)
+
+    notebook: Notebook = Relationship(back_populates="sources")
+
+
+class Note(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    notebook_id: int = Field(
+        foreign_key="notebook.id", ondelete="CASCADE", index=True
+    )
+    body_md: str = ""
+    created_at: datetime = Field(default_factory=utcnow)
+
+    notebook: Notebook = Relationship(back_populates="notes")
+
+
+class Report(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    notebook_id: int = Field(
+        foreign_key="notebook.id", ondelete="CASCADE", index=True
+    )
+    title: str
+    body_md: str = ""
+    intel_level: IntelLevel = Field(default=IntelLevel.OPERATIONAL)
+    tlp: TLP = Field(default=TLP.AMBER)
+    status: ReportStatus = Field(default=ReportStatus.DRAFT)
+    author_id: int = Field(foreign_key="user.id")
+    reviewer_id: int | None = Field(default=None, foreign_key="user.id")
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+    published_at: datetime | None = Field(default=None)
+
+    notebook: Notebook = Relationship(back_populates="reports")
+    cited_sources: list[Source] = Relationship(link_model=ReportSource)
+    rendered_products: list["RenderedProduct"] = Relationship(
+        back_populates="report", cascade_delete=True
+    )
+    requirements: list["Requirement"] = Relationship(
+        back_populates="reports", link_model=ReportRequirement
+    )
+    dissemination_events: list["DisseminationEvent"] = Relationship(
+        back_populates="report", cascade_delete=True
+    )
+
+
+class RenderedProduct(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    report_id: int = Field(foreign_key="report.id", ondelete="CASCADE", index=True)
+    format: ProductFormat
+    pdf_path: str
+    rendered_at: datetime = Field(default_factory=utcnow)
+
+    report: Report = Relationship(back_populates="rendered_products")
+
+
+class Requirement(SQLModel, table=True):
+    """Stakeholder intelligence requirement (PIR/RFI) feeding analyst tasking."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    stakeholder_id: int = Field(foreign_key="user.id", index=True)
+    title: str
+    description: str = ""
+    intel_level: IntelLevel = Field(default=IntelLevel.STRATEGIC)
+    priority: Priority = Field(default=Priority.MEDIUM)
+    status: RequirementStatus = Field(default=RequirementStatus.OPEN)
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+    stakeholder: User = Relationship()
+    notebooks: list[Notebook] = Relationship(
+        back_populates="requirements", link_model=NotebookRequirement
+    )
+    reports: list[Report] = Relationship(
+        back_populates="requirements", link_model=ReportRequirement
+    )
+
+
+_PRIORITY_RANK = {
+    Priority.CRITICAL: 3,
+    Priority.HIGH: 2,
+    Priority.MEDIUM: 1,
+    Priority.LOW: 0,
+}
+
+
+def priority_rank(priority: Priority) -> int:
+    """Sort key (higher = more urgent) for ordering the tasking board."""
+    return _PRIORITY_RANK[Priority(priority)]
+
+
+class DisseminationEvent(SQLModel, table=True):
+    """A published report delivered to a stakeholder's feed (Milestone 3)."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    report_id: int = Field(foreign_key="report.id", ondelete="CASCADE", index=True)
+    stakeholder_id: int = Field(foreign_key="user.id", index=True)
+    created_at: datetime = Field(default_factory=utcnow)
+    read_at: datetime | None = Field(default=None)
+
+    report: Report = Relationship(back_populates="dissemination_events")

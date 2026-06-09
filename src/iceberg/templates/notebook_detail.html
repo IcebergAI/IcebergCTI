@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% set can_write = user.role != 'STAKEHOLDER' %}
+{% block title %}{{ notebook.title }} · {{ app_name }}{% endblock %}
+{% block content %}
+<div class="mb-5">
+  <h1 class="text-2xl font-bold">{{ notebook.title }}</h1>
+  <p class="text-slate-500">{{ notebook.topic }}</p>
+</div>
+
+<div class="grid md:grid-cols-2 gap-6">
+  <!-- Reports / products -->
+  <section class="md:col-span-2 bg-white rounded-lg shadow p-4">
+    <h2 class="font-bold mb-3">Intelligence products</h2>
+    <div class="space-y-2">
+      {% for r in reports %}
+        <div class="flex items-center justify-between border rounded px-3 py-2">
+          <a href="/reports/{{ r.id }}" class="font-medium">{{ r.title }}</a>
+          <div class="flex gap-1 items-center">
+            {{ m.status_badge(r.status) }}
+            {{ m.level_badge(r.intel_level) }}
+            {{ m.tlp_badge(r.tlp) }}
+            {% if can_write %}<a href="/reports/{{ r.id }}/edit" class="text-sm text-blue-600">Edit</a>{% endif %}
+          </div>
+        </div>
+      {% else %}
+        <p class="text-slate-500 text-sm">No products yet.</p>
+      {% endfor %}
+    </div>
+    {% if can_write %}
+      <form method="post" action="/notebooks/{{ notebook.id }}/reports"
+            class="mt-4 grid sm:grid-cols-4 gap-2 items-end">
+        <input name="title" required placeholder="New product title"
+               class="sm:col-span-2 border rounded px-3 py-2 text-sm">
+        <select name="intel_level" class="border rounded px-2 py-2 text-sm">
+          {% for lvl in IntelLevel %}<option value="{{ lvl.value }}">{{ lvl.value }}</option>{% endfor %}
+        </select>
+        <select name="tlp" class="border rounded px-2 py-2 text-sm">
+          {% for t in TLP %}<option value="{{ t.value }}" {% if t.value=='AMBER' %}selected{% endif %}>{{ tlp_label(t) }}</option>{% endfor %}
+        </select>
+        <button class="sm:col-span-4 bg-slate-800 text-white rounded px-4 py-2 text-sm justify-self-start">
+          Create product
+        </button>
+      </form>
+    {% endif %}
+  </section>
+
+  <!-- Sources -->
+  <section class="bg-white rounded-lg shadow p-4">
+    <h2 class="font-bold mb-3">Sources</h2>
+    <ul class="space-y-2">
+      {% for s in sources %}
+        <li class="border rounded px-3 py-2">
+          <div class="font-medium text-sm">{{ s.title }}</div>
+          {% if s.reference %}<div class="text-xs text-blue-600 break-all">{{ s.reference }}</div>{% endif %}
+          {% if s.summary %}<div class="text-xs text-slate-500">{{ s.summary }}</div>{% endif %}
+        </li>
+      {% else %}
+        <li class="text-slate-500 text-sm">No sources collected yet.</li>
+      {% endfor %}
+    </ul>
+    {% if can_write %}
+      <form method="post" action="/notebooks/{{ notebook.id }}/sources" class="mt-3 space-y-2">
+        <input name="title" required placeholder="Source title" class="w-full border rounded px-3 py-2 text-sm">
+        <input name="reference" placeholder="URL / reference" class="w-full border rounded px-3 py-2 text-sm">
+        <input name="summary" placeholder="Short summary" class="w-full border rounded px-3 py-2 text-sm">
+        <button class="bg-slate-700 text-white rounded px-3 py-1.5 text-sm">Add source</button>
+      </form>
+    {% endif %}
+  </section>
+
+  <!-- Notes -->
+  <section class="bg-white rounded-lg shadow p-4">
+    <h2 class="font-bold mb-3">Notes</h2>
+    <ul class="space-y-2">
+      {% for n in notes %}
+        <li class="border rounded px-3 py-2 text-sm whitespace-pre-wrap">{{ n.body_md }}</li>
+      {% else %}
+        <li class="text-slate-500 text-sm">No notes yet.</li>
+      {% endfor %}
+    </ul>
+    {% if can_write %}
+      <form method="post" action="/notebooks/{{ notebook.id }}/notes" class="mt-3 space-y-2">
+        <textarea name="body_md" rows="3" placeholder="Working note (markdown)"
+                  class="w-full border rounded px-3 py-2 text-sm"></textarea>
+        <button class="bg-slate-700 text-white rounded px-3 py-1.5 text-sm">Add note</button>
+      </form>
+    {% endif %}
+  </section>
+
+  <!-- Requirements addressed -->
+  <section class="md:col-span-2 bg-white rounded-lg shadow p-4">
+    <h2 class="font-bold mb-2">Requirements addressed</h2>
+    {% if all_requirements %}
+      <form method="post" action="/notebooks/{{ notebook.id }}/requirements" class="space-y-2">
+        {% for r in all_requirements %}
+          <label class="flex items-center gap-2 text-sm">
+            <input type="checkbox" name="requirement_ids" value="{{ r.id }}"
+                   {% if r.id in linked_req_ids %}checked{% endif %}
+                   {% if not can_write %}disabled{% endif %}>
+            <span class="font-medium">{{ r.title }}</span>
+            {{ m.priority_badge(r.priority) }}
+          </label>
+        {% endfor %}
+        {% if can_write %}
+          <button class="bg-slate-700 text-white rounded px-3 py-1.5 text-sm">Update</button>
+        {% endif %}
+      </form>
+    {% else %}
+      <p class="text-slate-500 text-sm">No open requirements to link.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

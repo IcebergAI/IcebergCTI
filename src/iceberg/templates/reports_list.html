@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Reports · {{ app_name }}{% endblock %}
+{% block content %}
+<h1 class="text-xl font-bold mb-4">
+  {% if user.role == 'STAKEHOLDER' %}Published intelligence{% else %}All reports{% endif %}
+</h1>
+<div class="bg-white rounded-lg shadow divide-y">
+  {% for r in reports %}
+    <a href="/reports/{{ r.id }}" class="flex items-center gap-3 px-4 py-3 hover:bg-slate-50">
+      <span class="font-medium flex-1">{{ r.title }}</span>
+      {{ m.status_badge(r.status) }}
+      {{ m.level_badge(r.intel_level) }}
+      {{ m.tlp_badge(r.tlp) }}
+    </a>
+  {% else %}
+    <p class="px-4 py-3 text-slate-500 text-sm">No reports to show.</p>
+  {% endfor %}
+</div>
+{% endblock %}
