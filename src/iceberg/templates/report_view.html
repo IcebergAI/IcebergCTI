@@ -44,7 +44,7 @@
           <a class="file-row" href="/notebooks/{{ a.notebook_id }}/attachments/{{ a.id }}/download" style="text-decoration:none; color:inherit;">
             <span class="file-fmt">{{ a.title or a.original_filename }}</span>
             <span class="mono text-xs" style="color:var(--muted);">{{ a.file_size | filesizeformat }}</span>
-            <span class="btn-link ml-auto">Download ↓</span>
+            <span class="btn-link ml-auto">Download</span>
           </a>
         {% endfor %}
       </div>

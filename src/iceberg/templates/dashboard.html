@@ -19,6 +19,45 @@
   </div>
 </div>
 
+{% if user.role != 'STAKEHOLDER' %}
+  <section class="work-strip mb-7" aria-label="Analyst work summary">
+    <div class="work-metric">
+      <span class="metric-num">{{ notebooks | length }}</span>
+      <span>
+        <span class="metric-label">Active notebooks</span>
+        <span class="metric-copy">Collection spaces ready for sources and notes.</span>
+      </span>
+    </div>
+    <div class="work-metric">
+      <span class="metric-num">{{ report_counts.draft + report_counts.in_review + report_counts.approved }}</span>
+      <span>
+        <span class="metric-label">Reports moving</span>
+        <span class="metric-copy">{{ report_counts.in_review }} in review · {{ report_counts.approved }} approved</span>
+      </span>
+    </div>
+    <div class="work-action">
+      {% if next_report %}
+        <span>
+          <span class="metric-label">Next report</span>
+          <span class="metric-copy">{{ next_report.title }}</span>
+        </span>
+        <a href="/reports/{{ next_report.id }}/edit" class="btn btn--primary btn--sm">Open editor</a>
+      {% elif notebooks %}
+        <span>
+          <span class="metric-label">Next notebook</span>
+          <span class="metric-copy">{{ notebooks[0].title }}</span>
+        </span>
+        <a href="/notebooks/{{ notebooks[0].id }}" class="btn btn--primary btn--sm">Open notebook</a>
+      {% else %}
+        <span>
+          <span class="metric-label">Start collection</span>
+          <span class="metric-copy">Create the first notebook below.</span>
+        </span>
+      {% endif %}
+    </div>
+  </section>
+{% endif %}
+
 <div class="grid lg:grid-cols-3 gap-7">
   <section class="lg:col-span-2">
     <div class="head-row mb-4">
@@ -40,7 +79,7 @@
       </div>
     {% else %}
       <div class="well card-pad text-center">
-        <p class="empty">No notebooks yet. {% if user.role != 'STAKEHOLDER' %}Start one below to begin collecting.{% endif %}</p>
+        <p class="empty">No notebooks yet. {% if user.role != 'STAKEHOLDER' %}Create one below to start collecting sources, notes and products.{% endif %}</p>
       </div>
     {% endif %}
 
@@ -81,7 +120,7 @@
         {% endfor %}
       </div>
     {% else %}
-      <div class="well card-pad text-center"><p class="empty">No reports yet.</p></div>
+      <div class="well card-pad text-center"><p class="empty">No reports yet. Create a product from a notebook when collection is ready.</p></div>
     {% endif %}
   </section>
 </div>

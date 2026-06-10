@@ -13,6 +13,7 @@ from fastapi import (
     Form,
     HTTPException,
     Request,
+    Response,
     UploadFile,
     status,
 )
@@ -50,6 +51,7 @@ from ..services import (
     requirements as req_service,
 )
 from ..services.reports import (
+    delete_rendered_product,
     ensure_author,
     ensure_editable,
     ensure_visible,
@@ -112,6 +114,18 @@ def dashboard(request: Request, session: SessionDep, user: CurrentUser):
     recent = list(
         session.exec(select(Report).order_by(Report.updated_at.desc()).limit(8)).all()
     )
+    report_counts = {
+        "draft": sum(1 for r in recent if ReportStatus(r.status) == ReportStatus.DRAFT),
+        "in_review": sum(
+            1 for r in recent if ReportStatus(r.status) == ReportStatus.IN_REVIEW
+        ),
+        "approved": sum(
+            1 for r in recent if ReportStatus(r.status) == ReportStatus.APPROVED
+        ),
+    }
+    next_report = next(
+        (r for r in recent if ReportStatus(r.status) != ReportStatus.PUBLISHED), None
+    )
     feed_unread = 0
     if user.role == Role.STAKEHOLDER:
         feed_unread = len(
@@ -129,6 +143,8 @@ def dashboard(request: Request, session: SessionDep, user: CurrentUser):
             "user": user,
             "notebooks": notebooks,
             "recent_reports": recent,
+            "report_counts": report_counts,
+            "next_report": next_report,
             "feed_unread": feed_unread,
         },
     )
@@ -333,7 +349,11 @@ def report_view(
 
 @router.get("/reports/{report_id}/edit")
 def report_edit(
-    report_id: int, request: Request, session: SessionDep, user: CurrentUser
+    report_id: int,
+    request: Request,
+    session: SessionDep,
+    user: CurrentUser,
+    updated: str = "",
 ):
     _require_writer(user)
     report = _get_report(session, report_id)
@@ -355,6 +375,7 @@ def report_edit(
             "preview_html": render_markdown(report.body_md),
             "all_requirements": _open_requirements(session, report.requirements),
             "linked_req_ids": {r.id for r in report.requirements},
+            "updated": updated,
         },
     )
 
@@ -384,6 +405,7 @@ def report_save(
 @router.post("/reports/{report_id}/citations")
 def report_citations(
     report_id: int,
+    request: Request,
     session: SessionDep,
     user: CurrentUser,
     source_ids: Annotated[list[int], Form()] = [],
@@ -391,7 +413,9 @@ def report_citations(
     _require_writer(user)
     report = ensure_editable(_get_report(session, report_id), user)
     set_citations(session, report, source_ids)
-    return _redirect(f"/reports/{report_id}/edit")
+    if request.headers.get("x-requested-with") == "fetch":
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    return _redirect(f"/reports/{report_id}/edit?updated=citations#citations")
 
 
 @router.post("/reports/{report_id}/transition")
@@ -431,7 +455,9 @@ def report_render(
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc))
     except TypstRenderError as exc:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, str(exc))
-    return _redirect(f"/reports/{report_id}/edit")
+    return _redirect(
+        f"/reports/{report_id}/edit?updated=rendered-products#rendered-products"
+    )
 
 
 @router.get("/reports/{report_id}/products/{product_id}/download")
@@ -448,6 +474,19 @@ def download_product(
     return FileResponse(path, media_type="application/pdf", filename=path.name)
 
 
+@router.post("/reports/{report_id}/products/{product_id}/delete")
+def delete_product(
+    report_id: int, product_id: int, session: SessionDep, user: CurrentUser
+):
+    _require_writer(user)
+    report = ensure_editable(_get_report(session, report_id), user)
+    product = session.get(RenderedProduct, product_id)
+    if not product or product.report_id != report.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Product not found")
+    delete_rendered_product(session, product)
+    return _redirect(f"/reports/{report_id}/edit#rendered-products")
+
+
 @router.post("/reports/{report_id}/requirements")
 def report_requirements(
     report_id: int,
@@ -458,7 +497,9 @@ def report_requirements(
     _require_writer(user)
     report = ensure_author(_get_report(session, report_id), user)
     req_service.set_report_requirements(session, report, requirement_ids)
-    return _redirect(f"/reports/{report_id}/edit")
+    return _redirect(
+        f"/reports/{report_id}/edit?updated=requirements#requirements-satisfied"
+    )
 
 
 @router.post("/reports/{report_id}/attachments")
@@ -471,7 +512,7 @@ def report_attachments(
     _require_writer(user)
     report = ensure_editable(_get_report(session, report_id), user)
     attachment_service.set_report_attachments(session, report, attachment_ids)
-    return _redirect(f"/reports/{report_id}/edit")
+    return _redirect(f"/reports/{report_id}/edit?updated=attachments#attachments-cited")
 
 
 @router.post("/notebooks/{notebook_id}/requirements")
