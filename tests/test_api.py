@@ -95,6 +95,50 @@ def test_citation_rejects_foreign_source(client, login):
     assert cite.json()["cited_sources"] == []
 
 
+def test_stakeholder_cannot_read_unpublished_report(client, login):
+    """Regression: the report list hid drafts from stakeholders, but the detail
+    view (and products/downloads) leaked them by direct ID — a read-only
+    stakeholder could read any unpublished report, including TLP:RED."""
+    login("ANALYST", email="author@example.com")
+    nb = _make_notebook(client)
+    rid = client.post(
+        "/api/reports",
+        json={"notebook_id": nb["id"], "title": "Secret draft", "tlp": "RED"},
+    ).json()["id"]
+
+    login("STAKEHOLDER", email="nosy@example.com")
+    assert client.get(f"/api/reports/{rid}").status_code == 404
+    assert client.get(f"/api/reports/{rid}/products").status_code == 404
+    # An analyst (writer) can still read it.
+    login("ANALYST", email="author@example.com")
+    assert client.get(f"/api/reports/{rid}").status_code == 200
+
+
+def test_published_report_citations_are_immutable(client, login):
+    """Regression: citations bypassed the published-immutability guard, so a
+    published product could still be re-cited after the fact."""
+    login("ANALYST", email="author@example.com")
+    nb = _make_notebook(client)
+    src = client.post(
+        f"/api/notebooks/{nb['id']}/sources", json={"title": "S"}
+    ).json()
+    rid = client.post(
+        "/api/reports",
+        json={"notebook_id": nb["id"], "title": "R", "tlp": "GREEN"},
+    ).json()["id"]
+    client.post(f"/api/reports/{rid}/transition", json={"target": "IN_REVIEW"})
+
+    login("REVIEWER", email="rev@example.com")
+    client.post(f"/api/reports/{rid}/transition", json={"target": "APPROVED"})
+    client.post(f"/api/reports/{rid}/transition", json={"target": "PUBLISHED"})
+
+    login("ANALYST", email="author@example.com")
+    resp = client.put(
+        f"/api/reports/{rid}/citations", json={"source_ids": [src["id"]]}
+    )
+    assert resp.status_code == 409
+
+
 def test_preview_sanitizes_html(client, login):
     login("ANALYST")
     resp = client.post(

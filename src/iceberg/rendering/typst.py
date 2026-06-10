@@ -89,7 +89,14 @@ def render_product(
             str(tmp_dir / "product.typ"),
             str(out_path),
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        try:
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=settings.typst_timeout
+            )
+        except subprocess.TimeoutExpired:
+            raise TypstRenderError(
+                f"typst compile timed out after {settings.typst_timeout}s"
+            )
     if result.returncode != 0:
         raise TypstRenderError(result.stderr.strip() or "typst compile failed")
     return out_path

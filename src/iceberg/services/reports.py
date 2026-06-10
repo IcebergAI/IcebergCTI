@@ -1,5 +1,7 @@
-"""Report operations shared by the API and portal: citations and rendering."""
+"""Report operations shared by the API and portal: authorization guards,
+citations and rendering."""
 
+from fastapi import HTTPException, status
 from sqlmodel import Session, col, select
 
 from ..models import (
@@ -7,10 +9,43 @@ from ..models import (
     RenderedProduct,
     Report,
     ReportSource,
+    ReportStatus,
+    Role,
     Source,
     User,
 )
 from ..rendering.typst import render_product
+
+
+# --------------------------------------------------------------------------- #
+# Authorization guards (shared by both the JSON API and the portal so the rules
+# can never drift between the two presentation layers).
+# --------------------------------------------------------------------------- #
+def ensure_visible(report: Report, user: User) -> Report:
+    """Read access. Stakeholders (read-only consumers) may only see *published*
+    reports; analysts/reviewers/admins see everything. Returns 404 rather than
+    403 so an unpublished report's existence is not disclosed."""
+    if user.role == Role.STAKEHOLDER and report.status != ReportStatus.PUBLISHED:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Report not found")
+    return report
+
+
+def ensure_author(report: Report, user: User) -> Report:
+    """Only the author (or an admin) may mutate a report."""
+    if report.author_id != user.id and user.role != Role.ADMIN:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not the author")
+    return report
+
+
+def ensure_editable(report: Report, user: User) -> Report:
+    """Content edits (body, metadata, citations): author-only and never once
+    the report is published — published products are immutable."""
+    ensure_author(report, user)
+    if report.status == ReportStatus.PUBLISHED:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "Published reports are immutable"
+        )
+    return report
 
 
 def set_citations(

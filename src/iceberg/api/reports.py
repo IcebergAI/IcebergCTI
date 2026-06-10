@@ -27,7 +27,13 @@ from ..schemas import (
 )
 from ..rendering.typst import TypstNotAvailable, TypstRenderError
 from ..services import dissemination, lifecycle
-from ..services.reports import render_report, set_citations
+from ..services.reports import (
+    ensure_author,
+    ensure_editable,
+    ensure_visible,
+    render_report,
+    set_citations,
+)
 from ..services.requirements import set_report_requirements
 
 router = APIRouter(prefix="/reports", tags=["reports"])
@@ -41,11 +47,6 @@ def _get_report(session: Session, report_id: int) -> Report:
     if not report:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Report not found")
     return report
-
-
-def _ensure_author(report: Report, user) -> None:
-    if report.author_id != user.id and user.role != Role.ADMIN:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not the author")
 
 
 @router.get("")
@@ -77,8 +78,8 @@ def create_report(
 
 
 @router.get("/{report_id}")
-def get_report(report_id: int, session: SessionDep, _user: CurrentUser) -> dict:
-    report = _get_report(session, report_id)
+def get_report(report_id: int, session: SessionDep, user: CurrentUser) -> dict:
+    report = ensure_visible(_get_report(session, report_id), user)
     return {"report": report, "cited_sources": report.cited_sources}
 
 
@@ -90,12 +91,7 @@ def update_report(
     user: CurrentUser,
     _w: Writer,
 ) -> Report:
-    report = _get_report(session, report_id)
-    _ensure_author(report, user)
-    if report.status == ReportStatus.PUBLISHED:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT, "Published reports are immutable"
-        )
+    report = ensure_editable(_get_report(session, report_id), user)
     data = body.model_dump(exclude_unset=True)
     for field, value in data.items():
         setattr(report, field, value)
@@ -114,8 +110,7 @@ def update_citations(
     user: CurrentUser,
     _w: Writer,
 ) -> dict:
-    report = _get_report(session, report_id)
-    _ensure_author(report, user)
+    report = ensure_editable(_get_report(session, report_id), user)
     cited = set_citations(session, report, body.source_ids)
     return {"cited_sources": cited}
 
@@ -128,8 +123,7 @@ def update_requirements(
     user: CurrentUser,
     _w: Writer,
 ) -> dict:
-    report = _get_report(session, report_id)
-    _ensure_author(report, user)
+    report = ensure_author(_get_report(session, report_id), user)
     linked = set_report_requirements(session, report, body.requirement_ids)
     return {"requirements": linked}
 
@@ -155,9 +149,9 @@ def transition_report(
 
 @router.get("/{report_id}/products")
 def list_products(
-    report_id: int, session: SessionDep, _user: CurrentUser
+    report_id: int, session: SessionDep, user: CurrentUser
 ) -> list[RenderedProduct]:
-    _get_report(session, report_id)
+    ensure_visible(_get_report(session, report_id), user)
     return list(
         session.exec(
             select(RenderedProduct)
@@ -186,8 +180,9 @@ def render(
 
 @router.get("/{report_id}/products/{product_id}/download")
 def download_product(
-    report_id: int, product_id: int, session: SessionDep, _user: CurrentUser
+    report_id: int, product_id: int, session: SessionDep, user: CurrentUser
 ):
+    ensure_visible(_get_report(session, report_id), user)
     product = session.get(RenderedProduct, product_id)
     if not product or product.report_id != report_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Product not found")

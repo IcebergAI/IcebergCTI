@@ -25,6 +25,7 @@ from ..models import (
     Note,
     Notebook,
     Priority,
+    ProductFormat,
     RenderedProduct,
     Report,
     ReportStatus,
@@ -40,7 +41,13 @@ from ..models import (
 from ..rendering.markdown import render_markdown
 from ..rendering.typst import TypstNotAvailable, TypstRenderError, typst_available
 from ..services import dissemination, lifecycle, requirements as req_service
-from ..services.reports import render_report, set_citations
+from ..services.reports import (
+    ensure_author,
+    ensure_editable,
+    ensure_visible,
+    render_report,
+    set_citations,
+)
 from ..templating import templates
 
 router = APIRouter(include_in_schema=False)
@@ -242,7 +249,7 @@ def _get_report(session: Session, report_id: int) -> Report:
 def report_view(
     report_id: int, request: Request, session: SessionDep, user: CurrentUser
 ):
-    report = _get_report(session, report_id)
+    report = ensure_visible(_get_report(session, report_id), user)
     return templates.TemplateResponse(
         request,
         "report_view.html",
@@ -295,11 +302,7 @@ def report_save(
     tlp: Annotated[TLP, Form()] = TLP.AMBER,
 ):
     _require_writer(user)
-    report = _get_report(session, report_id)
-    if report.author_id != user.id and user.role != Role.ADMIN:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not the author")
-    if report.status == ReportStatus.PUBLISHED:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Published reports are immutable")
+    report = ensure_editable(_get_report(session, report_id), user)
     report.title = title
     report.body_md = body_md
     report.intel_level = intel_level
@@ -318,7 +321,7 @@ def report_citations(
     source_ids: Annotated[list[int], Form()] = [],
 ):
     _require_writer(user)
-    report = _get_report(session, report_id)
+    report = ensure_editable(_get_report(session, report_id), user)
     set_citations(session, report, source_ids)
     return _redirect(f"/reports/{report_id}/edit")
 
@@ -350,19 +353,24 @@ def report_render(
 ):
     _require_writer(user)
     report = _get_report(session, report_id)
-    from ..models import ProductFormat
-
     try:
-        render_report(session, report, ProductFormat(format))
-    except (TypstNotAvailable, TypstRenderError) as exc:
+        fmt = ProductFormat(format)
+    except ValueError:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unknown product format")
+    try:
+        render_report(session, report, fmt)
+    except TypstNotAvailable as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc))
+    except TypstRenderError as exc:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, str(exc))
     return _redirect(f"/reports/{report_id}/edit")
 
 
 @router.get("/reports/{report_id}/products/{product_id}/download")
 def download_product(
-    report_id: int, product_id: int, session: SessionDep, _user: CurrentUser
+    report_id: int, product_id: int, session: SessionDep, user: CurrentUser
 ):
+    ensure_visible(_get_report(session, report_id), user)
     product = session.get(RenderedProduct, product_id)
     if not product or product.report_id != report_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Product not found")
@@ -380,9 +388,7 @@ def report_requirements(
     requirement_ids: Annotated[list[int], Form()] = [],
 ):
     _require_writer(user)
-    report = _get_report(session, report_id)
-    if report.author_id != user.id and user.role != Role.ADMIN:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not the author")
+    report = ensure_author(_get_report(session, report_id), user)
     req_service.set_report_requirements(session, report, requirement_ids)
     return _redirect(f"/reports/{report_id}/edit")
 

@@ -2,7 +2,12 @@
 
 from functools import lru_cache
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# The default signing key shipped for local dev. It is public (it's in source
+# control), so running with it in production would let anyone forge JWTs.
+_INSECURE_DEFAULT_SECRET = "dev-insecure-change-me-0123456789abcdef"
 
 
 class Settings(BaseSettings):
@@ -13,7 +18,7 @@ class Settings(BaseSettings):
     # Core
     app_name: str = "Iceberg"
     environment: str = "dev"
-    secret_key: str = "dev-insecure-change-me-0123456789abcdef"
+    secret_key: str = _INSECURE_DEFAULT_SECRET
     database_url: str = "sqlite:///./iceberg.db"
 
     # App JWT (minted by us after OIDC or dev login)
@@ -38,6 +43,7 @@ class Settings(BaseSettings):
     typst_bin: str = "typst"
     render_output_dir: str = "./rendered"
     cmarker_version: str = "0.1.1"
+    typst_timeout: int = 60  # seconds; guards against a runaway compile
 
     # Dissemination (Milestone 3)
     portal_base_url: str = "http://localhost:8000"
@@ -60,6 +66,19 @@ class Settings(BaseSettings):
     @property
     def dev_login_enabled(self) -> bool:
         return self.dev_auth and not self.is_prod
+
+    @model_validator(mode="after")
+    def _guard_production(self) -> "Settings":
+        """Fail fast rather than boot a production instance with an unsafe
+        signing key — the default is public, so it would allow JWT forgery."""
+        if self.is_prod and (
+            self.secret_key == _INSECURE_DEFAULT_SECRET or len(self.secret_key) < 32
+        ):
+            raise ValueError(
+                "ICEBERG_SECRET_KEY must be a unique value of at least 32 "
+                "characters in production (the built-in default is public)."
+            )
+        return self
 
 
 @lru_cache
