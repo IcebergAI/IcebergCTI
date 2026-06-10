@@ -3,9 +3,10 @@
 A cyber threat intelligence platform for **collecting** intelligence, **authoring**
 finished intelligence products, and **disseminating** them to stakeholders.
 
-Analysts work in topic **notebooks** — gathering sources and notes — and author
-**reports** (intelligence products) in markdown. Reports carry an intelligence
-level (Strategic / Tactical / Operational) and a TLP marking, move through a
+Analysts work in topic **notebooks** — gathering sources, notes and uploaded
+**attachments** (reference files) — and author **reports** (intelligence products)
+in markdown. Reports carry an intelligence level (Strategic / Tactical /
+Operational) and a TLP marking, cite sources and attachments, move through a
 review workflow, and can be rendered to branded PDF products.
 
 > **Status:** Milestones 1–3 are implemented — the full vision: the analyst authoring
@@ -37,9 +38,9 @@ Open <http://localhost:8000>. With `ICEBERG_DEV_AUTH=true` (the default) you'll 
 
 ### Try the authoring loop
 1. Create a **notebook** from the dashboard.
-2. Add a couple of **sources** and a **note**.
+2. Add a couple of **sources**, a **note**, and upload an **attachment** (e.g. a PDF).
 3. Create an **intelligence product**, write markdown in the editor and watch the
-   **live preview**; tick sources to cite them.
+   **live preview**; tick sources and attachments to cite them.
 4. **Submit for review**, then sign in again as a `REVIEWER` to **Approve** and
    **Publish**.
 5. **Render** a PDF (FULL / EXEC_BRIEF / ONE_PAGER) and download it.
@@ -70,6 +71,8 @@ All settings use the `ICEBERG_` env prefix and can live in `.env` (see
 | `ICEBERG_DEV_AUTH` | Enable the dev-login bypass (auto-off when `ICEBERG_ENVIRONMENT=prod`) |
 | `ICEBERG_OIDC_ENABLED` + `ICEBERG_OIDC_*` | Microsoft Entra ID OIDC settings |
 | `ICEBERG_TYPST_BIN` / `ICEBERG_RENDER_OUTPUT_DIR` | Typst binary + PDF output dir |
+| `ICEBERG_ATTACHMENTS_DIR` / `ICEBERG_ATTACHMENT_MAX_MB` | Notebook attachment storage dir + size cap (default 25 MB) |
+| `ICEBERG_ATTACHMENT_ALLOWED_TYPES` | Comma-separated MIME whitelist for uploads (override the default set) |
 | `ICEBERG_DISSEMINATION_MAX_TLP` | Broadcast ceiling (default `AMBER`; RED/AMBER_STRICT withheld) |
 | `ICEBERG_EMAIL_BACKEND` + `ICEBERG_SMTP_*` | `console` (dev) or `smtp`; SMTP server settings |
 | `ICEBERG_PORTAL_BASE_URL` | Base URL used in notification email links |

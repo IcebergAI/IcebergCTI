@@ -131,6 +131,31 @@
   {% endif %}
 </section>
 
+<!-- Attachments cited -->
+<section class="card card-pad-lg mt-6">
+  <h2 class="section-title mb-1">Attachments cited</h2>
+  <p class="text-xs mb-4" style="color:var(--muted);">Files from this notebook referenced by the product.</p>
+  {% if attachments %}
+    <form method="post" action="/reports/{{ report.id }}/attachments">
+      <div class="grid sm:grid-cols-2 gap-1">
+        {% for a in attachments %}
+          <label class="check">
+            <input type="checkbox" name="attachment_ids" value="{{ a.id }}"
+                   {% if a.id in cited_attachment_ids %}checked{% endif %} {% if not can_edit %}disabled{% endif %}>
+            <span>
+              <span class="font-medium">{{ a.title or a.original_filename }}</span>
+              <span class="mono text-xs block mt-0.5" style="color:var(--accent-deep);">{{ a.original_filename }} · {{ a.file_size | filesizeformat }}</span>
+            </span>
+          </label>
+        {% endfor %}
+      </div>
+      {% if can_edit %}<button class="btn btn--ghost btn--sm mt-4">Update attachments</button>{% endif %}
+    </form>
+  {% else %}
+    <p class="empty">No attachments in this notebook to cite yet.</p>
+  {% endif %}
+</section>
+
 <!-- Requirements satisfied -->
 <section class="card card-pad-lg mt-6">
   <h2 class="section-title mb-1">Requirements satisfied</h2>

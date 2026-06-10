@@ -19,7 +19,7 @@ from datetime import date
 from pathlib import Path
 
 from ..config import get_settings
-from ..models import ProductFormat, Report, Source, tlp_label
+from ..models import Attachment, ProductFormat, Report, Source, tlp_label
 
 settings = get_settings()
 _TEMPLATE = Path(__file__).resolve().parent.parent / "typst" / "product.typ"
@@ -37,7 +37,12 @@ def typst_available() -> bool:
     return shutil.which(settings.typst_bin) is not None
 
 
-def _build_data(report: Report, author_name: str, sources: list[Source]) -> dict:
+def _build_data(
+    report: Report,
+    author_name: str,
+    sources: list[Source],
+    attachments: list[Attachment],
+) -> dict:
     stamp = report.published_at or report.updated_at
     return {
         "title": report.title,
@@ -52,6 +57,10 @@ def _build_data(report: Report, author_name: str, sources: list[Source]) -> dict
             {"title": s.title, "reference": s.reference, "summary": s.summary}
             for s in sources
         ],
+        "attachments": [
+            {"filename": a.original_filename, "summary": a.summary}
+            for a in attachments
+        ],
     }
 
 
@@ -60,6 +69,7 @@ def render_product(
     report: Report,
     author_name: str,
     sources: list[Source],
+    attachments: list[Attachment] | None = None,
     fmt: ProductFormat,
 ) -> Path:
     if not typst_available():
@@ -76,7 +86,10 @@ def render_product(
     with tempfile.TemporaryDirectory() as tmp:
         tmp_dir = Path(tmp)
         (tmp_dir / "data.json").write_text(
-            json.dumps(_build_data(report, author_name, sources)), encoding="utf-8"
+            json.dumps(
+                _build_data(report, author_name, sources, attachments or [])
+            ),
+            encoding="utf-8",
         )
         shutil.copy(_TEMPLATE, tmp_dir / "product.typ")
         cmd = [

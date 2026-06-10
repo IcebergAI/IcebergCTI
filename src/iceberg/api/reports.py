@@ -18,6 +18,7 @@ from ..models import (
     utcnow,
 )
 from ..schemas import (
+    AttachmentLinks,
     CitationsUpdate,
     RenderRequest,
     ReportCreate,
@@ -27,6 +28,7 @@ from ..schemas import (
 )
 from ..rendering.typst import TypstNotAvailable, TypstRenderError
 from ..services import dissemination, lifecycle
+from ..services.attachments import set_report_attachments
 from ..services.reports import (
     ensure_author,
     ensure_editable,
@@ -80,7 +82,11 @@ def create_report(
 @router.get("/{report_id}")
 def get_report(report_id: int, session: SessionDep, user: CurrentUser) -> dict:
     report = ensure_visible(_get_report(session, report_id), user)
-    return {"report": report, "cited_sources": report.cited_sources}
+    return {
+        "report": report,
+        "cited_sources": report.cited_sources,
+        "cited_attachments": report.cited_attachments,
+    }
 
 
 @router.patch("/{report_id}")
@@ -126,6 +132,19 @@ def update_requirements(
     report = ensure_author(_get_report(session, report_id), user)
     linked = set_report_requirements(session, report, body.requirement_ids)
     return {"requirements": linked}
+
+
+@router.put("/{report_id}/attachments")
+def update_attachments(
+    report_id: int,
+    body: AttachmentLinks,
+    session: SessionDep,
+    user: CurrentUser,
+    _w: Writer,
+) -> dict:
+    report = ensure_editable(_get_report(session, report_id), user)
+    cited = set_report_attachments(session, report, body.attachment_ids)
+    return {"cited_attachments": cited}
 
 
 @router.post("/{report_id}/transition")

@@ -1,13 +1,22 @@
-"""Notebooks, sources and notes — the analyst collection workspace."""
+"""Notebooks, sources, notes and attachments — the analyst collection workspace."""
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+    status,
+)
+from fastapi.responses import FileResponse
 from sqlmodel import Session, select
 
 from ..auth.dependencies import CurrentUser, require_role
 from ..db import get_session
-from ..models import Note, Notebook, Role, Source, utcnow
+from ..models import Attachment, Note, Notebook, Role, Source, utcnow
 from ..schemas import (
     NoteCreate,
     NotebookCreate,
@@ -15,6 +24,7 @@ from ..schemas import (
     RequirementLinks,
     SourceCreate,
 )
+from ..services import attachments as attachment_service
 from ..services.requirements import set_notebook_requirements
 
 router = APIRouter(prefix="/notebooks", tags=["notebooks"])
@@ -54,6 +64,7 @@ def get_notebook(notebook_id: int, session: SessionDep, _user: CurrentUser) -> d
         "notebook": nb,
         "sources": nb.sources,
         "notes": nb.notes,
+        "attachments": nb.attachments,
         "reports": nb.reports,
     }
 
@@ -82,8 +93,16 @@ def delete_notebook(notebook_id: int, session: SessionDep, user: CurrentUser):
     nb = _get_notebook(session, notebook_id)
     if nb.owner_id != user.id and user.role != Role.ADMIN:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the owner can delete")
+    # Capture attachment file paths before the DB rows cascade away, then unlink
+    # them after the delete so no files are orphaned on disk.
+    paths = [attachment_service.attachment_path(a) for a in nb.attachments]
     session.delete(nb)
     session.commit()
+    for path in paths:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 @router.post("/{notebook_id}/sources", status_code=status.HTTP_201_CREATED)
@@ -114,6 +133,57 @@ def delete_source(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Source not found")
     session.delete(source)
     session.commit()
+
+
+@router.post("/{notebook_id}/attachments", status_code=status.HTTP_201_CREATED)
+def add_attachment(
+    notebook_id: int,
+    session: SessionDep,
+    _w: Writer,
+    file: Annotated[UploadFile, File()],
+    title: Annotated[str, Form()] = "",
+    summary: Annotated[str, Form()] = "",
+) -> Attachment:
+    nb = _get_notebook(session, notebook_id)
+    return attachment_service.save_upload(
+        session, nb, file, title=title, summary=summary
+    )
+
+
+def _get_attachment(
+    session: Session, notebook_id: int, attachment_id: int
+) -> Attachment:
+    att = session.get(Attachment, attachment_id)
+    if not att or att.notebook_id != notebook_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Attachment not found")
+    return att
+
+
+@router.get("/{notebook_id}/attachments/{attachment_id}/download")
+def download_attachment(
+    notebook_id: int, attachment_id: int, session: SessionDep, _w: Writer
+):
+    att = _get_attachment(session, notebook_id, attachment_id)
+    path = attachment_service.attachment_path(att)
+    if not path.exists():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Stored file missing")
+    return FileResponse(
+        path,
+        media_type="application/octet-stream",
+        filename=att.original_filename,
+        headers={"X-Content-Type-Options": "nosniff"},
+    )
+
+
+@router.delete(
+    "/{notebook_id}/attachments/{attachment_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_attachment(
+    notebook_id: int, attachment_id: int, session: SessionDep, _w: Writer
+):
+    att = _get_attachment(session, notebook_id, attachment_id)
+    attachment_service.delete_attachment(session, att)
 
 
 @router.put("/{notebook_id}/requirements")

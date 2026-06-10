@@ -62,3 +62,17 @@
     #v(0.4em)
   ]
 ]
+
+#if fmt == "FULL" and data.attachments.len() > 0 [
+  #v(0.8em)
+  #text(14pt, weight: "bold")[Attachments]
+  #v(0.5em)
+  #for a in data.attachments [
+    #raw(a.filename)
+    #if a.summary != "" [
+      #linebreak()
+      #a.summary
+    ]
+    #v(0.4em)
+  ]
+]

@@ -45,6 +45,23 @@ class Settings(BaseSettings):
     cmarker_version: str = "0.1.1"
     typst_timeout: int = 60  # seconds; guards against a runaway compile
 
+    # Notebook attachments (uploaded reference files)
+    attachments_dir: str = "./attachments"
+    attachment_max_mb: int = 25
+    # Comma-separated whitelist of accepted MIME types. SVG is deliberately
+    # excluded (scriptable); executables/archives are not listed.
+    attachment_allowed_types: str = (
+        "application/pdf,"
+        "image/png,image/jpeg,image/gif,image/webp,"
+        "text/plain,text/markdown,text/csv,"
+        "application/msword,"
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document,"
+        "application/vnd.ms-excel,"
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,"
+        "application/vnd.ms-powerpoint,"
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    )
+
     # Dissemination (Milestone 3)
     portal_base_url: str = "http://localhost:8000"
     # Auto-disseminate reports at or below this TLP; RED / AMBER_STRICT are
@@ -58,6 +75,18 @@ class Settings(BaseSettings):
     smtp_user: str = ""
     smtp_password: str = ""
     smtp_starttls: bool = False
+
+    @property
+    def max_attachment_bytes(self) -> int:
+        return self.attachment_max_mb * 1024 * 1024
+
+    @property
+    def allowed_attachment_types(self) -> frozenset[str]:
+        return frozenset(
+            t.strip().lower()
+            for t in self.attachment_allowed_types.split(",")
+            if t.strip()
+        )
 
     @property
     def is_prod(self) -> bool:

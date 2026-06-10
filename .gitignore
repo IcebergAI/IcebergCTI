@@ -8,4 +8,5 @@ __pycache__/
 # App data
 *.db
 /rendered/
+/attachments/
 .env

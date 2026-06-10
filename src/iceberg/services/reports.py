@@ -85,6 +85,7 @@ def render_report(
         report=report,
         author_name=author_name,
         sources=list(report.cited_sources),
+        attachments=list(report.cited_attachments),
         fmt=fmt,
     )
     product = RenderedProduct(report_id=report.id, format=fmt, pdf_path=str(path))

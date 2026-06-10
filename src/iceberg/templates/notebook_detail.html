@@ -116,6 +116,43 @@
   </section>
 </div>
 
+<!-- Attachments -->
+<section class="card card-pad-lg mb-6">
+  <div class="head-row mb-4">
+    <h2 class="section-title">Attachments</h2>
+    <span class="eyebrow">{{ attachments | length }}</span>
+  </div>
+  {% if attachments %}
+    <div class="space-y-2">
+      {% for a in attachments %}
+        <div class="file-row">
+          <span class="file-fmt">{{ a.title or a.original_filename }}</span>
+          <span class="mono text-xs" style="color:var(--muted);">{{ a.file_size | filesizeformat }}</span>
+          <a class="btn-link ml-auto" href="/notebooks/{{ notebook.id }}/attachments/{{ a.id }}/download">Download ↓</a>
+          {% if can_write %}
+            <form method="post" action="/notebooks/{{ notebook.id }}/attachments/{{ a.id }}/delete"
+                  class="ml-3" onsubmit="return confirm('Delete this attachment?');">
+              <button class="link-danger" style="background:none;border:0;cursor:pointer;">Delete</button>
+            </form>
+          {% endif %}
+        </div>
+        {% if a.summary %}<div class="text-xs mb-1" style="color:var(--muted);">{{ a.summary }}</div>{% endif %}
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="empty">No files attached yet.</p>
+  {% endif %}
+  {% if can_write %}
+    <form method="post" action="/notebooks/{{ notebook.id }}/attachments" enctype="multipart/form-data"
+          class="space-y-2.5 mt-5 pt-5 border-t border-line">
+      <input type="file" name="file" required class="field">
+      <input name="title" placeholder="Label (optional — defaults to filename)" class="field">
+      <input name="summary" placeholder="Short summary (optional)" class="field">
+      <button class="btn btn--ghost btn--sm">Upload attachment</button>
+    </form>
+  {% endif %}
+</section>
+
 <!-- Requirements addressed -->
 <section class="card card-pad-lg">
   <h2 class="section-title mb-1">Requirements addressed</h2>

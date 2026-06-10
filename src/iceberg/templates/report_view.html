@@ -37,6 +37,19 @@
       </ol>
     {% endif %}
 
+    {% if cited_attachments and user.role != 'STAKEHOLDER' %}
+      <h2 class="section-title mt-9 mb-3">Attachments</h2>
+      <div class="space-y-2">
+        {% for a in cited_attachments %}
+          <a class="file-row" href="/notebooks/{{ a.notebook_id }}/attachments/{{ a.id }}/download" style="text-decoration:none; color:inherit;">
+            <span class="file-fmt">{{ a.title or a.original_filename }}</span>
+            <span class="mono text-xs" style="color:var(--muted);">{{ a.file_size | filesizeformat }}</span>
+            <span class="btn-link ml-auto">Download ↓</span>
+          </a>
+        {% endfor %}
+      </div>
+    {% endif %}
+
     {% if requirements %}
       <h2 class="section-title mt-9 mb-3">Requirements satisfied</h2>
       <ul class="space-y-1.5 text-sm" style="list-style:none; padding:0;">

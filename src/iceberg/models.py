@@ -145,6 +145,20 @@ class ReportRequirement(SQLModel, table=True):
     )
 
 
+class ReportAttachment(SQLModel, table=True):
+    """Attachments from a notebook that a report explicitly cites."""
+
+    report_id: int | None = Field(
+        default=None, foreign_key="report.id", ondelete="CASCADE", primary_key=True
+    )
+    attachment_id: int | None = Field(
+        default=None,
+        foreign_key="attachment.id",
+        ondelete="CASCADE",
+        primary_key=True,
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Core tables
 # --------------------------------------------------------------------------- #
@@ -170,6 +184,9 @@ class Notebook(SQLModel, table=True):
         back_populates="notebook", cascade_delete=True
     )
     notes: list["Note"] = Relationship(
+        back_populates="notebook", cascade_delete=True
+    )
+    attachments: list["Attachment"] = Relationship(
         back_populates="notebook", cascade_delete=True
     )
     reports: list["Report"] = Relationship(
@@ -204,6 +221,31 @@ class Note(SQLModel, table=True):
     notebook: Notebook = Relationship(back_populates="notes")
 
 
+class Attachment(SQLModel, table=True):
+    """An uploaded file held against a notebook as reference material.
+
+    Only ``stored_filename`` (a server-generated UUID name) is ever used to build
+    a path on disk; ``original_filename`` is metadata for display/download.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    notebook_id: int = Field(
+        foreign_key="notebook.id", ondelete="CASCADE", index=True
+    )
+    title: str = ""  # optional label; falls back to the filename in the UI
+    original_filename: str
+    stored_filename: str  # uuid4().hex + ext — the on-disk name
+    content_type: str
+    file_size: int = 0
+    summary: str = ""
+    uploaded_at: datetime = Field(default_factory=utcnow)
+
+    notebook: Notebook = Relationship(back_populates="attachments")
+    reports: list["Report"] = Relationship(
+        back_populates="cited_attachments", link_model=ReportAttachment
+    )
+
+
 class Report(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     notebook_id: int = Field(
@@ -222,6 +264,9 @@ class Report(SQLModel, table=True):
 
     notebook: Notebook = Relationship(back_populates="reports")
     cited_sources: list[Source] = Relationship(link_model=ReportSource)
+    cited_attachments: list["Attachment"] = Relationship(
+        back_populates="reports", link_model=ReportAttachment
+    )
     rendered_products: list["RenderedProduct"] = Relationship(
         back_populates="report", cascade_delete=True
     )

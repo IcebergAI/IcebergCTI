@@ -9,9 +9,11 @@ from fastapi import (
     APIRouter,
     BackgroundTasks,
     Depends,
+    File,
     Form,
     HTTPException,
     Request,
+    UploadFile,
     status,
 )
 from fastapi.responses import FileResponse, RedirectResponse
@@ -20,6 +22,7 @@ from sqlmodel import Session, col, select
 from ..auth.dependencies import CurrentUser
 from ..db import get_session
 from ..models import (
+    Attachment,
     DisseminationEvent,
     IntelLevel,
     Note,
@@ -40,7 +43,12 @@ from ..models import (
 )
 from ..rendering.markdown import render_markdown
 from ..rendering.typst import TypstNotAvailable, TypstRenderError, typst_available
-from ..services import dissemination, lifecycle, requirements as req_service
+from ..services import (
+    attachments as attachment_service,
+    dissemination,
+    lifecycle,
+    requirements as req_service,
+)
 from ..services.reports import (
     ensure_author,
     ensure_editable,
@@ -156,6 +164,7 @@ def notebook_detail(
             "notebook": nb,
             "sources": list(nb.sources),
             "notes": list(nb.notes),
+            "attachments": list(nb.attachments),
             "reports": list(nb.reports),
             "all_requirements": _open_requirements(session, nb.requirements),
             "linked_req_ids": {r.id for r in nb.requirements},
@@ -196,6 +205,62 @@ def add_note(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Notebook not found")
     session.add(Note(notebook_id=notebook_id, body_md=body_md))
     session.commit()
+    return _redirect(f"/notebooks/{notebook_id}")
+
+
+def _get_notebook(session: Session, notebook_id: int) -> Notebook:
+    nb = session.get(Notebook, notebook_id)
+    if not nb:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Notebook not found")
+    return nb
+
+
+def _get_attachment(session: Session, notebook_id: int, attachment_id: int):
+    att = session.get(Attachment, attachment_id)
+    if not att or att.notebook_id != notebook_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Attachment not found")
+    return att
+
+
+@router.post("/notebooks/{notebook_id}/attachments")
+def add_attachment(
+    notebook_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+    file: Annotated[UploadFile, File()],
+    title: Annotated[str, Form()] = "",
+    summary: Annotated[str, Form()] = "",
+):
+    _require_writer(user)
+    nb = _get_notebook(session, notebook_id)
+    attachment_service.save_upload(session, nb, file, title=title, summary=summary)
+    return _redirect(f"/notebooks/{notebook_id}")
+
+
+@router.get("/notebooks/{notebook_id}/attachments/{attachment_id}/download")
+def download_attachment(
+    notebook_id: int, attachment_id: int, session: SessionDep, user: CurrentUser
+):
+    _require_writer(user)  # raw notebook material is writer-only
+    att = _get_attachment(session, notebook_id, attachment_id)
+    path = attachment_service.attachment_path(att)
+    if not path.exists():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Stored file missing")
+    return FileResponse(
+        path,
+        media_type="application/octet-stream",
+        filename=att.original_filename,
+        headers={"X-Content-Type-Options": "nosniff"},
+    )
+
+
+@router.post("/notebooks/{notebook_id}/attachments/{attachment_id}/delete")
+def delete_attachment(
+    notebook_id: int, attachment_id: int, session: SessionDep, user: CurrentUser
+):
+    _require_writer(user)
+    att = _get_attachment(session, notebook_id, attachment_id)
+    attachment_service.delete_attachment(session, att)
     return _redirect(f"/notebooks/{notebook_id}")
 
 
@@ -258,6 +323,7 @@ def report_view(
             "report": report,
             "body_html": render_markdown(report.body_md),
             "cited_sources": list(report.cited_sources),
+            "cited_attachments": list(report.cited_attachments),
             "products": list(report.rendered_products),
             "requirements": list(report.requirements),
             "dissemination_count": len(report.dissemination_events),
@@ -282,6 +348,8 @@ def report_edit(
             "notebook": notebook,
             "sources": list(notebook.sources),
             "cited_ids": cited_ids,
+            "attachments": list(notebook.attachments),
+            "cited_attachment_ids": {a.id for a in report.cited_attachments},
             "products": list(report.rendered_products),
             "typst_available": typst_available(),
             "preview_html": render_markdown(report.body_md),
@@ -390,6 +458,19 @@ def report_requirements(
     _require_writer(user)
     report = ensure_author(_get_report(session, report_id), user)
     req_service.set_report_requirements(session, report, requirement_ids)
+    return _redirect(f"/reports/{report_id}/edit")
+
+
+@router.post("/reports/{report_id}/attachments")
+def report_attachments(
+    report_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+    attachment_ids: Annotated[list[int], Form()] = [],
+):
+    _require_writer(user)
+    report = ensure_editable(_get_report(session, report_id), user)
+    attachment_service.set_report_attachments(session, report, attachment_ids)
     return _redirect(f"/reports/{report_id}/edit")
 
 

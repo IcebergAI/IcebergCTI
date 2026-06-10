@@ -3,7 +3,7 @@
 ## Overview
 Iceberg is a cyber threat intelligence platform for collecting threat intelligence and, authoring and disseminating finished reports and artefacts to stakeholders. It follows the traditional Strategic, Tactical and Operational model for classifying intelligence levels. Iceberg also defines stakeholders and allows aligning intelligence goals with stakeholder requirements e.g. stakeholders are readonly users that can record intelligence goals which can be aggregated for analyst tasking. Stakeholders also define their preferred intelligence level and this drives dissemination. Classification of reports follows the TLP protocol. Reports are authored in markdown and published as finished reports in the portal. Iceberg doesn't deal directly in IOCs (though these may be surfaced in reports)
 
-Collection is notebook-based: analysts open a topic **notebook**, gather **sources** and **notes** in it, then author one or more **intelligence products** (reports) from that material.
+Collection is notebook-based: analysts open a topic **notebook**, gather **sources**, **notes** and uploaded **attachments** in it, then author one or more **intelligence products** (reports) from that material.
 
 ## Architecture
 API-first design consumed by a server-rendered portal; all endpoints authenticated using JWT.
@@ -24,7 +24,8 @@ Roles: `ADMIN`, `ANALYST`, `REVIEWER`, `STAKEHOLDER` (read-only).
 - **User** — identity, role, optional `preferred_intel_level`.
 - **Notebook** — topic workspace owned by an analyst; has many sources, notes and reports.
 - **Source** / **Note** — collected material inside a notebook.
-- **Report** (intelligence product) — markdown body, `intel_level` (STRATEGIC/TACTICAL/OPERATIONAL), `tlp`, lifecycle `status`, author/reviewer. Cites a subset of its notebook's sources (`ReportSource`).
+- **Attachment** — an uploaded reference file held against a notebook. Stored on disk under `ICEBERG_ATTACHMENTS_DIR` with a server-generated UUID name; the DB row keeps metadata + the original filename. Upload/download are **writer-only** (read-only stakeholders have no access); uploads are MIME-whitelisted and size-capped (`ICEBERG_ATTACHMENT_MAX_MB`, default 25). Citable in reports via `ReportAttachment` and listed in the rendered PDF's appendix. See `services/attachments.py`.
+- **Report** (intelligence product) — markdown body, `intel_level` (STRATEGIC/TACTICAL/OPERATIONAL), `tlp`, lifecycle `status`, author/reviewer. Cites a subset of its notebook's sources (`ReportSource`) and attachments (`ReportAttachment`).
 - **RenderedProduct** — an on-demand PDF for a report (FULL / EXEC_BRIEF / ONE_PAGER).
 - **Requirement** — stakeholder PIR/RFI with `priority` + `status`, feeding the analyst tasking board. Traced to the reports/notebooks that satisfy/address it via `ReportRequirement` / `NotebookRequirement`.
 - **DisseminationEvent** — a published report delivered to a stakeholder's feed, with read tracking.
@@ -61,7 +62,7 @@ src/iceberg/
   auth/            # OIDC (Entra) + dev login, JWT, role dependencies
   api/             # JSON routers: notebooks, reports, requirements, feed, account, preview
   web/             # portal routes (Jinja2)
-  services/        # users, lifecycle, citations/rendering, requirements, dissemination, email
+  services/        # users, lifecycle, citations/rendering, requirements, attachments, dissemination, email
   rendering/       # markdown->HTML, report->PDF
   templates/       # Jinja2 + Alpine (base, _glyph, _macros, one per screen)
   static/css/      # iceberg.css design system (served at /static/css/iceberg.css)
@@ -86,7 +87,7 @@ Test all crucial functionality with Pytest, create regression tests for identifi
 ```bash
 pytest
 ```
-Tests use an in-memory SQLite database (overriding the `get_session` dependency) and the dev-login bypass. Coverage includes auth gating, notebook/source/note/report CRUD, citation scoping, the lifecycle state machine (including illegal transitions and published-report immutability), markdown preview sanitization, the full portal authoring flow (exercises the templates), requirement roles/ownership/tasking/traceability, dissemination matching (intel level + TLP gate) with feed delivery / email outbox / read tracking / preferences, and a Typst render smoke test (skips when the binary is absent).
+Tests use an in-memory SQLite database (overriding the `get_session` dependency) and the dev-login bypass. Coverage includes auth gating, notebook/source/note/report CRUD, citation scoping, the lifecycle state machine (including illegal transitions and published-report immutability), markdown preview sanitization, the full portal authoring flow (exercises the templates), requirement roles/ownership/tasking/traceability, attachment upload/download/delete with MIME + size validation and writer-only access (incl. report citation scoping + publish immutability), dissemination matching (intel level + TLP gate) with feed delivery / email outbox / read tracking / preferences, and a Typst render smoke test (skips when the binary is absent).
 
 ## Scope / roadmap
 - **Milestone 1 (done)** — the authoring loop end-to-end: notebooks → sources/notes → report authoring with live preview → review/publish → Typst PDFs.

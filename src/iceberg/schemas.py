@@ -91,5 +91,11 @@ class RequirementLinks(BaseModel):
     requirement_ids: list[int]
 
 
+class AttachmentLinks(BaseModel):
+    """Set the notebook attachments a report cites."""
+
+    attachment_ids: list[int]
+
+
 class PreferencesUpdate(BaseModel):
     preferred_intel_level: IntelLevel | None = None
