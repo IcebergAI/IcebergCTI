@@ -122,7 +122,7 @@ def test_stakeholder_portal_intake(client, login):
     login("STAKEHOLDER", email="stake@example.com")
     resp = client.get("/requirements")
     assert resp.status_code == 200
-    assert "My intelligence requirements" in resp.text
+    assert "My requirements" in resp.text
 
     resp = client.post(
         "/requirements",

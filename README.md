@@ -16,7 +16,8 @@ review workflow, and can be rendered to branded PDF products.
 ## Stack
 - **Python ≥ 3.14**, **FastAPI** (single app: JSON API `/api/*` + server-rendered portal `/*`)
 - **SQLModel** on **SQLite**
-- **Jinja2 + Tailwind CSS + Alpine.js** portal
+- **Jinja2 + Alpine.js** portal with a "light editorial-intel" design system
+  (`static/css/iceberg.css`; Archivo / JetBrains Mono / Spectral; Tailwind CDN for utilities)
 - **markdown-it-py + nh3** for the live markdown preview
 - **Typst** for PDF rendering
 - **PyTest** for tests

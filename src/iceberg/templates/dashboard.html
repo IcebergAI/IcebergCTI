@@ -2,58 +2,87 @@
 {% import "_macros.html" as m %}
 {% block title %}Dashboard · {{ app_name }}{% endblock %}
 {% block content %}
+
 {% if user.role == 'STAKEHOLDER' and feed_unread %}
-  <a href="/feed" class="block mb-4 bg-blue-600 text-white rounded-lg px-4 py-3 text-sm hover:bg-blue-700">
-    📨 You have {{ feed_unread }} new item{{ '' if feed_unread == 1 else 's' }} in your feed →
+  <a href="/feed" class="banner mb-6">
+    <span class="dot" style="width:8px;height:8px;border-radius:50%;background:var(--accent-ink);"></span>
+    {{ feed_unread }} new item{{ '' if feed_unread == 1 else 's' }} in your intelligence feed
+    <span class="arrow">→</span>
   </a>
 {% endif %}
-<div class="grid md:grid-cols-3 gap-6">
-  <section class="md:col-span-2">
-    <div class="flex items-center justify-between mb-3">
-      <h1 class="text-xl font-bold">Notebooks</h1>
+
+<div class="head-row mb-7">
+  <div>
+    <div class="eyebrow eyebrow-accent">Workspace</div>
+    <h1 class="page-title mt-2">Good to see you, {{ user.display_name.split(' ')[0] }}</h1>
+    <div class="title-rule"></div>
+  </div>
+</div>
+
+<div class="grid lg:grid-cols-3 gap-7">
+  <section class="lg:col-span-2">
+    <div class="head-row mb-4">
+      <h2 class="section-title">Notebooks</h2>
+      <span class="eyebrow">{{ notebooks | length }} active</span>
     </div>
+
     {% if notebooks %}
       <div class="grid sm:grid-cols-2 gap-3">
         {% for nb in notebooks %}
-          <a href="/notebooks/{{ nb.id }}"
-             class="block bg-white rounded-lg shadow p-4 hover:shadow-md">
-            <div class="font-semibold">{{ nb.title }}</div>
-            <div class="text-sm text-slate-500">{{ nb.topic or "No topic set" }}</div>
+          <a href="/notebooks/{{ nb.id }}" class="tile">
+            <div class="flex items-start gap-2">
+              <span class="tile-title flex-1">{{ nb.title }}</span>
+              <span class="eyebrow" style="opacity:0.55;">→</span>
+            </div>
+            <div class="tile-meta">{{ nb.topic or "No topic set" }}</div>
           </a>
         {% endfor %}
       </div>
     {% else %}
-      <p class="text-slate-500">No notebooks yet.</p>
+      <div class="well card-pad text-center">
+        <p class="empty">No notebooks yet. {% if user.role != 'STAKEHOLDER' %}Start one below to begin collecting.{% endif %}</p>
+      </div>
     {% endif %}
 
     {% if user.role != 'STAKEHOLDER' %}
-      <form method="post" action="/notebooks" class="mt-5 bg-white rounded-lg shadow p-4 space-y-3">
-        <h2 class="font-semibold">New notebook</h2>
-        <input name="title" required placeholder="Title"
-               class="w-full border rounded px-3 py-2 text-sm">
-        <input name="topic" placeholder="Topic (e.g. APT29 tracking)"
-               class="w-full border rounded px-3 py-2 text-sm">
-        <button class="bg-slate-800 text-white rounded px-4 py-2 text-sm">Create notebook</button>
+      <form method="post" action="/notebooks" class="card card-pad mt-4">
+        <div class="eyebrow mb-3">New notebook</div>
+        <div class="grid sm:grid-cols-2 gap-3">
+          <div>
+            <label class="field-label">Title</label>
+            <input name="title" required placeholder="e.g. APT29 tracking" class="field">
+          </div>
+          <div>
+            <label class="field-label">Topic</label>
+            <input name="topic" placeholder="Focus area" class="field">
+          </div>
+        </div>
+        <button class="btn btn--ink mt-4">Create notebook</button>
       </form>
     {% endif %}
   </section>
 
   <section>
-    <h2 class="text-lg font-bold mb-3">Recent reports</h2>
-    <div class="space-y-2">
-      {% for r in recent_reports %}
-        <a href="/reports/{{ r.id }}" class="block bg-white rounded shadow p-3">
-          <div class="font-medium text-sm">{{ r.title }}</div>
-          <div class="mt-1 flex gap-1 flex-wrap">
-            {{ m.status_badge(r.status) }}
-            {{ m.level_badge(r.intel_level) }}
-            {{ m.tlp_badge(r.tlp) }}
-          </div>
-        </a>
-      {% else %}
-        <p class="text-slate-500 text-sm">No reports yet.</p>
-      {% endfor %}
+    <div class="head-row mb-4">
+      <h2 class="section-title">Recent reports</h2>
+      <a href="/reports" class="btn-link">All →</a>
     </div>
+    {% if recent_reports %}
+      <div class="rows">
+        {% for r in recent_reports %}
+          <a href="/reports/{{ r.id }}" class="row" style="flex-direction:column;align-items:stretch;gap:8px;">
+            <span class="row-title" style="line-height:1.35;">{{ r.title }}</span>
+            <span class="flex gap-1.5 flex-wrap items-center">
+              {{ m.status_badge(r.status) }}
+              {{ m.level_badge(r.intel_level) }}
+              {{ m.tlp_badge(r.tlp) }}
+            </span>
+          </a>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="well card-pad text-center"><p class="empty">No reports yet.</p></div>
+    {% endif %}
   </section>
 </div>
 {% endblock %}

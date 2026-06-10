@@ -41,6 +41,9 @@ TLP is a **display marking + a dissemination-routing input**; it does **not** ga
 ### Dissemination (`src/iceberg/services/dissemination.py`, `services/email.py`)
 On publish, Iceberg matches stakeholders and delivers the report to their **feed**: a stakeholder matches when (a) the report is broadcast-eligible under the TLP ceiling — reports at or below `ICEBERG_DISSEMINATION_MAX_TLP` (default AMBER) are disseminated, while RED / AMBER+STRICT are withheld — **and** (b) the report's `intel_level` equals the stakeholder's `preferred_intel_level` (or the stakeholder has set no preference = all levels). Feed delivery is recorded synchronously as `DisseminationEvent`s; an **email notification** is sent as a FastAPI background task. Email uses a pluggable backend (`ICEBERG_EMAIL_BACKEND`): `console` (default — records to an in-memory outbox + logs, for dev/tests) or `smtp`. Stakeholders set their preference at `/preferences` and read their feed at `/feed`.
 
+### Frontend / design system
+The portal is a "light editorial-intel" design — clean, print-like, authoritative. Styling lives in a hand-authored stylesheet `src/iceberg/static/css/iceberg.css` (oklch colour tokens, component classes like `.card` / `.btn` / `.tag` / `.board` / `.md`), served from the existing `/static` mount and linked in `base.html`. Tailwind CDN is still loaded (mapped to the same CSS variables) for utility classes, alongside Alpine.js. Three Google Fonts carry meaning: **Archivo** (UI/headings), **JetBrains Mono** (data/IDs/markings), **Spectral** (finished-product prose — the editor preview and published report body). The iceberg mark is inline SVG in `templates/_glyph.html` (included by `base.html` and `login.html`); active nav is derived from `request.url.path`. This is a skin over the same routes/forms/Alpine bindings — no behavioural coupling.
+
 ### Rendering
 - Markdown → sanitized HTML (`src/iceberg/rendering/markdown.py`, markdown-it-py + nh3) for the live preview and portal display.
 - Report → PDF: **via the Typst binary** (`src/iceberg/rendering/typst.py`). Markdown is rendered inside Typst by the `cmarker` package (fetched from the Typst registry on first use; version pinned in `src/iceberg/typst/product.typ`). If Typst is not installed, render endpoints return 503.
@@ -60,7 +63,8 @@ src/iceberg/
   web/             # portal routes (Jinja2)
   services/        # users, lifecycle, citations/rendering, requirements, dissemination, email
   rendering/       # markdown->HTML, report->PDF
-  templates/       # Jinja2 + Alpine
+  templates/       # Jinja2 + Alpine (base, _glyph, _macros, one per screen)
+  static/css/      # iceberg.css design system (served at /static/css/iceberg.css)
   typst/           # product.typ template
 tests/             # pytest
 ```
@@ -75,7 +79,7 @@ uvicorn iceberg.main:app --reload
 ```
 Optional for PDF rendering: install the [`typst`](https://github.com/typst/typst) binary on PATH.
 
-The portal currently loads Tailwind and Alpine from CDNs (dev convenience); production should switch to a built Tailwind stylesheet via the standalone CLI.
+The portal's own styling ships as `static/css/iceberg.css`; Tailwind, Alpine and the Google Fonts are still loaded from CDNs (dev convenience). For production, self-host the fonts and replace the Tailwind CDN with a built stylesheet (the design system in `iceberg.css` already does most of the work).
 
 ## Testing
 Test all crucial functionality with Pytest, create regression tests for identified bugs.

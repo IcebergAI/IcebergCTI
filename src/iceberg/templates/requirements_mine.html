@@ -2,39 +2,63 @@
 {% import "_macros.html" as m %}
 {% block title %}My requirements · {{ app_name }}{% endblock %}
 {% block content %}
-<div class="grid md:grid-cols-3 gap-6">
-  <section class="md:col-span-2">
-    <h1 class="text-xl font-bold mb-3">My intelligence requirements</h1>
-    <div class="bg-white rounded-lg shadow divide-y">
-      {% for r in requirements %}
-        <a href="/requirements/{{ r.id }}" class="flex items-center gap-3 px-4 py-3 hover:bg-slate-50">
-          <span class="font-medium flex-1">{{ r.title }}</span>
-          {{ m.req_status_badge(r.status) }}
-          {{ m.priority_badge(r.priority) }}
-          {{ m.level_badge(r.intel_level) }}
-        </a>
-      {% else %}
-        <p class="px-4 py-3 text-slate-500 text-sm">You haven't submitted any requirements yet.</p>
-      {% endfor %}
+
+<div class="head-row mb-7">
+  <div>
+    <div class="eyebrow eyebrow-accent">Intelligence requirements</div>
+    <h1 class="page-title mt-2">My requirements</h1>
+    <div class="title-rule"></div>
+  </div>
+</div>
+
+<div class="grid lg:grid-cols-3 gap-7">
+  <section class="lg:col-span-2">
+    <div class="head-row mb-4">
+      <h2 class="section-title">Submitted</h2>
+      <span class="eyebrow">{{ requirements | length }}</span>
     </div>
+    {% if requirements %}
+      <div class="rows">
+        {% for r in requirements %}
+          <a href="/requirements/{{ r.id }}" class="row">
+            <span class="row-title flex-1">{{ r.title }}</span>
+            <span class="flex gap-1.5 items-center flex-wrap">
+              {{ m.req_status_badge(r.status) }}
+              {{ m.priority_badge(r.priority) }}
+              {{ m.level_badge(r.intel_level) }}
+            </span>
+          </a>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="well card-pad-lg text-center"><p class="empty">You haven't submitted any requirements yet.</p></div>
+    {% endif %}
   </section>
 
   <section>
-    <h2 class="text-lg font-bold mb-3">Submit a requirement</h2>
-    <form method="post" action="/requirements" class="bg-white rounded-lg shadow p-4 space-y-3">
-      <input name="title" required placeholder="What do you need to know?"
-             class="w-full border rounded px-3 py-2 text-sm">
-      <textarea name="description" rows="3" placeholder="Context / detail"
-                class="w-full border rounded px-3 py-2 text-sm"></textarea>
-      <label class="block text-xs text-slate-500">Intelligence level</label>
-      <select name="intel_level" class="w-full border rounded px-2 py-2 text-sm">
-        {% for lvl in IntelLevel %}<option value="{{ lvl.value }}">{{ lvl.value }}</option>{% endfor %}
-      </select>
-      <label class="block text-xs text-slate-500">Priority</label>
-      <select name="priority" class="w-full border rounded px-2 py-2 text-sm">
-        {% for p in Priority %}<option value="{{ p.value }}" {% if p.value == 'MEDIUM' %}selected{% endif %}>{{ p.value }}</option>{% endfor %}
-      </select>
-      <button class="w-full bg-slate-800 text-white rounded px-4 py-2 text-sm">Submit</button>
+    <h2 class="section-title mb-4">Submit a requirement</h2>
+    <form method="post" action="/requirements" class="card card-pad-lg space-y-3">
+      <div>
+        <label class="field-label">What do you need to know?</label>
+        <input name="title" required placeholder="Intelligence question" class="field">
+      </div>
+      <div>
+        <label class="field-label">Context / detail</label>
+        <textarea name="description" rows="3" placeholder="Background, decisions this informs…" class="field"></textarea>
+      </div>
+      <div>
+        <label class="field-label">Intelligence level</label>
+        <select name="intel_level" class="field">
+          {% for lvl in IntelLevel %}<option value="{{ lvl.value }}">{{ lvl.value }}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="field-label">Priority</label>
+        <select name="priority" class="field">
+          {% for p in Priority %}<option value="{{ p.value }}" {% if p.value == 'MEDIUM' %}selected{% endif %}>{{ p.value }}</option>{% endfor %}
+        </select>
+      </div>
+      <button class="btn btn--primary w-full">Submit requirement</button>
     </form>
   </section>
 </div>

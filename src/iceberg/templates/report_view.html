@@ -1,52 +1,72 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m %}
 {% block title %}{{ report.title }} · {{ app_name }}{% endblock %}
+{% block page_class %}page-narrow{% endblock %}
 {% block content %}
-<article class="bg-white rounded-lg shadow p-6 max-w-3xl mx-auto">
-  <div class="flex gap-1 mb-2">
-    {{ m.status_badge(report.status) }}
-    {{ m.level_badge(report.intel_level) }}
+
+<a href="/reports" class="backlink">← Reports</a>
+
+<article class="doc mt-4">
+  <!-- classification / marking strip -->
+  <div class="doc-marker">
     {{ m.tlp_badge(report.tlp) }}
+    {{ m.level_badge(report.intel_level) }}
+    <span class="ml-auto eyebrow">
+      {% if report.published_at %}Published {{ report.published_at.strftime('%d %b %Y') }}{% else %}Draft{% endif %}
+    </span>
   </div>
-  <h1 class="text-2xl font-bold">{{ report.title }}</h1>
-  <p class="text-sm text-slate-500 mb-4">
-    {% if report.published_at %}Published {{ report.published_at.strftime('%Y-%m-%d') }}{% else %}Draft{% endif %}
-  </p>
-  <div class="prose prose-sm max-w-none">{{ body_html | safe }}</div>
 
-  {% if cited_sources %}
-    <h2 class="text-lg font-bold mt-6 mb-2">Sources</h2>
-    <ul class="list-disc pl-5 text-sm space-y-1">
-      {% for s in cited_sources %}
-        <li><span class="font-medium">{{ s.title }}</span>
-          {% if s.reference %}— <span class="text-blue-600">{{ s.reference }}</span>{% endif %}</li>
-      {% endfor %}
-    </ul>
-  {% endif %}
+  <div style="padding: 30px 40px 40px;">
+    <div class="flex items-center gap-1.5 mb-3">
+      {{ m.status_badge(report.status) }}
+    </div>
+    <h1 style="font-family:var(--fs-sans); font-size:30px; font-weight:800; letter-spacing:-0.02em; line-height:1.12; color:var(--ink);">{{ report.title }}</h1>
+    <div class="title-rule" style="margin-top:16px; margin-bottom:26px;"></div>
 
-  {% if requirements %}
-    <h2 class="text-lg font-bold mt-6 mb-2">Requirements satisfied</h2>
-    <ul class="list-disc pl-5 text-sm space-y-1">
-      {% for r in requirements %}
-        <li><a href="/requirements/{{ r.id }}" class="text-blue-600">{{ r.title }}</a></li>
-      {% endfor %}
-    </ul>
-  {% endif %}
+    <div class="md">{{ body_html | safe }}</div>
 
-  {% if products %}
-    <h2 class="text-lg font-bold mt-6 mb-2">Downloads</h2>
-    <ul class="text-sm space-y-1">
-      {% for p in products %}
-        <li><a class="text-blue-600" href="/reports/{{ report.id }}/products/{{ p.id }}/download">{{ p.format.value }} (PDF)</a></li>
-      {% endfor %}
-    </ul>
-  {% endif %}
-
-  {% if user.role != 'STAKEHOLDER' %}
-    {% if report.status.value == 'PUBLISHED' %}
-      <p class="mt-6 text-sm text-slate-500">📨 Disseminated to {{ dissemination_count }} stakeholder{{ '' if dissemination_count == 1 else 's' }}.</p>
+    {% if cited_sources %}
+      <h2 class="section-title mt-9 mb-3">Sources</h2>
+      <ol class="space-y-2" style="counter-reset:src; list-style:none; padding:0;">
+        {% for s in cited_sources %}
+          <li class="flex gap-3 text-sm" style="counter-increment:src;">
+            <span class="mono" style="color:var(--accent-deep); font-size:12px; min-width:1.6em;">[{{ loop.index }}]</span>
+            <span><span class="font-medium">{{ s.title }}</span>{% if s.reference %} — <span class="mono text-xs break-all" style="color:var(--accent-deep);">{{ s.reference }}</span>{% endif %}</span>
+          </li>
+        {% endfor %}
+      </ol>
     {% endif %}
-    <a href="/reports/{{ report.id }}/edit" class="inline-block mt-4 text-sm text-blue-600">Edit this report</a>
-  {% endif %}
+
+    {% if requirements %}
+      <h2 class="section-title mt-9 mb-3">Requirements satisfied</h2>
+      <ul class="space-y-1.5 text-sm" style="list-style:none; padding:0;">
+        {% for r in requirements %}
+          <li><a href="/requirements/{{ r.id }}" class="btn-link">↳ {{ r.title }}</a></li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+    {% if products %}
+      <h2 class="section-title mt-9 mb-3">Downloads</h2>
+      <div class="space-y-2">
+        {% for p in products %}
+          <a class="file-row" href="/reports/{{ report.id }}/products/{{ p.id }}/download" style="text-decoration:none; color:inherit;">
+            <span class="file-fmt">{{ p.format.value.replace('_',' ') }}</span>
+            <span class="mono text-xs" style="color:var(--muted);">PDF</span>
+            <span class="btn-link ml-auto">Download ↓</span>
+          </a>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </div>
 </article>
+
+{% if user.role != 'STAKEHOLDER' %}
+  <div class="flex items-center gap-4 mt-5">
+    {% if report.status.value == 'PUBLISHED' %}
+      <span class="eyebrow">Disseminated to {{ dissemination_count }} stakeholder{{ '' if dissemination_count == 1 else 's' }}</span>
+    {% endif %}
+    <a href="/reports/{{ report.id }}/edit" class="btn btn--ghost btn--sm ml-auto">Edit report</a>
+  </div>
+{% endif %}
 {% endblock %}

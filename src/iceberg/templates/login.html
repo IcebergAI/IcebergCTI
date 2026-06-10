@@ -1,41 +1,63 @@
 {% extends "base.html" %}
 {% block title %}Sign in · {{ app_name }}{% endblock %}
+{% block page_class %}page-narrow{% endblock %}
 {% block content %}
-<div class="max-w-md mx-auto mt-10 bg-white rounded-lg shadow p-6">
-  <h1 class="text-xl font-bold mb-1">Sign in to {{ app_name }}</h1>
-  <p class="text-sm text-slate-500 mb-6">Cyber threat intelligence platform</p>
-
-  {% if oidc_enabled %}
-    <a href="/auth/entra/login"
-       class="block w-full text-center bg-blue-600 hover:bg-blue-700 text-white rounded px-4 py-2 mb-4">
-      Sign in with Microsoft Entra ID
-    </a>
-  {% endif %}
-
-  {% if dev_login_enabled %}
-    <div class="border-t pt-4 mt-2">
-      <p class="text-xs uppercase tracking-wide text-amber-600 font-semibold mb-2">
-        Dev login (testing only)
-      </p>
-      <form method="post" action="/auth/dev-login" class="space-y-3">
-        <input name="name" value="{{ default_name }}"
-               class="w-full border rounded px-3 py-2 text-sm" placeholder="Name">
-        <input name="email" value="{{ default_email }}"
-               class="w-full border rounded px-3 py-2 text-sm" placeholder="Email">
-        <select name="role" class="w-full border rounded px-3 py-2 text-sm">
-          {% for r in roles %}
-            <option value="{{ r.value }}" {% if r.value == default_role %}selected{% endif %}>{{ r.value }}</option>
-          {% endfor %}
-        </select>
-        <button class="w-full bg-slate-800 hover:bg-slate-900 text-white rounded px-4 py-2">
-          Continue
-        </button>
-      </form>
+<div class="max-w-md mx-auto" style="margin-top: 4vh;">
+  <div class="flex items-center gap-3 mb-7">
+    {% include "_glyph.html" %}
+    <div>
+      <div class="brand-name" style="font-size:22px;">{{ app_name }}</div>
+      <div class="eyebrow eyebrow-accent" style="margin-top:2px;">Cyber Threat Intelligence</div>
     </div>
-  {% endif %}
+  </div>
 
-  {% if not oidc_enabled and not dev_login_enabled %}
-    <p class="text-sm text-red-600">No login method is enabled. Set ICEBERG_OIDC_ENABLED or ICEBERG_DEV_AUTH.</p>
-  {% endif %}
+  <div class="card card-pad-lg">
+    <h1 class="page-title" style="font-size:22px;">Sign in</h1>
+    <p class="lede" style="margin-top:6px;">Collect, author and disseminate finished intelligence.</p>
+    <div class="title-rule"></div>
+
+    {% if oidc_enabled %}
+      <a href="/auth/entra/login" class="btn btn--ink w-full mt-6" style="padding:11px;">
+        Continue with Microsoft Entra ID
+      </a>
+    {% endif %}
+
+    {% if dev_login_enabled %}
+      <div class="{% if oidc_enabled %}mt-6 pt-6 border-t border-line{% else %}mt-6{% endif %}">
+        <div class="flex items-center gap-2 mb-4">
+          <span class="eyebrow" style="letter-spacing:0.14em;">Developer access</span>
+          <span class="tag tag--c is-warn" style="font-size:9.5px;"><span class="dot"></span>Local only</span>
+        </div>
+        <form method="post" action="/auth/dev-login" class="space-y-3">
+          <div>
+            <label class="field-label">Name</label>
+            <input name="name" value="{{ default_name }}" class="field" placeholder="Analyst name">
+          </div>
+          <div>
+            <label class="field-label">Email</label>
+            <input name="email" value="{{ default_email }}" class="field" placeholder="you@agency.gov">
+          </div>
+          <div>
+            <label class="field-label">Role</label>
+            <select name="role" class="field">
+              {% for r in roles %}
+                <option value="{{ r.value }}" {% if r.value == default_role %}selected{% endif %}>{{ r.value }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <button class="btn btn--primary w-full" style="padding:10px;">Enter portal</button>
+        </form>
+      </div>
+    {% endif %}
+
+    {% if not oidc_enabled and not dev_login_enabled %}
+      <p class="mt-5 text-sm" style="color:var(--tlp-red);">
+        No login method is enabled. Set <code class="mono">ICEBERG_OIDC_ENABLED</code> or
+        <code class="mono">ICEBERG_DEV_AUTH</code>.
+      </p>
+    {% endif %}
+  </div>
+
+  <p class="eyebrow text-center mt-6" style="opacity:0.7;">Authorized use · activity is recorded</p>
 </div>
 {% endblock %}

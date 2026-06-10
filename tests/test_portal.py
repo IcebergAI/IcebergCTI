@@ -47,7 +47,7 @@ def test_full_authoring_flow_through_portal(client, login):
         data={"title": "LockBit update", "intel_level": "TACTICAL", "tlp": "AMBER"},
     )
     assert resp.status_code == 200
-    assert "Live preview" in resp.text
+    assert "Finished preview" in resp.text
     rid = _first_report_id(client)
 
     # Save body content.

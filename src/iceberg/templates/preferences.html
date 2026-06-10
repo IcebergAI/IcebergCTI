@@ -1,21 +1,35 @@
 {% extends "base.html" %}
 {% block title %}Preferences · {{ app_name }}{% endblock %}
+{% block page_class %}page-narrow{% endblock %}
 {% block content %}
-<div class="max-w-md mx-auto bg-white rounded-lg shadow p-6">
-  <h1 class="text-xl font-bold mb-1">Dissemination preferences</h1>
-  <p class="text-sm text-slate-500 mb-4">Choose which intelligence level you want
-    delivered to your feed. "All levels" receives everything you're eligible for.</p>
-  <form method="post" action="/preferences" class="space-y-3">
-    <select name="preferred_intel_level" class="w-full border rounded px-3 py-2 text-sm">
+
+<div class="mb-7">
+  <div class="eyebrow eyebrow-accent">Dissemination</div>
+  <h1 class="page-title mt-2">Preferences</h1>
+  <div class="title-rule"></div>
+</div>
+
+<div class="grid md:grid-cols-3 gap-6">
+  <form method="post" action="/preferences" class="card card-pad-lg md:col-span-2">
+    <h2 class="section-title mb-1">Preferred intelligence level</h2>
+    <p class="text-xs mb-4" style="color:var(--muted);">Choose which level lands in your feed. "All levels" receives everything you're eligible for.</p>
+    <label class="field-label">Level</label>
+    <select name="preferred_intel_level" class="field" style="max-width:280px;">
       <option value="" {% if not user.preferred_intel_level %}selected{% endif %}>All levels</option>
       {% for lvl in IntelLevel %}
-        <option value="{{ lvl.value }}"
-          {% if user.preferred_intel_level and user.preferred_intel_level == lvl %}selected{% endif %}>
-          {{ lvl.value }}
-        </option>
+        <option value="{{ lvl.value }}" {% if user.preferred_intel_level and user.preferred_intel_level == lvl %}selected{% endif %}>{{ lvl.value }}</option>
       {% endfor %}
     </select>
-    <button class="bg-slate-800 text-white rounded px-4 py-2 text-sm">Save preferences</button>
+    <div class="mt-5"><button class="btn btn--ink">Save preferences</button></div>
   </form>
+
+  <aside class="well card-pad-lg">
+    <div class="eyebrow mb-3">How matching works</div>
+    <p class="text-sm" style="color:var(--ink-soft); line-height:1.6;">
+      On publish, a report reaches you when its intel level matches your preference
+      <em>and</em> its TLP marking is within the broadcast ceiling. Restricted markings
+      (TLP:RED, AMBER+STRICT) are withheld from the feed.
+    </p>
+  </aside>
 </div>
 {% endblock %}

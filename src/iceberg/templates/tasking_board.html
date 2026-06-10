@@ -2,26 +2,39 @@
 {% import "_macros.html" as m %}
 {% block title %}Tasking board · {{ app_name }}{% endblock %}
 {% block content %}
-<h1 class="text-xl font-bold mb-4">Analyst tasking board</h1>
-<div class="grid md:grid-cols-4 gap-4">
+
+<div class="head-row mb-7">
+  <div>
+    <div class="eyebrow eyebrow-accent">Collection management</div>
+    <h1 class="page-title mt-2">Analyst tasking board</h1>
+    <div class="title-rule"></div>
+  </div>
+  <span class="eyebrow">Aggregated stakeholder requirements</span>
+</div>
+
+{% set col_class = {'OPEN':'col--open','IN_PROGRESS':'col--prog','SATISFIED':'col--done','CLOSED':'col--closed'} %}
+<div class="board">
   {% for s in statuses %}
-    <div class="bg-slate-100 rounded-lg p-3">
-      <div class="flex items-center justify-between mb-2">
-        <h2 class="font-semibold text-sm">{{ s.value.replace('_', ' ') }}</h2>
-        <span class="text-xs text-slate-500">{{ board[s] | length }}</span>
+    <div class="col {{ col_class.get(s.value, '') }}">
+      <div class="col-head">
+        <span class="col-name">{{ s.value.replace('_', ' ') }}</span>
+        <span class="col-count">{{ board[s] | length }}</span>
       </div>
-      <div class="space-y-2">
+      <div>
         {% for r in board[s] %}
-          <a href="/requirements/{{ r.id }}" class="block bg-white rounded shadow-sm p-3 hover:shadow">
-            <div class="text-sm font-medium">{{ r.title }}</div>
-            <div class="mt-1 flex gap-1 flex-wrap">
+          <a href="/requirements/{{ r.id }}" class="req-card">
+            <div class="req-card-title">{{ r.title }}</div>
+            <div class="mt-2 flex gap-1.5 flex-wrap items-center">
               {{ m.priority_badge(r.priority) }}
               {{ m.level_badge(r.intel_level) }}
             </div>
-            <div class="mt-1 text-xs text-slate-400">{{ r.stakeholder.display_name }}</div>
+            <div class="req-card-by">
+              <span style="width:5px;height:5px;border-radius:50%;background:var(--faint);"></span>
+              {{ r.stakeholder.display_name }}
+            </div>
           </a>
         {% else %}
-          <p class="text-xs text-slate-400">—</p>
+          <p class="col-empty">—</p>
         {% endfor %}
       </div>
     </div>

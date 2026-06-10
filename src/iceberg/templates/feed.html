@@ -2,28 +2,37 @@
 {% import "_macros.html" as m %}
 {% block title %}Feed · {{ app_name }}{% endblock %}
 {% block content %}
-<h1 class="text-xl font-bold mb-1">Your intelligence feed</h1>
-<p class="text-sm text-slate-500 mb-4">Published reports matched to your preferred
-  intelligence level. Manage it in <a href="/preferences" class="text-blue-600">Preferences</a>.</p>
 
-<div class="bg-white rounded-lg shadow divide-y">
-  {% for item in items %}
-    {% set r = item.report %}
-    <a href="/reports/{{ r.id }}" class="flex items-center gap-3 px-4 py-3 hover:bg-slate-50">
-      {% if item.event.id in unread_ids %}
-        <span class="w-2 h-2 rounded-full bg-blue-600" title="New"></span>
-      {% else %}
-        <span class="w-2 h-2"></span>
-      {% endif %}
-      <span class="flex-1">
-        <span class="font-medium">{{ r.title }}</span>
-        <span class="block text-xs text-slate-400">{{ item.event.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
-      </span>
-      {{ m.level_badge(r.intel_level) }}
-      {{ m.tlp_badge(r.tlp) }}
-    </a>
-  {% else %}
-    <p class="px-4 py-3 text-slate-500 text-sm">Nothing disseminated to you yet.</p>
-  {% endfor %}
+<div class="head-row mb-7">
+  <div>
+    <div class="eyebrow eyebrow-accent">Delivered to you</div>
+    <h1 class="page-title mt-2">Intelligence feed</h1>
+    <p class="lede mt-1">Published reports matched to your preferred level. Tune it in
+      <a href="/preferences" class="btn-link">Preferences</a>.</p>
+    <div class="title-rule"></div>
+  </div>
 </div>
+
+{% if items %}
+  <div class="rows">
+    {% for item in items %}
+      {% set r = item.report %}
+      <a href="/reports/{{ r.id }}" class="row">
+        {% if item.event.id in unread_ids %}
+          <span style="width:8px;height:8px;border-radius:50%;background:var(--accent-ink);flex:none;" title="New"></span>
+        {% else %}
+          <span style="width:8px;height:8px;flex:none;"></span>
+        {% endif %}
+        <span class="flex-1">
+          <span class="row-title {% if item.event.id in unread_ids %}font-bold{% endif %}">{{ r.title }}</span>
+          <span class="mono text-xs block mt-0.5" style="color:var(--faint);">{{ item.event.created_at.strftime('%Y-%m-%d · %H:%M') }}</span>
+        </span>
+        {{ m.level_badge(r.intel_level) }}
+        {{ m.tlp_badge(r.tlp) }}
+      </a>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="well card-pad-lg text-center"><p class="empty">Nothing disseminated to you yet.</p></div>
+{% endif %}
 {% endblock %}
