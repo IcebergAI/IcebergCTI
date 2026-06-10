@@ -12,8 +12,36 @@
   <div class="title-rule"></div>
 </div>
 
+<nav class="collection-strip mb-6" aria-label="Notebook collection checklist">
+  <a href="#sources" class="collection-step {{ 'is-done' if sources else '' }}">
+    <span class="step-kicker">Sources</span>
+    <strong>{{ sources | length }}</strong>
+    <span>Evidence captured</span>
+  </a>
+  <a href="#notes" class="collection-step {{ 'is-done' if notes else '' }}">
+    <span class="step-kicker">Notes</span>
+    <strong>{{ notes | length }}</strong>
+    <span>Analyst observations</span>
+  </a>
+  <a href="#attachments" class="collection-step {{ 'is-done' if attachments else '' }}">
+    <span class="step-kicker">Files</span>
+    <strong>{{ attachments | length }}</strong>
+    <span>Reference material</span>
+  </a>
+  <a href="#products" class="collection-step {{ 'is-done' if reports else '' }}">
+    <span class="step-kicker">Products</span>
+    <strong>{{ reports | length }}</strong>
+    <span>Finished intelligence</span>
+  </a>
+  <a href="#requirements" class="collection-step {{ 'is-done' if linked_req_ids else '' }}">
+    <span class="step-kicker">Requirements</span>
+    <strong>{{ linked_req_ids | length }}</strong>
+    <span>Traceability links</span>
+  </a>
+</nav>
+
 <!-- Intelligence products -->
-<section class="card card-pad-lg mb-6">
+<section id="products" class="card card-pad-lg mb-6">
   <div class="head-row mb-4">
     <h2 class="section-title">Intelligence products</h2>
     <span class="eyebrow">{{ reports | length }}</span>
@@ -33,7 +61,7 @@
       {% endfor %}
     </div>
   {% else %}
-    <p class="empty">No products authored from this notebook yet.</p>
+    <p class="empty">No products authored from this notebook yet. Start one when the collection has enough context for an assessment.</p>
   {% endif %}
 
   {% if can_write %}
@@ -64,7 +92,7 @@
 
 <div class="grid md:grid-cols-2 gap-6 mb-6">
   <!-- Sources -->
-  <section class="card card-pad-lg">
+  <section id="sources" class="card card-pad-lg">
     <div class="head-row mb-4">
       <h2 class="section-title">Sources</h2>
       <span class="eyebrow">{{ sources | length }}</span>
@@ -80,7 +108,7 @@
         {% endfor %}
       </ul>
     {% else %}
-      <p class="empty">No sources collected yet.</p>
+      <p class="empty">No sources collected yet. Add the first source with a URL, citation, or reference note.</p>
     {% endif %}
     {% if can_write %}
       <form method="post" action="/notebooks/{{ notebook.id }}/sources" class="space-y-2.5 mt-5 pt-5 border-t border-line">
@@ -93,7 +121,7 @@
   </section>
 
   <!-- Notes -->
-  <section class="card card-pad-lg">
+  <section id="notes" class="card card-pad-lg">
     <div class="head-row mb-4">
       <h2 class="section-title">Working notes</h2>
       <span class="eyebrow">{{ notes | length }}</span>
@@ -105,7 +133,7 @@
         {% endfor %}
       </ul>
     {% else %}
-      <p class="empty">No notes yet.</p>
+      <p class="empty">No notes yet. Capture observations before they turn into report prose.</p>
     {% endif %}
     {% if can_write %}
       <form method="post" action="/notebooks/{{ notebook.id }}/notes" class="space-y-2.5 mt-5 pt-5 border-t border-line">
@@ -117,7 +145,7 @@
 </div>
 
 <!-- Attachments -->
-<section class="card card-pad-lg mb-6">
+<section id="attachments" class="card card-pad-lg mb-6">
   <div class="head-row mb-4">
     <h2 class="section-title">Attachments</h2>
     <span class="eyebrow">{{ attachments | length }}</span>
@@ -140,7 +168,7 @@
       {% endfor %}
     </div>
   {% else %}
-    <p class="empty">No files attached yet.</p>
+    <p class="empty">No files attached yet. Upload PDFs, images, or office files that should stay with this collection.</p>
   {% endif %}
   {% if can_write %}
     <form method="post" action="/notebooks/{{ notebook.id }}/attachments" enctype="multipart/form-data"
@@ -154,7 +182,7 @@
 </section>
 
 <!-- Requirements addressed -->
-<section class="card card-pad-lg">
+<section id="requirements" class="card card-pad-lg">
   <h2 class="section-title mb-1">Requirements addressed</h2>
   <p class="text-xs mb-4" style="color:var(--muted);">Link the stakeholder requirements this notebook helps satisfy.</p>
   {% if all_requirements %}
@@ -174,7 +202,7 @@
       {% if can_write %}<button class="btn btn--ghost btn--sm mt-4">Update links</button>{% endif %}
     </form>
   {% else %}
-    <p class="empty">No open requirements to link.</p>
+    <p class="empty">No open requirements to link. Stakeholder requirements will appear here when they are available for tasking.</p>
   {% endif %}
 </section>
 {% endblock %}

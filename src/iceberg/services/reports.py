@@ -1,6 +1,8 @@
 """Report operations shared by the API and portal: authorization guards,
 citations and rendering."""
 
+from pathlib import Path
+
 from fastapi import HTTPException, status
 from sqlmodel import Session, col, select
 
@@ -93,3 +95,14 @@ def render_report(
     session.commit()
     session.refresh(product)
     return product
+
+
+def delete_rendered_product(session: Session, product: RenderedProduct) -> None:
+    """Delete a rendered product row, then best-effort remove the PDF."""
+    path = Path(product.pdf_path)
+    session.delete(product)
+    session.commit()
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass

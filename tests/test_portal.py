@@ -2,6 +2,10 @@
 so template/macro errors surface, and verify the full authoring flow through
 the HTML routes."""
 
+from sqlmodel import Session
+
+from iceberg.models import ProductFormat, RenderedProduct
+
 
 def _first_notebook_id(client) -> int:
     return client.get("/api/notebooks").json()[0]["id"]
@@ -84,6 +88,115 @@ def test_full_authoring_flow_through_portal(client, login):
 
     # Reports list renders.
     assert client.get("/reports").status_code == 200
+
+
+def test_report_citation_update_returns_to_citation_section(client, login):
+    login("ANALYST")
+    nb = client.post("/api/notebooks", json={"title": "Source trail"}).json()
+    src = client.post(
+        f"/api/notebooks/{nb['id']}/sources",
+        json={"title": "Primary source", "reference": "https://example.test"},
+    ).json()
+    report = client.post(
+        "/api/reports",
+        json={
+            "notebook_id": nb["id"],
+            "title": "Source-backed report",
+            "intel_level": "TACTICAL",
+            "tlp": "AMBER",
+        },
+    ).json()
+
+    resp = client.post(
+        f"/reports/{report['id']}/citations",
+        data={"source_ids": [src["id"]]},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 303
+    assert resp.headers["location"].endswith(
+        f"/reports/{report['id']}/edit?updated=citations#citations"
+    )
+
+    saved = client.get(f"/reports/{report['id']}/edit?updated=citations")
+    assert saved.status_code == 200
+    assert "Update citations" not in saved.text
+    assert "Citations updated." not in saved.text
+
+
+def test_report_citation_autosave_returns_no_content(client, login):
+    login("ANALYST")
+    nb = client.post("/api/notebooks", json={"title": "Autosave trail"}).json()
+    src = client.post(
+        f"/api/notebooks/{nb['id']}/sources",
+        json={"title": "Background source", "reference": "https://example.test"},
+    ).json()
+    report = client.post(
+        "/api/reports",
+        json={
+            "notebook_id": nb["id"],
+            "title": "Autosaved report",
+            "intel_level": "TACTICAL",
+            "tlp": "AMBER",
+        },
+    ).json()
+
+    resp = client.post(
+        f"/reports/{report['id']}/citations",
+        data={"source_ids": [src["id"]]},
+        headers={"X-Requested-With": "fetch"},
+    )
+
+    assert resp.status_code == 204
+    detail = client.get(f"/api/reports/{report['id']}").json()
+    assert detail["cited_sources"][0]["id"] == src["id"]
+
+
+def test_rendered_product_can_be_deleted_from_portal(
+    client, login, engine, tmp_path
+):
+    login("ANALYST", email="author@example.com")
+    nb = client.post("/api/notebooks", json={"title": "Rendered trail"}).json()
+    report = client.post(
+        "/api/reports",
+        json={
+            "notebook_id": nb["id"],
+            "title": "Rendered report",
+            "intel_level": "TACTICAL",
+            "tlp": "AMBER",
+        },
+    ).json()
+    pdf = tmp_path / "report.pdf"
+    pdf.write_bytes(b"%PDF-1.7\n%%EOF")
+
+    with Session(engine) as session:
+        product = RenderedProduct(
+            report_id=report["id"],
+            format=ProductFormat.FULL,
+            pdf_path=str(pdf),
+        )
+        session.add(product)
+        session.commit()
+        session.refresh(product)
+        product_id = product.id
+
+    edit = client.get(f"/reports/{report['id']}/edit")
+    assert edit.status_code == 200
+    assert f"/reports/{report['id']}/products/{product_id}/delete" in edit.text
+    assert "Delete rendered product" in edit.text
+
+    resp = client.post(
+        f"/reports/{report['id']}/products/{product_id}/delete",
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    assert resp.headers["location"].endswith(
+        f"/reports/{report['id']}/edit#rendered-products"
+    )
+    saved = client.get(resp.headers["location"])
+    assert "PDF product rendered." not in saved.text
+    assert not pdf.exists()
+    assert client.get(f"/api/reports/{report['id']}/products").json() == []
 
 
 def test_stakeholder_portal_is_read_only(client, login):
