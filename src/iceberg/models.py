@@ -9,6 +9,7 @@ milestone.
 from datetime import datetime, timezone
 from enum import StrEnum
 
+from sqlalchemy import UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -103,6 +104,19 @@ class RequirementStatus(StrEnum):
     CLOSED = "CLOSED"
 
 
+class TagKind(StrEnum):
+    """Facets of the controlled CTI taxonomy. Threat actors, campaigns and
+    malware are org-curated; TECHNIQUE carries a MITRE ATT&CK id in
+    ``external_id``; SECTOR/TOPIC are controlled vocabularies."""
+
+    ACTOR = "ACTOR"
+    CAMPAIGN = "CAMPAIGN"
+    MALWARE = "MALWARE"
+    TECHNIQUE = "TECHNIQUE"
+    SECTOR = "SECTOR"
+    TOPIC = "TOPIC"
+
+
 # --------------------------------------------------------------------------- #
 # Link tables
 # --------------------------------------------------------------------------- #
@@ -156,6 +170,17 @@ class ReportAttachment(SQLModel, table=True):
         foreign_key="attachment.id",
         ondelete="CASCADE",
         primary_key=True,
+    )
+
+
+class ReportTag(SQLModel, table=True):
+    """Taxonomy: a report is classified with a tag from the controlled vocabulary."""
+
+    report_id: int | None = Field(
+        default=None, foreign_key="report.id", ondelete="CASCADE", primary_key=True
+    )
+    tag_id: int | None = Field(
+        default=None, foreign_key="tag.id", ondelete="CASCADE", primary_key=True
     )
 
 
@@ -273,6 +298,9 @@ class Report(SQLModel, table=True):
     requirements: list["Requirement"] = Relationship(
         back_populates="reports", link_model=ReportRequirement
     )
+    tags: list["Tag"] = Relationship(
+        back_populates="reports", link_model=ReportTag
+    )
     dissemination_events: list["DisseminationEvent"] = Relationship(
         back_populates="report", cascade_delete=True
     )
@@ -321,6 +349,27 @@ _PRIORITY_RANK = {
 def priority_rank(priority: Priority) -> int:
     """Sort key (higher = more urgent) for ordering the tasking board."""
     return _PRIORITY_RANK[Priority(priority)]
+
+
+class Tag(SQLModel, table=True):
+    """A term in the controlled CTI taxonomy. Admin-curated; analysts select
+    (never create) tags when classifying a report. Retired tags (``active`` =
+    False) stay attached to historical reports but are no longer offered."""
+
+    __table_args__ = (UniqueConstraint("kind", "slug", name="uq_tag_kind_slug"),)
+
+    id: int | None = Field(default=None, primary_key=True)
+    kind: TagKind = Field(index=True)
+    label: str
+    slug: str = Field(index=True)  # normalised label; unique within a kind
+    external_id: str = ""  # e.g. MITRE ATT&CK technique id "T1566"
+    description: str = ""
+    active: bool = Field(default=True)
+    created_at: datetime = Field(default_factory=utcnow)
+
+    reports: list[Report] = Relationship(
+        back_populates="tags", link_model=ReportTag
+    )
 
 
 class DisseminationEvent(SQLModel, table=True):

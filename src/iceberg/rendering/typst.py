@@ -19,7 +19,7 @@ from datetime import date
 from pathlib import Path
 
 from ..config import get_settings
-from ..models import Attachment, ProductFormat, Report, Source, tlp_label
+from ..models import Attachment, ProductFormat, Report, Source, Tag, tlp_label
 
 settings = get_settings()
 _TEMPLATE = Path(__file__).resolve().parent.parent / "typst" / "product.typ"
@@ -42,6 +42,7 @@ def _build_data(
     author_name: str,
     sources: list[Source],
     attachments: list[Attachment],
+    tags: list[Tag],
 ) -> dict:
     stamp = report.published_at or report.updated_at
     return {
@@ -61,6 +62,10 @@ def _build_data(
             {"filename": a.original_filename, "summary": a.summary}
             for a in attachments
         ],
+        "tags": [
+            {"kind": t.kind.value, "label": t.label, "external_id": t.external_id}
+            for t in tags
+        ],
     }
 
 
@@ -70,6 +75,7 @@ def render_product(
     author_name: str,
     sources: list[Source],
     attachments: list[Attachment] | None = None,
+    tags: list[Tag] | None = None,
     fmt: ProductFormat,
 ) -> Path:
     if not typst_available():
@@ -87,7 +93,7 @@ def render_product(
         tmp_dir = Path(tmp)
         (tmp_dir / "data.json").write_text(
             json.dumps(
-                _build_data(report, author_name, sources, attachments or [])
+                _build_data(report, author_name, sources, attachments or [], tags or [])
             ),
             encoding="utf-8",
         )

@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Taxonomy · {{ app_name }}{% endblock %}
+{% block content %}
+
+<div class="head-row mb-5">
+  <div>
+    <div class="eyebrow eyebrow-accent">Administration</div>
+    <h1 class="page-title mt-2">Tag taxonomy</h1>
+    <div class="title-rule"></div>
+  </div>
+</div>
+
+<p class="text-sm mb-5" style="color:var(--muted);">
+  The controlled vocabulary analysts classify reports against. Retire a tag to remove it from
+  the picker while keeping it on historical reports; delete only genuinely mistaken entries.
+</p>
+
+<!-- Create -->
+<section class="card card-pad-lg mb-6">
+  <h2 class="section-title mb-3">Add a tag</h2>
+  <form method="post" action="/admin/tags" class="grid gap-3" style="grid-template-columns: 160px 1fr 140px auto;">
+    <select name="kind" class="field">
+      {% for k in kinds %}<option value="{{ k.value }}">{{ k.value.title() }}</option>{% endfor %}
+    </select>
+    <input name="label" placeholder="Label (e.g. APT29, Phishing)" class="field" required>
+    <input name="external_id" placeholder="Ext. id (e.g. T1566)" class="field">
+    <button class="btn btn--ink btn--sm">Add</button>
+  </form>
+</section>
+
+{% for kind, tags in tags_by_kind.items() %}
+  <section class="card card-pad-lg mb-5">
+    <h2 class="section-title mb-3">{{ kind.value.title() }} <span class="eyebrow">· {{ tags | length }}</span></h2>
+    <div class="space-y-2">
+      {% for t in tags %}
+        <div class="file-row" style="gap:10px;">
+          <span style="min-width:130px;">{{ m.tag_chip(t, link=False) }}</span>
+          <form method="post" action="/admin/tags/{{ t.id }}" class="flex items-center gap-2 flex-1 flex-wrap">
+            <input name="label" value="{{ t.label }}" class="field" style="flex:1; min-width:140px;">
+            <input name="external_id" value="{{ t.external_id }}" placeholder="ext id" class="field" style="width:110px;">
+            <label class="check" style="white-space:nowrap;">
+              <input type="checkbox" name="active" value="true" {% if t.active %}checked{% endif %}>
+              <span>Active</span>
+            </label>
+            <button class="btn btn--ghost btn--sm">Save</button>
+          </form>
+          <form method="post" action="/admin/tags/{{ t.id }}/delete"
+                onsubmit="return confirm('Delete this tag? It will be removed from any reports using it.');">
+            <button class="icon-action icon-action--danger" type="submit"
+                    aria-label="Delete tag" title="Delete tag"></button>
+          </form>
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+{% else %}
+  <div class="well card-pad-lg text-center"><p class="empty">No tags yet. Add one above.</p></div>
+{% endfor %}
+{% endblock %}

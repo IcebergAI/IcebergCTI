@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Search · {{ app_name }}{% endblock %}
+{% block content %}
+
+<div class="head-row mb-5">
+  <div>
+    <div class="eyebrow eyebrow-accent">Discovery</div>
+    <h1 class="page-title mt-2">
+      {% if active_tag %}Tagged · {{ active_tag.label }}{% else %}Search reports{% endif %}
+    </h1>
+    <div class="title-rule"></div>
+  </div>
+  <span class="eyebrow">{{ items | length }} result{{ '' if items|length == 1 else 's' }}</span>
+</div>
+
+<form method="get" action="/search" class="grid gap-6" style="grid-template-columns: 250px 1fr; align-items:start;">
+  <!-- Facets -->
+  <aside class="card card-pad space-y-5">
+    <div>
+      <input name="q" value="{{ q }}" placeholder="Search title & body…" class="field">
+      <button class="btn btn--ink btn--sm mt-2" style="width:100%;">Search</button>
+    </div>
+
+    {% for kind, tags in facet_tags.items() %}
+      <div>
+        <div class="eyebrow mb-2">{{ kind.value.title() }}</div>
+        <div class="flex flex-col gap-1.5">
+          {% for t in tags %}
+            <label class="chip-check">
+              <input type="checkbox" name="tag" value="{{ t.id }}"
+                     {% if t.id in selected_tags %}checked{% endif %}
+                     onchange="this.form.submit()">
+              {{ m.tag_chip(t, link=False) }}
+            </label>
+          {% endfor %}
+        </div>
+      </div>
+    {% endfor %}
+
+    <div>
+      <label class="field-label">Intel level</label>
+      <select name="intel_level" class="field" onchange="this.form.submit()">
+        <option value="">Any</option>
+        {% for lvl in IntelLevel %}<option value="{{ lvl.value }}" {% if intel_level == lvl %}selected{% endif %}>{{ lvl.value }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="field-label">TLP</label>
+      <select name="tlp" class="field" onchange="this.form.submit()">
+        <option value="">Any</option>
+        {% for t in TLP %}<option value="{{ t.value }}" {% if tlp == t %}selected{% endif %}>{{ tlp_label(t) }}</option>{% endfor %}
+      </select>
+    </div>
+    {% if user.role != 'STAKEHOLDER' %}
+      <div>
+        <label class="field-label">Status</label>
+        <select name="status" class="field" onchange="this.form.submit()">
+          <option value="">Any</option>
+          {% for s in ReportStatus %}<option value="{{ s.value }}" {% if status == s %}selected{% endif %}>{{ s.value.replace('_',' ') }}</option>{% endfor %}
+        </select>
+      </div>
+    {% endif %}
+
+    <a href="/search" class="btn-link" style="font-size:12px;">Clear filters</a>
+  </aside>
+
+  <!-- Results -->
+  <div>
+    {% if items %}
+      <div class="rows">
+        {% for it in items %}
+          <a href="/reports/{{ it.report.id }}" class="row">
+            <span class="flex-1">
+              <span class="row-title">{{ it.report.title }}</span>
+              {% if it.tags %}
+                <span class="flex gap-1 flex-wrap mt-1.5">
+                  {% for t in it.tags %}{{ m.tag_chip(t, link=False) }}{% endfor %}
+                </span>
+              {% endif %}
+            </span>
+            <span class="flex gap-1.5 items-center flex-wrap">
+              {{ m.status_badge(it.report.status) }}
+              {{ m.level_badge(it.report.intel_level) }}
+              {{ m.tlp_badge(it.report.tlp) }}
+            </span>
+          </a>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="well card-pad-lg text-center">
+        <p class="empty">No reports match{% if q %} “{{ q }}”{% endif %}.</p>
+      </div>
+    {% endif %}
+  </div>
+</form>
+{% endblock %}

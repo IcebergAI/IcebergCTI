@@ -42,10 +42,14 @@
       <div class="nav-links">
         <a href="/" class="nav-link {{ 'is-active' if path == '/' }}">Dashboard</a>
         <a href="/reports" class="nav-link {{ 'is-active' if path.startswith('/reports') }}">Reports</a>
+        <a href="/search" class="nav-link {{ 'is-active' if path.startswith('/search') or path.startswith('/tags') }}">Search</a>
         <a href="/requirements" class="nav-link {{ 'is-active' if path.startswith('/requirements') }}">{% if user.role == 'STAKEHOLDER' %}Requirements{% else %}Tasking{% endif %}</a>
         {% if user.role == 'STAKEHOLDER' %}
           <a href="/feed" class="nav-link {{ 'is-active' if path.startswith('/feed') }}">Feed</a>
           <a href="/preferences" class="nav-link {{ 'is-active' if path.startswith('/preferences') }}">Preferences</a>
+        {% endif %}
+        {% if user.role == 'ADMIN' %}
+          <a href="/admin/tags" class="nav-link {{ 'is-active' if path.startswith('/admin/tags') }}">Taxonomy</a>
         {% endif %}
       </div>
       <div class="nav-spacer"></div>

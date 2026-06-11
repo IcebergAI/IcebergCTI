@@ -12,6 +12,7 @@ from fastapi import (
     File,
     Form,
     HTTPException,
+    Query,
     Request,
     Response,
     UploadFile,
@@ -37,6 +38,8 @@ from ..models import (
     RequirementStatus,
     Role,
     Source,
+    Tag,
+    TagKind,
     TLP,
     User,
     priority_rank,
@@ -49,6 +52,8 @@ from ..services import (
     dissemination,
     lifecycle,
     requirements as req_service,
+    search as search_service,
+    tags as tag_service,
 )
 from ..services.reports import (
     delete_rendered_product,
@@ -75,6 +80,12 @@ def _require_submitter(user: User) -> None:
         raise HTTPException(
             status.HTTP_403_FORBIDDEN, "Only stakeholders can submit requirements"
         )
+
+
+def _require_admin(user: User) -> None:
+    """Taxonomy curation is admin-only (controlled vocabulary)."""
+    if user.role != Role.ADMIN:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin role required")
 
 
 def _redirect(url: str) -> RedirectResponse:
@@ -342,6 +353,7 @@ def report_view(
             "cited_attachments": list(report.cited_attachments),
             "products": list(report.rendered_products),
             "requirements": list(report.requirements),
+            "tags": list(report.tags),
             "dissemination_count": len(report.dissemination_events),
         },
     )
@@ -375,6 +387,8 @@ def report_edit(
             "preview_html": render_markdown(report.body_md),
             "all_requirements": _open_requirements(session, report.requirements),
             "linked_req_ids": {r.id for r in report.requirements},
+            "all_tags": tag_service.offerable_tags(session, report.tags),
+            "linked_tag_ids": {t.id for t in report.tags},
             "updated": updated,
         },
     )
@@ -513,6 +527,20 @@ def report_attachments(
     report = ensure_editable(_get_report(session, report_id), user)
     attachment_service.set_report_attachments(session, report, attachment_ids)
     return _redirect(f"/reports/{report_id}/edit?updated=attachments#attachments-cited")
+
+
+@router.post("/reports/{report_id}/tags")
+def report_tags(
+    report_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+    tag_ids: Annotated[list[int], Form()] = [],
+):
+    _require_writer(user)
+    # Author guard only (not ensure_editable): tags stay editable post-publish.
+    report = ensure_author(_get_report(session, report_id), user)
+    tag_service.set_report_tags(session, report, tag_ids)
+    return _redirect(f"/reports/{report_id}/edit?updated=tags#tags")
 
 
 @router.post("/notebooks/{notebook_id}/requirements")
@@ -707,3 +735,151 @@ def preferences_save(
     session.add(user)
     session.commit()
     return _redirect("/preferences")
+
+
+# --------------------------------------------------------------------------- #
+# Search & taxonomy
+# --------------------------------------------------------------------------- #
+def _tags_by_kind(tags: list[Tag]) -> dict[TagKind, list[Tag]]:
+    grouped: dict[TagKind, list[Tag]] = {k: [] for k in TagKind}
+    for t in tags:
+        grouped[t.kind].append(t)
+    return {k: v for k, v in grouped.items() if v}
+
+
+@router.get("/search")
+def search_view(
+    request: Request,
+    session: SessionDep,
+    user: CurrentUser,
+    q: str = "",
+    kind: Annotated[list[TagKind], Query()] = [],
+    tag: Annotated[list[int], Query()] = [],
+    intel_level: IntelLevel | None = None,
+    tlp: TLP | None = None,
+    status_filter: Annotated[ReportStatus | None, Query(alias="status")] = None,
+):
+    results = search_service.search_reports(
+        session,
+        user=user,
+        q=q or None,
+        kinds=kind or None,
+        tag_ids=tag or None,
+        intel_level=intel_level,
+        tlp=tlp,
+        status=status_filter,
+    )
+    items = [{"report": r, "tags": list(r.tags)} for r in results]
+    return templates.TemplateResponse(
+        request,
+        "search.html",
+        {
+            "user": user,
+            "q": q,
+            "items": items,
+            "facet_tags": _tags_by_kind(tag_service.list_tags(session)),
+            "selected_tags": set(tag),
+            "selected_kinds": set(kind),
+            "intel_level": intel_level,
+            "tlp": tlp,
+            "status": status_filter,
+            "active_tag": None,
+        },
+    )
+
+
+@router.get("/tags/{tag_id}")
+def tag_detail(
+    tag_id: int, request: Request, session: SessionDep, user: CurrentUser
+):
+    tag = session.get(Tag, tag_id)
+    if not tag:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Tag not found")
+    results = search_service.search_reports(session, user=user, tag_ids=[tag_id])
+    items = [{"report": r, "tags": list(r.tags)} for r in results]
+    return templates.TemplateResponse(
+        request,
+        "search.html",
+        {
+            "user": user,
+            "q": "",
+            "items": items,
+            "facet_tags": _tags_by_kind(tag_service.list_tags(session)),
+            "selected_tags": {tag_id},
+            "selected_kinds": set(),
+            "intel_level": None,
+            "tlp": None,
+            "status": None,
+            "active_tag": tag,
+        },
+    )
+
+
+@router.get("/admin/tags")
+def admin_tags_view(request: Request, session: SessionDep, user: CurrentUser):
+    _require_admin(user)
+    return templates.TemplateResponse(
+        request,
+        "admin_tags.html",
+        {
+            "user": user,
+            "tags_by_kind": _tags_by_kind(
+                tag_service.list_tags(session, include_inactive=True)
+            ),
+            "kinds": list(TagKind),
+        },
+    )
+
+
+@router.post("/admin/tags")
+def admin_tag_create(
+    session: SessionDep,
+    user: CurrentUser,
+    kind: Annotated[TagKind, Form()],
+    label: Annotated[str, Form()],
+    external_id: Annotated[str, Form()] = "",
+    description: Annotated[str, Form()] = "",
+):
+    _require_admin(user)
+    tag_service.create_tag(
+        session, kind=kind, label=label, external_id=external_id, description=description
+    )
+    return _redirect("/admin/tags")
+
+
+def _get_tag(session: Session, tag_id: int) -> Tag:
+    tag = session.get(Tag, tag_id)
+    if not tag:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Tag not found")
+    return tag
+
+
+@router.post("/admin/tags/{tag_id}")
+def admin_tag_update(
+    tag_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+    label: Annotated[str, Form()] = "",
+    external_id: Annotated[str, Form()] = "",
+    description: Annotated[str, Form()] = "",
+    active: Annotated[bool, Form()] = False,
+):
+    _require_admin(user)
+    tag = _get_tag(session, tag_id)
+    tag_service.update_tag(
+        session,
+        tag,
+        label=label or None,
+        external_id=external_id,
+        description=description,
+        active=active,
+    )
+    return _redirect("/admin/tags")
+
+
+@router.post("/admin/tags/{tag_id}/delete")
+def admin_tag_delete(tag_id: int, session: SessionDep, user: CurrentUser):
+    _require_admin(user)
+    tag = _get_tag(session, tag_id)
+    tag_service.delete_tag(session, tag)
+    return _redirect("/admin/tags")

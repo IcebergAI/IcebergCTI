@@ -104,6 +104,39 @@
 
 #let title-rule = box(width: 44pt, height: 3pt, radius: 1.5pt, fill: c-accent)
 
+// taxonomy tag chip: kind-tinted soft pill (matches the app's `.tagk` register —
+// sentence-case sans, distinct from the mono classification stamps above)
+#let tag-kind-col(kind) = if kind == "ACTOR" {
+  oklch(55%, 0.20, 25deg)
+} else if kind == "CAMPAIGN" {
+  oklch(55%, 0.16, 300deg)
+} else if kind == "MALWARE" {
+  oklch(55%, 0.18, 12deg)
+} else if kind == "TECHNIQUE" {
+  oklch(50%, 0.115, 234deg)
+} else if kind == "SECTOR" {
+  oklch(52%, 0.10, 200deg)
+} else {
+  oklch(50%, 0.02, 258deg)
+}
+
+#let tag-chip(t) = box(
+  inset: (x: 7pt, y: 4pt), radius: 8pt, baseline: 3pt,
+  fill: tag-kind-col(t.kind).transparentize(90%),
+  stroke: 0.7pt + tag-kind-col(t.kind).transparentize(62%),
+)[
+  #let k = tag-kind-col(t.kind)
+  #set text(size: 8.5pt, fill: k.darken(12%))
+  #text(font: f-mono, size: 7pt, weight: "bold", tracking: 0.5pt,
+        fill: k.transparentize(20%))[#upper(t.kind.slice(0, 3))]
+  #h(4pt)
+  #if t.external_id != "" {
+    text(font: f-mono, size: 8pt, weight: 600)[#t.external_id]
+    h(3pt)
+  }
+  #text(font: f-sans, weight: 500)[#t.label]
+]
+
 // styled appendix heading (Sources / Attachments) + accent rule
 #let appendix-heading(label) = {
   text(font: f-sans, weight: 800, size: 22pt, fill: c-ink)[#label]
@@ -262,6 +295,17 @@
 ]
 
 #line(length: 100%, stroke: 0.8pt + c-line)
+
+// --- Taxonomy tags (wrapping chip row, if any) ------------------------------
+#let report-tags = data.at("tags", default: ())
+#if report-tags.len() > 0 {
+  v(if cfg.compact { 11pt } else { 15pt })
+  block(width: 100%)[
+    #set par(leading: 0.95em)
+    #for t in report-tags { tag-chip(t); h(5pt) }
+  ]
+}
+
 #v(if cfg.compact { 12pt } else { 18pt })
 
 // =============================================================================

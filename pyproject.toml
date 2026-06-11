@@ -26,8 +26,14 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest"]
 
+[project.scripts]
+iceberg-seed = "iceberg.seed:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+iceberg = ["data/*.json"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

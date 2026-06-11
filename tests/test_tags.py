@@ -1,0 +1,204 @@
+"""Milestone 4: controlled-taxonomy tags — admin-only curation, report
+classification (editable post-publish), retire semantics, and the seed."""
+
+from sqlmodel import Session, select
+
+from iceberg import seed as seed_cli
+from iceberg.models import Tag, TagKind
+from iceberg.services.tags import load_starter_tags, seed_default_taxonomy, slugify
+
+
+def _make_report(client, login, title="APT29 wave", body="phishing against finance"):
+    login("ANALYST", email="author@example.com")
+    nb = client.post("/api/notebooks", json={"title": "nb"}).json()
+    return client.post(
+        "/api/reports",
+        json={"notebook_id": nb["id"], "title": title, "body_md": body},
+    ).json()["id"]
+
+
+def _create_tag(client, login, kind="ACTOR", label="APT29", external_id=""):
+    login("ADMIN", email="admin@example.com")
+    resp = client.post(
+        "/api/tags",
+        json={"kind": kind, "label": label, "external_id": external_id},
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()
+
+
+def _publish(client, login, rid):
+    login("ANALYST", email="author@example.com")
+    client.post(f"/api/reports/{rid}/transition", json={"target": "IN_REVIEW"})
+    login("REVIEWER", email="rev@example.com")
+    client.post(f"/api/reports/{rid}/transition", json={"target": "APPROVED"})
+    pub = client.post(f"/api/reports/{rid}/transition", json={"target": "PUBLISHED"})
+    assert pub.json()["status"] == "PUBLISHED"
+
+
+# --------------------------------------------------------------------------- #
+# Curation is admin-only (controlled vocabulary)
+# --------------------------------------------------------------------------- #
+def test_only_admin_creates_tags(client, login):
+    login("ANALYST", email="a@example.com")
+    assert client.post("/api/tags", json={"kind": "ACTOR", "label": "X"}).status_code == 403
+    login("STAKEHOLDER", email="s@example.com")
+    assert client.post("/api/tags", json={"kind": "ACTOR", "label": "X"}).status_code == 403
+    login("ADMIN", email="admin@example.com")
+    assert client.post("/api/tags", json={"kind": "ACTOR", "label": "X"}).status_code == 201
+
+
+def test_any_role_can_list_tags(client, login):
+    _create_tag(client, login, label="APT29")
+    login("STAKEHOLDER", email="s@example.com")
+    labels = [t["label"] for t in client.get("/api/tags").json()]
+    assert "APT29" in labels
+
+
+def test_duplicate_tag_within_kind_rejected(client, login):
+    _create_tag(client, login, kind="SECTOR", label="Energy")
+    login("ADMIN", email="admin@example.com")
+    dup = client.post("/api/tags", json={"kind": "SECTOR", "label": "energy"})
+    assert dup.status_code == 409  # slug collision, case-insensitive
+
+
+def test_same_label_different_kind_allowed(client, login):
+    _create_tag(client, login, kind="ACTOR", label="Sandworm")
+    login("ADMIN", email="admin@example.com")
+    other = client.post("/api/tags", json={"kind": "MALWARE", "label": "Sandworm"})
+    assert other.status_code == 201
+
+
+# --------------------------------------------------------------------------- #
+# Retire semantics
+# --------------------------------------------------------------------------- #
+def test_retire_hides_tag_from_default_listing(client, login):
+    tag = _create_tag(client, login, label="Old Actor")
+    login("ADMIN", email="admin@example.com")
+    client.patch(f"/api/tags/{tag['id']}", json={"active": False})
+    active = [t["id"] for t in client.get("/api/tags").json()]
+    assert tag["id"] not in active
+    everything = [t["id"] for t in client.get("/api/tags", params={"include_inactive": True}).json()]
+    assert tag["id"] in everything
+
+
+def test_retired_tag_stays_on_report(client, login):
+    tag = _create_tag(client, login, label="Cozy Bear")
+    rid = _make_report(client, login)
+    login("ANALYST", email="author@example.com")
+    assert client.put(f"/api/reports/{rid}/tags", json={"tag_ids": [tag["id"]]}).status_code == 200
+    # retire it
+    login("ADMIN", email="admin@example.com")
+    client.patch(f"/api/tags/{tag['id']}", json={"active": False})
+    # still attached to the report
+    login("ANALYST", email="author@example.com")
+    tags = client.get(f"/api/reports/{rid}").json()["tags"]
+    assert [t["label"] for t in tags] == ["Cozy Bear"]
+
+
+# --------------------------------------------------------------------------- #
+# Classification + the decision-1 regression
+# --------------------------------------------------------------------------- #
+def test_set_report_tags_replaces(client, login):
+    a = _create_tag(client, login, kind="ACTOR", label="APT29")
+    b = _create_tag(client, login, kind="SECTOR", label="Energy")
+    rid = _make_report(client, login)
+    login("ANALYST", email="author@example.com")
+    client.put(f"/api/reports/{rid}/tags", json={"tag_ids": [a["id"], b["id"]]})
+    out = client.put(f"/api/reports/{rid}/tags", json={"tag_ids": [b["id"]]})
+    assert [t["label"] for t in out.json()["tags"]] == ["Energy"]
+
+
+def test_tags_editable_after_publish(client, login):
+    """Regression (decision 1): tags are classification metadata, deliberately
+    editable after publication — unlike report content/citations."""
+    tag = _create_tag(client, login, label="APT29")
+    rid = _make_report(client, login)
+    _publish(client, login, rid)
+    login("ANALYST", email="author@example.com")
+    # content edits are blocked once published...
+    assert client.patch(f"/api/reports/{rid}", json={"title": "x"}).status_code == 409
+    # ...but tags can still be set.
+    resp = client.put(f"/api/reports/{rid}/tags", json={"tag_ids": [tag["id"]]})
+    assert resp.status_code == 200
+    assert [t["label"] for t in resp.json()["tags"]] == ["APT29"]
+
+
+def test_non_author_cannot_tag(client, login):
+    tag = _create_tag(client, login, label="APT29")
+    rid = _make_report(client, login)
+    login("ANALYST", email="someone-else@example.com")
+    assert client.put(f"/api/reports/{rid}/tags", json={"tag_ids": [tag["id"]]}).status_code == 403
+
+
+# --------------------------------------------------------------------------- #
+# Starter taxonomy catalog + import step
+# --------------------------------------------------------------------------- #
+def test_starter_catalog_is_valid():
+    entries = load_starter_tags()
+    assert len(entries) > 50
+    valid_kinds = {k.value for k in TagKind}
+    seen = set()
+    for e in entries:
+        assert e["kind"] in valid_kinds, e
+        assert e.get("label"), e
+        key = (e["kind"], slugify(e["label"]))
+        assert key not in seen, f"duplicate (kind, slug): {key}"
+        seen.add(key)
+
+
+def test_seed_imports_full_catalog_and_is_idempotent(engine):
+    expected = len(load_starter_tags())
+    with Session(engine) as s:
+        first = seed_default_taxonomy(s)
+        second = seed_default_taxonomy(s)
+    assert first == expected
+    assert second == 0
+
+
+def test_seed_populates_all_kinds(engine):
+    with Session(engine) as s:
+        seed_default_taxonomy(s)
+        kinds = {t.kind for t in s.exec(select(Tag)).all()}
+        # spot-check that external_ids came through from the data file
+        phishing = s.exec(
+            select(Tag).where(Tag.kind == TagKind.TECHNIQUE, Tag.slug == "phishing")
+        ).first()
+        apt29 = s.exec(
+            select(Tag).where(Tag.kind == TagKind.ACTOR, Tag.slug == "apt29")
+        ).first()
+    # The starter set covers every kind except CAMPAIGN (campaigns are
+    # org-specific events, left for admins to create).
+    assert kinds == {
+        TagKind.SECTOR,
+        TagKind.TOPIC,
+        TagKind.TECHNIQUE,
+        TagKind.ACTOR,
+        TagKind.MALWARE,
+    }
+    assert phishing.external_id == "T1566"
+    assert apt29.external_id == "G0016"
+
+
+def test_seed_custom_entries_and_update(engine):
+    entries = [{"kind": "ACTOR", "label": "APT99", "external_id": "G9999", "description": "old"}]
+    with Session(engine) as s:
+        assert seed_default_taxonomy(s, entries) == 1
+        # re-importing without update does not touch the existing row
+        entries[0]["description"] = "new"
+        assert seed_default_taxonomy(s, entries) == 0
+        tag = s.exec(select(Tag).where(Tag.slug == "apt99")).first()
+        assert tag.description == "old"
+        # update=True refreshes metadata (creating nothing)
+        assert seed_default_taxonomy(s, entries, update=True) == 0
+        s.refresh(tag)
+        assert tag.description == "new"
+
+
+def test_seed_cli_list_does_not_write(engine, capsys):
+    assert seed_cli.main(["--list"]) == 0
+    out = capsys.readouterr().out
+    assert "tag(s)" in out and "TECHNIQUE" in out
+    # nothing was written
+    with Session(engine) as s:
+        assert s.exec(select(Tag)).first() is None

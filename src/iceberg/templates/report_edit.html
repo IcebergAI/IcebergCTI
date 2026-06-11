@@ -3,6 +3,8 @@
 {% set is_author = report.author_id == user.id %}
 {% set can_review = user.role in ['REVIEWER', 'ADMIN'] %}
 {% set can_edit = (is_author or user.role == 'ADMIN') and report.status.value != 'PUBLISHED' %}
+{# Tags are classification metadata, deliberately editable after publication. #}
+{% set can_tag = is_author or user.role == 'ADMIN' %}
 {% set lifecycle_steps = ['DRAFT', 'IN_REVIEW', 'APPROVED', 'PUBLISHED'] %}
 {% set current_index = lifecycle_steps.index(report.status.value) %}
 {% block title %}Edit · {{ report.title }}{% endblock %}
@@ -235,6 +237,38 @@
     </form>
   {% else %}
     <p class="empty">No open requirements to link. When stakeholder requirements exist, link the ones this report satisfies.</p>
+  {% endif %}
+</section>
+
+<!-- Tags -->
+<section id="tags" class="card card-pad-lg mt-6">
+  <h2 class="section-title mb-1">Tags</h2>
+  <p class="text-xs mb-4" style="color:var(--muted);">Classify this product against the controlled taxonomy. Editable after publication.</p>
+  {% if updated == 'tags' %}
+    <div class="inline-notice mb-4">Tags updated.</div>
+  {% endif %}
+  {% if all_tags %}
+    <form method="post" action="/reports/{{ report.id }}/tags">
+      {% for t in all_tags %}
+        {% if loop.first or t.kind != loop.previtem.kind %}
+          {% if not loop.first %}</div>{% endif %}
+          <div class="eyebrow mt-3 mb-1.5">{{ t.kind.value.title() }}</div>
+          <div class="flex gap-2 flex-wrap">
+        {% endif %}
+        <label class="chip-check">
+          <input type="checkbox" name="tag_ids" value="{{ t.id }}"
+                 {% if t.id in linked_tag_ids %}checked{% endif %} {% if not can_tag %}disabled{% endif %}>
+          {{ m.tag_chip(t, link=False) }}
+        </label>
+        {% if loop.last %}</div>{% endif %}
+      {% endfor %}
+      {% if can_tag %}<button class="btn btn--ghost btn--sm mt-4">Update tags</button>{% endif %}
+    </form>
+  {% else %}
+    <p class="empty">The taxonomy is empty.
+      {% if user.role == 'ADMIN' %}<a href="/admin/tags" class="btn-link">Curate the taxonomy</a> to classify products.
+      {% else %}An admin curates the taxonomy before products can be tagged.{% endif %}
+    </p>
   {% endif %}
 </section>
 
