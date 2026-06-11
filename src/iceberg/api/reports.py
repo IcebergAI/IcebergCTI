@@ -24,6 +24,7 @@ from ..schemas import (
     ReportCreate,
     ReportUpdate,
     RequirementLinks,
+    TagLinks,
     TransitionRequest,
 )
 from ..rendering.typst import TypstNotAvailable, TypstRenderError
@@ -37,6 +38,7 @@ from ..services.reports import (
     set_citations,
 )
 from ..services.requirements import set_report_requirements
+from ..services.tags import set_report_tags
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -86,6 +88,7 @@ def get_report(report_id: int, session: SessionDep, user: CurrentUser) -> dict:
         "report": report,
         "cited_sources": report.cited_sources,
         "cited_attachments": report.cited_attachments,
+        "tags": report.tags,
     }
 
 
@@ -145,6 +148,21 @@ def update_attachments(
     report = ensure_editable(_get_report(session, report_id), user)
     cited = set_report_attachments(session, report, body.attachment_ids)
     return {"cited_attachments": cited}
+
+
+@router.put("/{report_id}/tags")
+def update_tags(
+    report_id: int,
+    body: TagLinks,
+    session: SessionDep,
+    user: CurrentUser,
+    _w: Writer,
+) -> dict:
+    # Tags are classification metadata, deliberately editable post-publish (CTI
+    # re-tags retrospectively) — author guard only, like requirement links.
+    report = ensure_author(_get_report(session, report_id), user)
+    tags = set_report_tags(session, report, body.tag_ids)
+    return {"tags": tags}
 
 
 @router.post("/{report_id}/transition")

@@ -6,13 +6,16 @@ finished intelligence products, and **disseminating** them to stakeholders.
 Analysts work in topic **notebooks** — gathering sources, notes and uploaded
 **attachments** (reference files) — and author **reports** (intelligence products)
 in markdown. Reports carry an intelligence level (Strategic / Tactical /
-Operational) and a TLP marking, cite sources and attachments, move through a
-review workflow, and can be rendered to branded PDF products.
+Operational) and a TLP marking, cite sources and attachments, are classified with
+**taxonomy tags** (threat actor / campaign / malware / ATT&CK technique / sector /
+topic), move through a review workflow, and can be rendered to branded PDF products.
+Everything is **searchable** — full-text + faceted across the report library.
 
-> **Status:** Milestones 1–3 are implemented — the full vision: the analyst authoring
-> loop, stakeholder requirement intake + tasking board + traceability, and dissemination
-> (on publish, reports are matched to stakeholders by preferred intel level + TLP into a
-> personalized feed, with email notifications). See [CLAUDE.md](CLAUDE.md).
+> **Status:** Milestones 1–4 are implemented — the full vision plus a knowledge layer:
+> the analyst authoring loop, stakeholder requirement intake + tasking board + traceability,
+> dissemination (on publish, reports are matched to stakeholders by preferred intel level +
+> TLP into a personalized feed, with email notifications), and an admin-curated tag taxonomy
+> with full-text + faceted search. See [CLAUDE.md](CLAUDE.md).
 
 ## Stack
 - **Python ≥ 3.14**, **FastAPI** (single app: JSON API `/api/*` + server-rendered portal `/*`)
@@ -20,6 +23,7 @@ review workflow, and can be rendered to branded PDF products.
 - **Jinja2 + Alpine.js** portal with a "light editorial-intel" design system
   (`static/css/iceberg.css`; Archivo / JetBrains Mono / Spectral; Tailwind CDN for utilities)
 - **markdown-it-py + nh3** for the live markdown preview
+- **SQLite FTS5** (bm25) for full-text report search
 - **Typst** for PDF rendering
 - **PyTest** for tests
 - Auth: **OIDC (Microsoft Entra ID)** with a dev-login bypass for local use
@@ -59,6 +63,25 @@ Open <http://localhost:8000>. With `ICEBERG_DEV_AUTH=true` (the default) you'll 
 3. Back as the stakeholder, your **Feed** shows the new report (with an unread badge on the
    dashboard); a notification email is recorded by the `console` backend (in-memory outbox).
    Reports marked TLP:RED or AMBER+STRICT are withheld from broadcast.
+
+### Try tagging & search
+1. Sign in as an `ADMIN` → **Taxonomy** (`/admin/tags`). A starter taxonomy (~94 tags: CISA
+   sectors, intel topics, MITRE ATT&CK techniques, and example threat actors + malware) is
+   seeded on first run; add or retire entries, or add a **campaign**.
+2. As an `ANALYST`, open a report editor → **Tags** panel → tick tags to classify the product.
+   (Tags stay editable even after the report is published.)
+3. Use **Search** (top nav) — full-text query over title/body, narrowed by tag / kind / intel
+   level / TLP / status facets. Click any tag chip to see everything classified with it.
+   Stakeholders' searches only ever return published reports.
+
+The starter taxonomy is bundled as data (`src/iceberg/data/starter_tags.json`) and imported
+automatically on first boot. To (re-)import explicitly — e.g. after enriching the catalog or
+to load your own vocabulary — run the idempotent import step:
+```bash
+python -m iceberg.seed            # or: iceberg-seed
+python -m iceberg.seed --list     # preview the catalog without writing
+python -m iceberg.seed --file my_tags.json --update
+```
 
 ## Configuration
 All settings use the `ICEBERG_` env prefix and can live in `.env` (see

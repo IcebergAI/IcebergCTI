@@ -11,6 +11,7 @@ from .models import (
     ProductFormat,
     ReportStatus,
     RequirementStatus,
+    TagKind,
     TLP,
     tlp_label,
 )
@@ -28,3 +29,4 @@ templates.env.globals["ReportStatus"] = ReportStatus
 templates.env.globals["ProductFormat"] = ProductFormat
 templates.env.globals["Priority"] = Priority
 templates.env.globals["RequirementStatus"] = RequirementStatus
+templates.env.globals["TagKind"] = TagKind

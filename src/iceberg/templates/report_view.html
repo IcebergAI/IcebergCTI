@@ -23,6 +23,12 @@
     <h1 style="font-family:var(--fs-sans); font-size:30px; font-weight:800; letter-spacing:-0.02em; line-height:1.12; color:var(--ink);">{{ report.title }}</h1>
     <div class="title-rule" style="margin-top:16px; margin-bottom:26px;"></div>
 
+    {% if tags %}
+      <div class="flex gap-1.5 flex-wrap mb-6">
+        {% for t in tags %}{{ m.tag_chip(t) }}{% endfor %}
+      </div>
+    {% endif %}
+
     <div class="md">{{ body_html | safe }}</div>
 
     {% if cited_sources %}

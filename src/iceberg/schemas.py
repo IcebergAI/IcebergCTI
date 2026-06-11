@@ -8,6 +8,7 @@ from .models import (
     ProductFormat,
     ReportStatus,
     RequirementStatus,
+    TagKind,
     TLP,
 )
 
@@ -99,3 +100,23 @@ class AttachmentLinks(BaseModel):
 
 class PreferencesUpdate(BaseModel):
     preferred_intel_level: IntelLevel | None = None
+
+
+class TagCreate(BaseModel):
+    kind: TagKind
+    label: str
+    external_id: str = ""
+    description: str = ""
+
+
+class TagUpdate(BaseModel):
+    label: str | None = None
+    external_id: str | None = None
+    description: str | None = None
+    active: bool | None = None
+
+
+class TagLinks(BaseModel):
+    """Set the taxonomy tags a report is classified with."""
+
+    tag_ids: list[int]

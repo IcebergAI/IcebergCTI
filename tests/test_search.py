@@ -1,0 +1,121 @@
+"""Milestone 4: FTS5 report search — relevance, facets, trigger-driven index
+sync, and the stakeholder access-control filter."""
+
+from sqlmodel import Session
+
+from iceberg.models import Report
+
+
+def _report(client, login, title, body, author="author@example.com"):
+    login("ANALYST", email=author)
+    nb = client.post("/api/notebooks", json={"title": "nb"}).json()
+    return client.post(
+        "/api/reports",
+        json={"notebook_id": nb["id"], "title": title, "body_md": body},
+    ).json()["id"]
+
+
+def _publish(client, login, rid):
+    login("ANALYST", email="author@example.com")
+    client.post(f"/api/reports/{rid}/transition", json={"target": "IN_REVIEW"})
+    login("REVIEWER", email="rev@example.com")
+    client.post(f"/api/reports/{rid}/transition", json={"target": "APPROVED"})
+    client.post(f"/api/reports/{rid}/transition", json={"target": "PUBLISHED"})
+
+
+def _create_tag(client, login, kind="ACTOR", label="APT29"):
+    login("ADMIN", email="admin@example.com")
+    return client.post("/api/tags", json={"kind": kind, "label": label}).json()
+
+
+def _titles(resp):
+    return [r["report"]["title"] for r in resp.json()["results"]]
+
+
+# --------------------------------------------------------------------------- #
+# Full-text matching
+# --------------------------------------------------------------------------- #
+def test_fts_matches_title_and_body(client, login):
+    _report(client, login, "Spearphishing wave", "Targeting the energy sector.")
+    login("ANALYST", email="author@example.com")
+    assert client.get("/api/search", params={"q": "spearphishing"}).json()["count"] == 1
+    assert client.get("/api/search", params={"q": "energy"}).json()["count"] == 1
+    assert client.get("/api/search", params={"q": "nonexistentterm"}).json()["count"] == 0
+
+
+def test_fts_prefix_match(client, login):
+    _report(client, login, "Ransomware report", "Discusses encryption tooling.")
+    login("ANALYST", email="author@example.com")
+    # token is indexed as a prefix term, so "ransom" matches "ransomware"
+    assert client.get("/api/search", params={"q": "ransom"}).json()["count"] == 1
+
+
+def test_bm25_ranks_more_relevant_first(client, login):
+    _report(client, login, "Lazarus Group operations", "Lazarus Lazarus Lazarus activity.")
+    _report(client, login, "Quarterly roundup", "A brief mention of Lazarus once.")
+    login("ANALYST", email="author@example.com")
+    titles = _titles(client.get("/api/search", params={"q": "lazarus"}))
+    assert titles[0] == "Lazarus Group operations"
+
+
+# --------------------------------------------------------------------------- #
+# Facets
+# --------------------------------------------------------------------------- #
+def test_facet_by_tag(client, login):
+    tag = _create_tag(client, login, label="APT29")
+    rid = _report(client, login, "Tagged report", "body")
+    _report(client, login, "Untagged report", "body")
+    login("ANALYST", email="author@example.com")
+    client.put(f"/api/reports/{rid}/tags", json={"tag_ids": [tag["id"]]})
+    out = client.get("/api/search", params={"tag": [tag["id"]]})
+    assert _titles(out) == ["Tagged report"]
+
+
+def test_facet_by_intel_level(client, login):
+    login("ANALYST", email="author@example.com")
+    nb = client.post("/api/notebooks", json={"title": "nb"}).json()
+    client.post("/api/reports", json={"notebook_id": nb["id"], "title": "Strat", "intel_level": "STRATEGIC"})
+    client.post("/api/reports", json={"notebook_id": nb["id"], "title": "Op", "intel_level": "OPERATIONAL"})
+    out = client.get("/api/search", params={"intel_level": "STRATEGIC"})
+    assert _titles(out) == ["Strat"]
+
+
+# --------------------------------------------------------------------------- #
+# Access control — stakeholders only ever match published reports
+# --------------------------------------------------------------------------- #
+def test_stakeholder_search_excludes_unpublished(client, login):
+    """Regression: search must reapply ensure_visible's rule so a read-only
+    stakeholder can't surface an unpublished (e.g. TLP:RED) report by keyword."""
+    _report(client, login, "Phantom draft", "phantommenace secret material")
+    pub = _report(client, login, "Phantom published", "phantommenace public brief")
+    _publish(client, login, pub)
+
+    login("STAKEHOLDER", email="nosy@example.com")
+    titles = _titles(client.get("/api/search", params={"q": "phantommenace"}))
+    assert titles == ["Phantom published"]
+
+    # An analyst still sees both.
+    login("ANALYST", email="author@example.com")
+    assert client.get("/api/search", params={"q": "phantommenace"}).json()["count"] == 2
+
+
+# --------------------------------------------------------------------------- #
+# Trigger-driven index sync
+# --------------------------------------------------------------------------- #
+def test_fts_sync_on_update(client, login):
+    rid = _report(client, login, "Initial", "originalkeyword in body")
+    login("ANALYST", email="author@example.com")
+    assert client.get("/api/search", params={"q": "originalkeyword"}).json()["count"] == 1
+    client.patch(f"/api/reports/{rid}", json={"body_md": "replacedkeyword now"})
+    assert client.get("/api/search", params={"q": "originalkeyword"}).json()["count"] == 0
+    assert client.get("/api/search", params={"q": "replacedkeyword"}).json()["count"] == 1
+
+
+def test_fts_sync_on_delete(client, login, engine):
+    rid = _report(client, login, "Doomed", "ephemeralkeyword present")
+    login("ANALYST", email="author@example.com")
+    assert client.get("/api/search", params={"q": "ephemeralkeyword"}).json()["count"] == 1
+    with Session(engine) as s:
+        s.delete(s.get(Report, rid))
+        s.commit()
+    assert client.get("/api/search", params={"q": "ephemeralkeyword"}).json()["count"] == 0

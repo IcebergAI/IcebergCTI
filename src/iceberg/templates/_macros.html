@@ -43,3 +43,18 @@
     <span class="dot"></span>{{ status.value.replace('_', ' ') }}
   </span>
 {% endmacro %}
+
+{# Taxonomy tag chip — kind-tinted; links to the tag's report listing. #}
+{% macro tag_chip(tag, link=True) %}
+  {% set kindcls = {
+    'ACTOR': 'tagk--actor', 'CAMPAIGN': 'tagk--campaign', 'MALWARE': 'tagk--malware',
+    'TECHNIQUE': 'tagk--technique', 'SECTOR': 'tagk--sector', 'TOPIC': 'tagk--topic'
+  } %}
+  {% set cls = 'tagk ' ~ kindcls.get(tag.kind.value, '') ~ ('' if tag.active else ' is-retired') %}
+  {%- if link -%}<a href="/tags/{{ tag.id }}" class="{{ cls }}">
+  {%- else -%}<span class="{{ cls }}">{%- endif -%}
+    <span class="tagk-kind">{{ tag.kind.value[:3] }}</span>
+    {%- if tag.external_id %}<span class="tagk-ext">{{ tag.external_id }}</span>{% endif %}
+    {{ tag.label }}
+  {%- if link -%}</a>{%- else -%}</span>{%- endif -%}
+{% endmacro %}

@@ -18,6 +18,13 @@ def _published_report(client, login):
         json={"notebook_id": nb["id"], "title": "Render me", "tlp": "GREEN"},
     ).json()["id"]
     client.patch(f"/api/reports/{rid}", json={"body_md": "# Findings\n\nBody text."})
+    # Classify it so the PDF tag-chip rendering path is exercised.
+    login("ADMIN", email="admin@example.com")
+    tag = client.post(
+        "/api/tags", json={"kind": "ACTOR", "label": "APT29", "external_id": "G0016"}
+    ).json()
+    login("ANALYST", email="author@example.com")
+    client.put(f"/api/reports/{rid}/tags", json={"tag_ids": [tag["id"]]})
     return rid
 
 

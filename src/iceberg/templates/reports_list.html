@@ -16,7 +16,14 @@
   <div class="rows">
     {% for r in reports %}
       <a href="/reports/{{ r.id }}" class="row">
-        <span class="row-title flex-1">{{ r.title }}</span>
+        <span class="flex-1">
+          <span class="row-title">{{ r.title }}</span>
+          {% if r.tags %}
+            <span class="flex gap-1 flex-wrap mt-1.5">
+              {% for t in r.tags %}{{ m.tag_chip(t, link=False) }}{% endfor %}
+            </span>
+          {% endif %}
+        </span>
         <span class="flex gap-1.5 items-center flex-wrap">
           {{ m.status_badge(r.status) }}
           {{ m.level_badge(r.intel_level) }}
