@@ -91,8 +91,8 @@ a:hover { color: var(--accent-deep); }
 .nav-inner {
   max-width: 1180px; margin: 0 auto;
   padding: 0 24px;
-  min-height: 58px;
-  display: flex; align-items: center; gap: 18px 28px;
+  height: 58px;
+  display: flex; align-items: center; gap: 28px;
 }
 .brand { display: inline-flex; align-items: center; gap: 10px; }
 .brand-mark { width: 22px; height: 22px; display: block; flex: none; }
@@ -102,10 +102,7 @@ a:hover { color: var(--accent-deep); }
 }
 .brand-name b { color: var(--accent-ink); font-weight: 800; }
 
-.nav-links {
-  display: flex; align-items: center; gap: 4px;
-  min-width: 0;
-}
+.nav-links { display: flex; align-items: center; gap: 4px; }
 .nav-link {
   position: relative;
   font-size: 13.5px; font-weight: 500;
@@ -167,101 +164,6 @@ a:hover { color: var(--accent-deep); }
 
 /* Section header row (eyebrow + title + actions) */
 .head-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; }
-
-/* --------------------------------------------------------------------------
- *  Analyst workflow summaries
- * ------------------------------------------------------------------------ */
-.work-strip {
-  display: grid; grid-template-columns: 1fr 1fr minmax(280px, 1.25fr); gap: 12px;
-  align-items: stretch;
-}
-.work-metric,
-.work-action {
-  display: flex; align-items: center; gap: 13px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 14px 16px;
-  box-shadow: var(--shadow);
-}
-.work-action { justify-content: space-between; }
-.metric-num {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-width: 42px; height: 42px;
-  font-family: var(--fs-mono); font-size: 17px; font-weight: 700;
-  color: var(--accent-deep);
-  background: var(--accent-soft);
-  border: 1px solid var(--accent-line);
-  border-radius: var(--radius-sm);
-}
-.metric-label {
-  display: block;
-  font-size: 13.5px; font-weight: 700; color: var(--ink);
-}
-.metric-copy {
-  display: block;
-  margin-top: 2px;
-  font-size: 12.5px; color: var(--muted); line-height: 1.35;
-}
-
-.collection-strip {
-  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 9px;
-}
-.collection-step {
-  display: grid; gap: 4px;
-  min-height: 92px;
-  padding: 12px;
-  color: var(--muted);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-}
-.collection-step:hover {
-  color: var(--accent-deep);
-  border-color: var(--accent-line);
-  box-shadow: var(--shadow-lift);
-}
-.collection-step strong {
-  font-family: var(--fs-mono); font-size: 20px; line-height: 1; color: var(--ink);
-}
-.collection-step span:last-child { font-size: 12px; line-height: 1.25; }
-.collection-step.is-done {
-  background: var(--accent-soft);
-  border-color: var(--accent-line);
-}
-.step-kicker {
-  font-family: var(--fs-mono);
-  font-size: 10px; font-weight: 700; letter-spacing: 0.11em; text-transform: uppercase;
-  color: var(--accent-deep);
-}
-
-.status-note {
-  background: var(--accent-soft);
-  border: 1px solid var(--accent-line);
-  border-radius: var(--radius);
-  color: var(--ink-soft);
-  padding: 12px 15px;
-  font-size: 13.5px;
-}
-.status-note strong { color: var(--accent-deep); }
-.inline-notice {
-  display: inline-flex; align-items: center;
-  background: color-mix(in oklch, var(--c-ok) 10%, var(--surface));
-  border: 1px solid color-mix(in oklch, var(--c-ok) 34%, var(--line-strong));
-  border-radius: var(--radius-sm);
-  color: var(--c-ok);
-  font-size: 13px; font-weight: 700;
-  padding: 7px 10px;
-}
-.autosave-state {
-  color: var(--muted);
-  font-family: var(--fs-mono);
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
 
 /* --------------------------------------------------------------------------
  *  Surfaces
@@ -330,10 +232,21 @@ a.row:hover, .row-hover:hover { background: var(--surface-2); }
 /* Intel level — accent register */
 .lvl { color: var(--accent-deep); background: var(--accent-soft); border-color: var(--accent-line); }
 
+/* Status & priority via a semantic color var on .tag */
+.tag--c { color: var(--c); border-color: color-mix(in oklch, var(--c) 32%, var(--line-strong)); background: color-mix(in oklch, var(--c) 9%, var(--surface)); }
+.tag--c .dot { background: var(--c); }
+.tag--solid { color: #fff; background: var(--c); border-color: transparent; }
+.is-warn { --c: var(--c-warn); }
+.is-ok   { --c: var(--c-ok); }
+.is-info { --c: var(--c-info); }
+.is-crit { --c: var(--c-crit); }
+.is-neutral { --c: var(--muted); }
+
 /* --------------------------------------------------------------------------
  *  Taxonomy tag chips (controlled CTI vocabulary)
  *  A quiet "catalog stamp": kind-tinted prefix · optional external id · label.
- *  Calmer than the status/TLP/priority markings — many ride on a single report.
+ *  Deliberately calmer than the status/TLP/priority markings above — many ride
+ *  on a single report, so they lean on a small colour cue, not a loud fill.
  * ------------------------------------------------------------------------ */
 
 /* Per-kind hue holders — one harmonious family (shared L/C, hue varies), each
@@ -383,11 +296,6 @@ a.tagk:hover { border-color: var(--k-line); box-shadow: var(--shadow); }
   color: var(--k-ink); background: var(--k-soft);
   border: 1px solid var(--k-line); border-radius: 4px; padding: 3px 6px;
 }
-
-/* checkbox + chip, used by the search facet sidebar */
-.chip-check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
-.chip-check input { accent-color: var(--accent); margin: 0; }
-.chip-check input:disabled { cursor: default; }
 
 /* --------------------------------------------------------------------------
  *  Tag picker — searchable token combobox (report classification)
@@ -449,6 +357,16 @@ a.tagk:hover { border-color: var(--k-line); box-shadow: var(--shadow); }
 .tagpick-dirty .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--c-warn); }
 .tag-summary { font-family: var(--fs-mono); font-size: 11px; color: var(--muted); }
 
+/* small success confirmation ("Tags updated.") */
+.inline-notice {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 600; color: var(--c-ok);
+  background: color-mix(in oklch, var(--c-ok) 9%, var(--surface));
+  border: 1px solid color-mix(in oklch, var(--c-ok) 30%, var(--line));
+  border-radius: var(--radius-sm); padding: 8px 12px;
+}
+.inline-notice .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--c-ok); }
+
 /* --------------------------------------------------------------------------
  *  Admin taxonomy curation
  * ------------------------------------------------------------------------ */
@@ -470,12 +388,21 @@ a.tagk:hover { border-color: var(--k-line); box-shadow: var(--shadow); }
 .tax-edit .field { padding: 6px 9px; font-size: 13px; }
 .tax-empty { font-family: var(--fs-mono); font-size: 11.5px; color: var(--faint); padding: 8px 2px; }
 
-/* danger modifier for the existing .icon-action (delete affordances) */
+/* icon button (retire/delete affordances) */
+.icon-action {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; flex: none;
+  border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
+  background: var(--surface); color: var(--muted); cursor: pointer;
+  transition: border-color .12s, color .12s, background .12s;
+}
+.icon-action:hover { color: var(--ink); background: var(--surface-2); }
 .icon-action--danger:hover {
   color: var(--tlp-red);
   border-color: color-mix(in oklch, var(--tlp-red) 40%, var(--line-strong));
   background: color-mix(in oklch, var(--tlp-red) 7%, var(--surface));
 }
+.icon-action svg { width: 15px; height: 15px; }
 
 /* toggle switch for active/retired in the curation rows */
 .switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; white-space: nowrap; }
@@ -508,16 +435,6 @@ a.tagk:hover { border-color: var(--k-line); box-shadow: var(--shadow); }
 .counter-stack { display: flex; flex-direction: column; align-items: flex-end; flex: none; }
 .counter-num { font-family: var(--fs-mono); font-size: 30px; font-weight: 700; line-height: 1; color: var(--ink); letter-spacing: -0.02em; }
 .counter-lbl { font-family: var(--fs-mono); font-size: 11px; color: var(--muted); margin-top: 5px; }
-
-/* Status & priority via a semantic color var on .tag */
-.tag--c { color: var(--c); border-color: color-mix(in oklch, var(--c) 32%, var(--line-strong)); background: color-mix(in oklch, var(--c) 9%, var(--surface)); }
-.tag--c .dot { background: var(--c); }
-.tag--solid { color: #fff; background: var(--c); border-color: transparent; }
-.is-warn { --c: var(--c-warn); }
-.is-ok   { --c: var(--c-ok); }
-.is-info { --c: var(--c-info); }
-.is-crit { --c: var(--c-crit); }
-.is-neutral { --c: var(--muted); }
 
 /* --------------------------------------------------------------------------
  *  Buttons
@@ -735,63 +652,12 @@ select.field {
 /* download / product rows */
 .file-row { display: flex; align-items: center; gap: 12px; padding: 10px 13px; border: 1px solid var(--line); border-radius: var(--radius-sm); font-size: 13.5px; }
 .file-fmt { font-family: var(--fs-mono); font-weight: 600; font-size: 11.5px; letter-spacing: 0.04em; color: var(--ink); }
-.file-row-actions { margin-left: auto; display: inline-flex; align-items: center; gap: 10px; }
-.file-row-actions form { display: flex; margin: 0; }
-.icon-action {
-  width: 28px; height: 28px; padding: 0;
-  display: inline-flex; align-items: center; justify-content: center;
-  color: var(--faint);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: color .12s, background .12s, border-color .12s;
-}
-.icon-action::before {
-  content: "";
-  width: 14px; height: 14px;
-  background: currentColor;
-  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6h18'/%3E%3Cpath d='M8 6V4h8v2'/%3E%3Cpath d='M6 6l1 15h10l1-15'/%3E%3Cpath d='M10 11v6'/%3E%3Cpath d='M14 11v6'/%3E%3C/svg%3E") center / contain no-repeat;
-  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6h18'/%3E%3Cpath d='M8 6V4h8v2'/%3E%3Cpath d='M6 6l1 15h10l1-15'/%3E%3Cpath d='M10 11v6'/%3E%3Cpath d='M14 11v6'/%3E%3C/svg%3E") center / contain no-repeat;
-}
-.icon-action:hover {
-  color: var(--tlp-red);
-  background: color-mix(in oklch, var(--tlp-red) 8%, var(--surface));
-  border-color: color-mix(in oklch, var(--tlp-red) 22%, transparent);
-}
-.icon-action:focus-visible { outline: none; box-shadow: var(--ring); }
 
 @media (max-width: 860px) {
   .editor-grid { grid-template-columns: 1fr; }
   .board { grid-template-columns: repeat(2, minmax(0,1fr)); }
-  .work-strip { grid-template-columns: 1fr; }
-  .collection-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .nav-inner {
-    align-items: center;
-    flex-wrap: wrap;
-    padding-top: 9px;
-    padding-bottom: 9px;
-  }
-  .nav-links {
-    order: 5;
-    flex: 1 0 100%;
-    overflow-x: auto;
-    padding-top: 7px;
-    border-top: 1px solid var(--line);
-    scrollbar-width: thin;
-  }
-  .nav-link { flex: 0 0 auto; }
+  .nav-links { display: none; }
 }
 @media (max-width: 560px) {
   .board { grid-template-columns: 1fr; }
-  .nav-inner { padding: 8px 16px; gap: 8px 12px; }
-  .brand-name { font-size: 16px; }
-  .identity { gap: 6px; }
-  .identity .who { display: none; }
-  .page { padding: 24px 16px 64px; }
-  .head-row { align-items: flex-start; flex-wrap: wrap; }
-  .work-action { align-items: flex-start; flex-direction: column; }
-  .collection-strip { grid-template-columns: 1fr; }
-  .file-row { align-items: flex-start; flex-wrap: wrap; }
-  .file-row-actions { width: 100%; justify-content: flex-end; }
 }

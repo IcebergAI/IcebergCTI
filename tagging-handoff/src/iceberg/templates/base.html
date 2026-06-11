@@ -27,11 +27,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Spectral:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/css/iceberg.css">
-  {# tags.js must define window.tagPicker/taxonomyFilter BEFORE Alpine starts.
-     This Alpine CDN build starts on its own (deferred) execution — already past
-     DOM parse — so a later-deferred script would lose the race. Load it first. #}
-  <script defer src="/static/js/tags.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <script defer src="/static/js/tags.js"></script>
 </head>
 <body>
   <div class="brandbar"></div>
@@ -46,7 +43,6 @@
       <div class="nav-links">
         <a href="/" class="nav-link {{ 'is-active' if path == '/' }}">Dashboard</a>
         <a href="/reports" class="nav-link {{ 'is-active' if path.startswith('/reports') }}">Reports</a>
-        <a href="/search" class="nav-link {{ 'is-active' if path.startswith('/search') or path.startswith('/tags') }}">Search</a>
         <a href="/requirements" class="nav-link {{ 'is-active' if path.startswith('/requirements') }}">{% if user.role == 'STAKEHOLDER' %}Requirements{% else %}Tasking{% endif %}</a>
         {% if user.role == 'STAKEHOLDER' %}
           <a href="/feed" class="nav-link {{ 'is-active' if path.startswith('/feed') }}">Feed</a>

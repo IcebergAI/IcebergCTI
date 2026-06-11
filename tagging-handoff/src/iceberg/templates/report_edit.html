@@ -3,8 +3,6 @@
 {% set is_author = report.author_id == user.id %}
 {% set can_review = user.role in ['REVIEWER', 'ADMIN'] %}
 {% set can_edit = (is_author or user.role == 'ADMIN') and report.status.value != 'PUBLISHED' %}
-{# Tags are classification metadata, deliberately editable after publication. #}
-{% set can_tag = is_author or user.role == 'ADMIN' %}
 {% set lifecycle_steps = ['DRAFT', 'IN_REVIEW', 'APPROVED', 'PUBLISHED'] %}
 {% set current_index = lifecycle_steps.index(report.status.value) %}
 {% block title %}Edit · {{ report.title }}{% endblock %}
@@ -21,9 +19,7 @@
       {{ m.tlp_badge(report.tlp) }}
     </div>
   </div>
-  <a href="/reports/{{ report.id }}" class="btn btn--ghost btn--sm">
-    {% if report.status.value == 'PUBLISHED' %}View published report{% else %}Preview report page{% endif %} →
-  </a>
+  <a href="/reports/{{ report.id }}" class="btn btn--ghost btn--sm">View published page →</a>
 </div>
 
 <!-- Lifecycle -->
@@ -51,32 +47,10 @@
       {{ transition_btn('PUBLISHED', 'Publish & disseminate', 'btn--ink') }}
     {% elif report.status.value == 'PUBLISHED' %}
       <span class="eyebrow" style="color:var(--c-ok);">Published {{ report.published_at and report.published_at.strftime('%Y-%m-%d %H:%M') }}</span>
-    {% elif report.status.value == 'DRAFT' %}
-      <span class="eyebrow">Only the author can submit</span>
-    {% elif report.status.value == 'IN_REVIEW' %}
-      <span class="eyebrow">Awaiting reviewer action</span>
-    {% elif report.status.value == 'APPROVED' %}
-      <span class="eyebrow">Awaiting publication</span>
     {% else %}
       <span class="eyebrow">Awaiting another role</span>
     {% endif %}
   </div>
-</div>
-
-<div class="status-note mb-5">
-  {% if report.status.value == 'DRAFT' %}
-    <strong>Draft is editable.</strong> Save changes here, then submit when the assessment is ready for review.
-  {% elif report.status.value == 'IN_REVIEW' and can_review %}
-    <strong>Ready for decision.</strong> Approve the report or send it back for author rework.
-  {% elif report.status.value == 'IN_REVIEW' %}
-    <strong>In review.</strong> A reviewer or admin needs to approve it or send it back.
-  {% elif report.status.value == 'APPROVED' and can_review %}
-    <strong>Approved.</strong> Publish when the product is ready to disseminate.
-  {% elif report.status.value == 'APPROVED' %}
-    <strong>Approved.</strong> A reviewer or admin can publish this product.
-  {% else %}
-    <strong>Published.</strong> This report is locked for editing and available from the report page.
-  {% endif %}
 </div>
 
 <div class="editor-grid" x-data='{
@@ -133,29 +107,15 @@
 </div>
 
 <!-- Citations -->
-<section id="citations" class="card card-pad-lg mt-6">
+<section class="card card-pad-lg mt-6">
   <h2 class="section-title mb-1">Cited sources</h2>
   <p class="text-xs mb-4" style="color:var(--muted);">Sources drawn from this notebook to back the assessment.</p>
   {% if sources %}
-    <form method="post" action="/reports/{{ report.id }}/citations"
-          x-data="{ error: false, async save() {
-            this.error = false;
-            try {
-              const res = await fetch($el.action, {
-                method: 'POST',
-                body: new FormData($el),
-                headers: { 'X-Requested-With': 'fetch' }
-              });
-              this.error = !res.ok;
-            } catch (_err) {
-              this.error = true;
-            }
-          } }">
+    <form method="post" action="/reports/{{ report.id }}/citations">
       <div class="grid sm:grid-cols-2 gap-1">
         {% for s in sources %}
           <label class="check">
             <input type="checkbox" name="source_ids" value="{{ s.id }}"
-                   @change="save()"
                    {% if s.id in cited_ids %}checked{% endif %} {% if not can_edit %}disabled{% endif %}>
             <span>
               <span class="font-medium">{{ s.title }}</span>
@@ -164,60 +124,17 @@
           </label>
         {% endfor %}
       </div>
-      {% if can_edit %}
-        <template x-if="error">
-          <div class="autosave-state mt-3" aria-live="polite">
-            Could not save citations. Try again.
-          </div>
-        </template>
-      {% endif %}
+      {% if can_edit %}<button class="btn btn--ghost btn--sm mt-4">Update citations</button>{% endif %}
     </form>
   {% else %}
-    <p class="empty">No sources in this notebook to cite yet.
-      <a href="/notebooks/{{ notebook.id }}#sources" class="btn-link">Add sources in the notebook</a>,
-      then return here to cite them.
-    </p>
-  {% endif %}
-</section>
-
-<!-- Attachments cited -->
-<section id="attachments-cited" class="card card-pad-lg mt-6">
-  <h2 class="section-title mb-1">Attachments cited</h2>
-  <p class="text-xs mb-4" style="color:var(--muted);">Files from this notebook referenced by the product.</p>
-  {% if updated == 'attachments' %}
-    <div class="inline-notice mb-4">Attachment citations updated.</div>
-  {% endif %}
-  {% if attachments %}
-    <form method="post" action="/reports/{{ report.id }}/attachments">
-      <div class="grid sm:grid-cols-2 gap-1">
-        {% for a in attachments %}
-          <label class="check">
-            <input type="checkbox" name="attachment_ids" value="{{ a.id }}"
-                   {% if a.id in cited_attachment_ids %}checked{% endif %} {% if not can_edit %}disabled{% endif %}>
-            <span>
-              <span class="font-medium">{{ a.title or a.original_filename }}</span>
-              <span class="mono text-xs block mt-0.5" style="color:var(--accent-deep);">{{ a.original_filename }} · {{ a.file_size | filesizeformat }}</span>
-            </span>
-          </label>
-        {% endfor %}
-      </div>
-      {% if can_edit %}<button class="btn btn--ghost btn--sm mt-4">Update attachments</button>{% endif %}
-    </form>
-  {% else %}
-    <p class="empty">No attachments in this notebook to cite yet.
-      <a href="/notebooks/{{ notebook.id }}#attachments" class="btn-link">Upload reference files in the notebook</a>
-      before citing them.
-    </p>
+    <p class="empty">No sources in this notebook to cite yet.</p>
   {% endif %}
 </section>
 
 <!-- Requirements satisfied -->
-<section id="requirements-satisfied" class="card card-pad-lg mt-6">
+<section class="card card-pad-lg mt-6">
   <h2 class="section-title mb-1">Requirements satisfied</h2>
   <p class="text-xs mb-4" style="color:var(--muted);">Establishes traceability back to stakeholder needs.</p>
-  {% if updated == 'requirements' %}
-    <div class="inline-notice mb-4">Requirement links updated.</div>
-  {% endif %}
   {% if all_requirements %}
     <form method="post" action="/reports/{{ report.id }}/requirements">
       <div class="grid sm:grid-cols-2 gap-1">
@@ -236,7 +153,7 @@
       {% if can_edit %}<button class="btn btn--ghost btn--sm mt-4">Update requirements</button>{% endif %}
     </form>
   {% else %}
-    <p class="empty">No open requirements to link. When stakeholder requirements exist, link the ones this report satisfies.</p>
+    <p class="empty">No open requirements to link.</p>
   {% endif %}
 </section>
 
@@ -333,7 +250,7 @@
 </section>
 
 <!-- Rendered products -->
-<section id="rendered-products" class="card card-pad-lg mt-6">
+<section class="card card-pad-lg mt-6">
   <div class="head-row mb-4">
     <div>
       <h2 class="section-title">Rendered products</h2>
@@ -352,34 +269,15 @@
       {% endif %}
     {% endif %}
   </div>
-  {% if updated == 'rendered-products' %}
-    <div class="inline-notice mb-4">PDF product rendered.</div>
-  {% endif %}
   <div class="space-y-2">
     {% for p in products %}
       <div class="file-row">
         <span class="file-fmt">{{ p.format.value.replace('_',' ') }}</span>
         <span class="mono text-xs" style="color:var(--muted);">{{ p.rendered_at.strftime('%Y-%m-%d %H:%M') }}</span>
-        <div class="file-row-actions">
-          <a class="btn-link" href="/reports/{{ report.id }}/products/{{ p.id }}/download">Download ↓</a>
-          {% if can_edit %}
-            <form method="post" action="/reports/{{ report.id }}/products/{{ p.id }}/delete"
-                  onsubmit="return confirm('Delete this rendered product?');">
-              <button class="icon-action icon-action--danger" type="submit"
-                      aria-label="Delete rendered product"
-                      title="Delete rendered product"></button>
-            </form>
-          {% endif %}
-        </div>
+        <a class="btn-link ml-auto" href="/reports/{{ report.id }}/products/{{ p.id }}/download">Download ↓</a>
       </div>
     {% else %}
-      <p class="empty">
-        {% if typst_available %}
-          Nothing rendered yet. Choose a format and render a PDF when the product is ready.
-        {% else %}
-          Nothing rendered yet. Install Typst to generate PDF products from approved report content.
-        {% endif %}
-      </p>
+      <p class="empty">Nothing rendered yet.</p>
     {% endfor %}
   </div>
 </section>

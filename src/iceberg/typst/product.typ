@@ -104,38 +104,39 @@
 
 #let title-rule = box(width: 44pt, height: 3pt, radius: 1.5pt, fill: c-accent)
 
-// taxonomy tag chip: kind-tinted soft pill (matches the app's `.tagk` register —
-// sentence-case sans, distinct from the mono classification stamps above)
-#let tag-kind-col(kind) = if kind == "ACTOR" {
-  oklch(55%, 0.20, 25deg)
+// Taxonomy tag chip — a "catalog stamp" that mirrors the portal's `.tagk` /
+// `.k-*` design: a kind-tinted prefix cell (k-soft fill, k-ink text, k-line
+// divider) + a neutral body (white) with the external id (k-ink) and label.
+// All mono, calmer than the TLP/level/status stamps. Hues match iceberg.css.
+#let tag-kind-colors(kind) = if kind == "ACTOR" {
+  (ink: oklch(50%, 0.13, 320deg), soft: oklch(96.3%, 0.030, 320deg), line: oklch(88%, 0.050, 320deg))
 } else if kind == "CAMPAIGN" {
-  oklch(55%, 0.16, 300deg)
+  (ink: oklch(50%, 0.13, 350deg), soft: oklch(96.3%, 0.030, 350deg), line: oklch(88%, 0.050, 350deg))
 } else if kind == "MALWARE" {
-  oklch(55%, 0.18, 12deg)
+  (ink: oklch(50%, 0.13, 286deg), soft: oklch(96.3%, 0.030, 286deg), line: oklch(88%, 0.050, 286deg))
 } else if kind == "TECHNIQUE" {
-  oklch(50%, 0.115, 234deg)
+  (ink: oklch(50%, 0.13, 258deg), soft: oklch(96.3%, 0.030, 258deg), line: oklch(88%, 0.050, 258deg))
 } else if kind == "SECTOR" {
-  oklch(52%, 0.10, 200deg)
+  (ink: oklch(47%, 0.10, 168deg), soft: oklch(96.3%, 0.030, 168deg), line: oklch(86%, 0.048, 168deg))
 } else {
-  oklch(50%, 0.02, 258deg)
+  (ink: oklch(47%, 0.10, 124deg), soft: oklch(96.3%, 0.034, 124deg), line: oklch(86%, 0.050, 124deg))
 }
 
-#let tag-chip(t) = box(
-  inset: (x: 7pt, y: 4pt), radius: 8pt, baseline: 3pt,
-  fill: tag-kind-col(t.kind).transparentize(90%),
-  stroke: 0.7pt + tag-kind-col(t.kind).transparentize(62%),
-)[
-  #let k = tag-kind-col(t.kind)
-  #set text(size: 8.5pt, fill: k.darken(12%))
-  #text(font: f-mono, size: 7pt, weight: "bold", tracking: 0.5pt,
-        fill: k.transparentize(20%))[#upper(t.kind.slice(0, 3))]
-  #h(4pt)
-  #if t.external_id != "" {
-    text(font: f-mono, size: 8pt, weight: 600)[#t.external_id]
-    h(3pt)
-  }
-  #text(font: f-sans, weight: 500)[#t.label]
-]
+#let tag-chip(t) = {
+  let kc = tag-kind-colors(t.kind)
+  box(radius: 4pt, clip: true, stroke: 0.6pt + c-line-strong, baseline: 3pt)[
+    #grid(
+      columns: (auto, auto), align: horizon, inset: (x: 6pt, y: 3.5pt),
+      fill: (col, _) => if col == 0 { kc.soft } else { c-surface },
+      grid.vline(x: 1, stroke: 0.6pt + kc.line),
+      text(font: f-mono, size: 7pt, weight: "bold", tracking: 0.7pt, fill: kc.ink)[#upper(t.kind.slice(0, 3))],
+      {
+        if t.external_id != "" [#text(font: f-mono, size: 8pt, weight: 600, fill: kc.ink)[#t.external_id]#h(4pt)]
+        text(font: f-mono, size: 8.5pt, weight: 500, fill: c-ink)[#t.label]
+      },
+    )
+  ]
+}
 
 // styled appendix heading (Sources / Attachments) + accent rule
 #let appendix-heading(label) = {

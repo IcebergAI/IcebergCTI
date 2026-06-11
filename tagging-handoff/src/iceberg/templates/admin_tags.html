@@ -68,7 +68,7 @@
 </section>
 
 <!-- Filter + curation -->
-<div x-data='taxonomyFilter({ kinds: {{ kinds | map(attribute="value") | list | tojson }} })'>
+<div x-data="taxonomyFilter({ kinds: {{ kinds | map(attribute='value') | list | tojson }} })">
   <div class="head-row mb-4">
     <div class="tax-filter">
       <button type="button" class="tax-pill" :class="kindFilter==='' ? 'is-on' : ''" @click="kindFilter=''">All</button>
@@ -117,7 +117,9 @@
             </form>
             <form method="post" action="/admin/tags/{{ t.id }}/delete"
                   onsubmit="return confirm('Delete “{{ t.label }}” from the taxonomy? It is removed from any reports using it — retire it instead to keep their classification.');">
-              <button class="icon-action icon-action--danger" type="submit" aria-label="Delete term" title="Delete term"></button>
+              <button class="icon-action icon-action--danger" type="submit" aria-label="Delete term" title="Delete term">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+              </button>
             </form>
           </div>
         {% endfor %}
