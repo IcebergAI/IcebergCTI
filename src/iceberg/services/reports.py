@@ -17,6 +17,7 @@ from ..models import (
     User,
 )
 from ..rendering.typst import render_product
+from . import diamond as diamond_service
 
 
 # --------------------------------------------------------------------------- #
@@ -83,12 +84,17 @@ def render_report(
 
     author = session.get(User, report.author_id)
     author_name = author.display_name if author else "Unknown"
+    diamonds = [
+        (d.id, d.title, diamond_service.render_diamond_svg(d))
+        for d in diamond_service.referenced_diamonds(session, report)
+    ]
     path = render_product(
         report=report,
         author_name=author_name,
         sources=list(report.cited_sources),
         attachments=list(report.cited_attachments),
         tags=list(report.tags),
+        diamonds=diamonds,
         fmt=fmt,
     )
     product = RenderedProduct(report_id=report.id, format=fmt, pdf_path=str(path))

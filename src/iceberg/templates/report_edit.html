@@ -88,7 +88,7 @@
          const res = await fetch("/api/preview", {
            method: "POST",
            headers: {"Content-Type": "application/json"},
-           body: JSON.stringify({markdown: this.body})
+           body: JSON.stringify({markdown: this.body, report_id: {{ report.id }}})
          });
          if (res.ok) { this.previewHtml = (await res.json()).html; }
        }
@@ -131,6 +131,31 @@
   </section>
   {% endif %}
 </div>
+
+<!-- Diamond models -->
+<section id="diamond-models" class="card card-pad-lg mt-6">
+  <h2 class="section-title mb-1">Diamond models</h2>
+  <p class="text-xs mb-4" style="color:var(--muted);">Insert a Diamond Model with its token — it renders inline in the preview, the published report and the PDF.</p>
+  {% if diamonds %}
+    <div class="space-y-2">
+      {% for d in diamonds %}
+        <div class="file-row">
+          <span class="file-fmt">{{ d.title or 'Untitled assessment' }}</span>
+          <span class="mono text-xs" style="color:var(--accent-deep);">[[diamond:{{ d.id }}]]</span>
+          <div class="file-row-actions ml-auto">
+            {% if can_edit %}
+              <button type="button" class="btn btn--ghost btn--sm" onclick="insertDiamond({{ d.id }})">Insert</button>
+            {% endif %}
+            <a class="btn-link" href="/notebooks/{{ notebook.id }}/diamonds/{{ d.id }}/edit">Edit</a>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="empty">No Diamond Model assessments in this notebook yet.
+      <a href="/notebooks/{{ notebook.id }}#diamonds" class="btn-link">Build one in the notebook</a>, then insert it here.</p>
+  {% endif %}
+</section>
 
 <!-- Citations -->
 <section id="citations" class="card card-pad-lg mt-6">
@@ -383,4 +408,19 @@
     {% endfor %}
   </div>
 </section>
+
+<script>
+  // Insert a `[[diamond:ID]]` token at the cursor and notify Alpine's x-model
+  // (dispatch 'input') so the live preview refreshes.
+  function insertDiamond(id) {
+    const t = document.querySelector('textarea[name="body_md"]');
+    if (!t) return;
+    const token = '[[diamond:' + id + ']]';
+    const before = t.value.slice(0, t.selectionStart);
+    const lead = (before && !before.endsWith('\n')) ? '\n\n' : '';
+    t.setRangeText(lead + token + '\n', t.selectionStart, t.selectionEnd, 'end');
+    t.dispatchEvent(new Event('input', { bubbles: true }));
+    t.focus();
+  }
+</script>
 {% endblock %}

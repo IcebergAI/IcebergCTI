@@ -25,6 +25,7 @@ from ..auth.dependencies import CurrentUser
 from ..db import get_session
 from ..models import (
     Attachment,
+    DiamondConfidence,
     DisseminationEvent,
     IntelLevel,
     Note,
@@ -45,10 +46,10 @@ from ..models import (
     priority_rank,
     utcnow,
 )
-from ..rendering.markdown import render_markdown
 from ..rendering.typst import TypstNotAvailable, TypstRenderError, typst_available
 from ..services import (
     attachments as attachment_service,
+    diamond as diamond_service,
     dissemination,
     lifecycle,
     requirements as req_service,
@@ -183,6 +184,7 @@ def notebook_detail(
     nb = session.get(Notebook, notebook_id)
     if not nb:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Notebook not found")
+    diamonds = list(nb.diamond_models)
     return templates.TemplateResponse(
         request,
         "notebook_detail.html",
@@ -193,6 +195,9 @@ def notebook_detail(
             "notes": list(nb.notes),
             "attachments": list(nb.attachments),
             "reports": list(nb.reports),
+            "diamonds": diamonds,
+            "diamond_svgs": {d.id: diamond_service.render_diamond_svg(d) for d in diamonds},
+            "confidences": list(DiamondConfidence),
             "all_requirements": _open_requirements(session, nb.requirements),
             "linked_req_ids": {r.id for r in nb.requirements},
         },
@@ -291,6 +296,102 @@ def delete_attachment(
     return _redirect(f"/notebooks/{notebook_id}")
 
 
+# --------------------------------------------------------------------------- #
+# Diamond Model assessments
+# --------------------------------------------------------------------------- #
+@router.post("/notebooks/{notebook_id}/diamonds")
+def add_diamond(
+    notebook_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+    title: Annotated[str, Form()],
+    adversary: Annotated[str, Form()] = "",
+    capability: Annotated[str, Form()] = "",
+    infrastructure: Annotated[str, Form()] = "",
+    victim: Annotated[str, Form()] = "",
+    confidence: Annotated[DiamondConfidence, Form()] = DiamondConfidence.MODERATE,
+    notes: Annotated[str, Form()] = "",
+):
+    _require_writer(user)
+    nb = _get_notebook(session, notebook_id)
+    diamond = diamond_service.create_diamond(
+        session,
+        nb,
+        title=title,
+        adversary=adversary,
+        capability=capability,
+        infrastructure=infrastructure,
+        victim=victim,
+        confidence=confidence,
+        notes=notes,
+    )
+    return _redirect(f"/notebooks/{notebook_id}/diamonds/{diamond.id}/edit")
+
+
+@router.get("/notebooks/{notebook_id}/diamonds/{diamond_id}/edit")
+def diamond_edit(
+    notebook_id: int,
+    diamond_id: int,
+    request: Request,
+    session: SessionDep,
+    user: CurrentUser,
+):
+    _require_writer(user)
+    nb = _get_notebook(session, notebook_id)
+    diamond = diamond_service.get_scoped(session, notebook_id, diamond_id)
+    return templates.TemplateResponse(
+        request,
+        "diamond_edit.html",
+        {
+            "user": user,
+            "notebook": nb,
+            "diamond": diamond,
+            "confidences": list(DiamondConfidence),
+            "preview_svg": diamond_service.render_diamond_svg(diamond),
+        },
+    )
+
+
+@router.post("/notebooks/{notebook_id}/diamonds/{diamond_id}")
+def diamond_save(
+    notebook_id: int,
+    diamond_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+    title: Annotated[str, Form()],
+    adversary: Annotated[str, Form()] = "",
+    capability: Annotated[str, Form()] = "",
+    infrastructure: Annotated[str, Form()] = "",
+    victim: Annotated[str, Form()] = "",
+    confidence: Annotated[DiamondConfidence, Form()] = DiamondConfidence.MODERATE,
+    notes: Annotated[str, Form()] = "",
+):
+    _require_writer(user)
+    diamond = diamond_service.get_scoped(session, notebook_id, diamond_id)
+    diamond_service.update_diamond(
+        session,
+        diamond,
+        title=title,
+        adversary=adversary,
+        capability=capability,
+        infrastructure=infrastructure,
+        victim=victim,
+        confidence=confidence,
+        notes=notes,
+    )
+    return _redirect(f"/notebooks/{notebook_id}/diamonds/{diamond_id}/edit")
+
+
+@router.post("/notebooks/{notebook_id}/diamonds/{diamond_id}/delete")
+def diamond_delete(
+    notebook_id: int, diamond_id: int, session: SessionDep, user: CurrentUser
+):
+    _require_writer(user)
+    diamond = diamond_service.get_scoped(session, notebook_id, diamond_id)
+    diamond_service.delete_diamond(session, diamond)
+    return _redirect(f"/notebooks/{notebook_id}#diamonds")
+
+
 @router.post("/notebooks/{notebook_id}/reports")
 def create_report(
     notebook_id: int,
@@ -348,7 +449,7 @@ def report_view(
         {
             "user": user,
             "report": report,
-            "body_html": render_markdown(report.body_md),
+            "body_html": diamond_service.render_report_body_html(session, report),
             "cited_sources": list(report.cited_sources),
             "cited_attachments": list(report.cited_attachments),
             "products": list(report.rendered_products),
@@ -384,7 +485,8 @@ def report_edit(
             "cited_attachment_ids": {a.id for a in report.cited_attachments},
             "products": list(report.rendered_products),
             "typst_available": typst_available(),
-            "preview_html": render_markdown(report.body_md),
+            "preview_html": diamond_service.render_report_body_html(session, report),
+            "diamonds": list(notebook.diamond_models),
             "all_requirements": _open_requirements(session, report.requirements),
             "linked_req_ids": {r.id for r in report.requirements},
             "all_tags": tag_service.offerable_tags(session, report.tags),
