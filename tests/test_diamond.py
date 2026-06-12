@@ -106,6 +106,17 @@ def test_svg_escapes_vertex_text():
     assert "&lt;evil&gt;" in svg and "&amp;" in svg
 
 
+def test_svg_title_cannot_break_out_of_attribute():
+    """A crafted title must not inject an event handler on the <svg> element
+    (the SVG is injected past nh3, so it must escape its own attribute quotes)."""
+    from iceberg.models import DiamondModel
+
+    d = DiamondModel(notebook_id=1, title='Volt" onload="alert(1)')
+    svg = diamond_service.render_diamond_svg(d)
+    assert 'onload="alert(1)"' not in svg
+    assert "&quot;" in svg  # the quote was escaped inside the attribute
+
+
 # --------------------------------------------------------------------------- #
 # Inline-token rendering into a report body (web)
 # --------------------------------------------------------------------------- #

@@ -176,6 +176,16 @@ def preview_body_html(session: Session, notebook_id: int, markdown_text: str) ->
 _SANS = "Archivo, 'Helvetica Neue', Arial, sans-serif"
 _MONO = "'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace"
 
+# Quotes must also be escaped for values placed in an *attribute* (the SVG is
+# injected past nh3, so unescaped " would let a crafted title break out of the
+# attribute and inject an event handler on the <svg> element).
+_ATTR_ESC = {'"': "&quot;", "'": "&#39;"}
+
+
+def _esc_attr(text: str) -> str:
+    return escape(text or "", _ATTR_ESC)
+
+
 # Confidence -> (accent colour, light tint, label).
 _CONFIDENCE_STYLE = {
     DiamondConfidence.HIGH: ("#2f9e6f", "#e6f4ee", "HIGH CONFIDENCE"),
@@ -272,7 +282,7 @@ def render_diamond_svg(diamond: DiamondModel) -> str:
     parts = [
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 600" '
         'width="442" height="340" role="img" '
-        f'aria-label="Diamond Model: {escape(diamond.title)}">',
+        f'aria-label="Diamond Model: {_esc_attr(diamond.title)}">',
         '<rect x="1" y="1" width="778" height="598" rx="14" ry="14" '
         'fill="#fbfdfe" stroke="#e3e9ef" stroke-width="1.5"/>',
         # eyebrow + title
