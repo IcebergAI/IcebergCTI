@@ -139,14 +139,19 @@
   {% if diamonds %}
     <div class="space-y-2">
       {% for d in diamonds %}
-        <div class="file-row">
-          <span class="file-fmt">{{ d.title or 'Untitled assessment' }}</span>
-          <span class="mono text-xs" style="color:var(--accent-deep);">[[diamond:{{ d.id }}]]</span>
-          <div class="file-row-actions ml-auto">
-            {% if can_edit %}
-              <button type="button" class="btn btn--ghost btn--sm" onclick="insertDiamond({{ d.id }})">Insert</button>
-            {% endif %}
-            <a class="btn-link" href="/notebooks/{{ notebook.id }}/diamonds/{{ d.id }}/edit">Edit</a>
+        <div class="file-row" style="align-items:flex-start;gap:14px;">
+          {% if diamond_svgs and diamond_svgs[d.id] %}
+            <div class="diamond-svg" style="flex:none;width:132px;border:1px solid var(--line);border-radius:var(--radius-sm);overflow:hidden;background:var(--surface-2);">{{ diamond_svgs[d.id] | safe }}</div>
+          {% endif %}
+          <div class="flex-1" style="min-width:0;">
+            <div class="file-fmt">{{ d.title or 'Untitled assessment' }}</div>
+            <span class="mono text-xs" style="color:var(--accent-deep);">[[diamond:{{ d.id }}]]</span>
+            <div class="file-row-actions mt-2" style="margin-left:0;">
+              {% if can_edit %}
+                <button type="button" class="btn btn--ghost btn--sm" onclick="insertDiamond({{ d.id }})">Insert at cursor</button>
+              {% endif %}
+              <a class="btn-link" href="/notebooks/{{ notebook.id }}/diamonds/{{ d.id }}/edit">Edit</a>
+            </div>
           </div>
         </div>
       {% endfor %}

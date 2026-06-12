@@ -106,15 +106,40 @@ def test_svg_escapes_vertex_text():
     assert "&lt;evil&gt;" in svg and "&amp;" in svg
 
 
-def test_svg_title_cannot_break_out_of_attribute():
-    """A crafted title must not inject an event handler on the <svg> element
-    (the SVG is injected past nh3, so it must escape its own attribute quotes)."""
+def test_svg_title_cannot_inject_markup():
+    """A crafted title must not inject markup. The title now lives in <title>
+    text content (not a raw attribute), so a quote is harmless and tag chars are
+    escaped — the SVG is injected past nh3, so this regression matters."""
     from iceberg.models import DiamondModel
 
-    d = DiamondModel(notebook_id=1, title='Volt" onload="alert(1)')
+    quote = DiamondModel(notebook_id=1, title='Volt" onload="alert(1)')
+    svg = diamond_service.render_diamond_svg(quote)
+    assert 'onload="alert(1)"' not in svg  # cannot break out into an attribute
+
+    tag = DiamondModel(notebook_id=1, title="<script>alert(1)</script>")
+    svg = diamond_service.render_diamond_svg(tag)
+    assert "<script" not in svg  # escaped to &lt;script
+    assert "&lt;script&gt;" in svg
+
+
+def test_svg_has_labelled_axes_meter_and_desc():
+    """The redesign: labelled meta-axes, an ordinal confidence meter (not a
+    traffic-light badge), and a <title>/<desc> accessible description."""
+    from iceberg.models import DiamondConfidence, DiamondModel
+
+    d = DiamondModel(
+        notebook_id=1,
+        title="Volt Typhoon",
+        adversary="PRC actor",
+        confidence=DiamondConfidence.MODERATE,
+    )
     svg = diamond_service.render_diamond_svg(d)
-    assert 'onload="alert(1)"' not in svg
-    assert "&quot;" in svg  # the quote was escaped inside the attribute
+    assert "SOCIO-POLITICAL" in svg and "TECHNICAL" in svg  # labelled meta-axes
+    assert "<title" in svg and "<desc" in svg  # accessibility
+    assert "PRC actor" in svg  # desc enumerates the features
+    assert "CONFIDENCE" in svg  # meter label kept for redundancy
+    # the old red/amber/green confidence badge colours are gone
+    assert "#2f9e6f" not in svg and "#c2882b" not in svg and "#b0563f" not in svg
 
 
 # --------------------------------------------------------------------------- #

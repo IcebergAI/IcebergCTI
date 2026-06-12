@@ -8,9 +8,13 @@
     <a href="/notebooks/{{ notebook.id }}#diamonds" class="backlink">← {{ notebook.title }}</a>
     <div class="eyebrow eyebrow-accent mt-3">Diamond Model · Intrusion Analysis</div>
     <h1 class="page-title mt-2">{{ diamond.title or 'Untitled assessment' }}</h1>
-    <div class="mt-3 flex gap-2 items-center flex-wrap">
-      <span class="mono text-xs" style="color:var(--accent-deep);">[[diamond:{{ diamond.id }}]]</span>
-      <span class="text-xs" style="color:var(--muted);">Write this token in a report body to embed the diagram.</span>
+    <div class="mt-3 flex gap-2 items-center flex-wrap"
+         x-data="{ copied: false, copy() { navigator.clipboard.writeText('[[diamond:{{ diamond.id }}]]').then(() => { this.copied = true; setTimeout(() => this.copied = false, 1600); }); } }">
+      <span class="mono text-xs" style="color:var(--accent-deep);background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:5px;padding:3px 7px;">[[diamond:{{ diamond.id }}]]</span>
+      <button type="button" class="btn btn--ghost btn--sm" @click="copy()">
+        <span x-text="copied ? '✓ Copied' : '⧉ Copy token'"></span>
+      </button>
+      <span class="text-xs" style="color:var(--muted);">Paste into a report body to embed the diagram.</span>
     </div>
   </div>
 </div>
@@ -43,34 +47,44 @@
     <div class="pane-label"><span class="pip"></span> Assessment</div>
     {% if can_edit %}
       <form method="post" action="/notebooks/{{ notebook.id }}/diamonds/{{ diamond.id }}" class="space-y-3">
-        <div class="grid grid-cols-12 gap-3 items-end">
-          <div class="col-span-8">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
             <label class="field-label">Title</label>
             <input name="title" x-model="fields.title" @input="schedule()" required class="field" style="font-weight:600;">
           </div>
-          <div class="col-span-4">
+          <div>
             <label class="field-label">Confidence</label>
             <select name="confidence" x-model="fields.confidence" @change="schedule()" class="field">
               {% for c in confidences %}<option value="{{ c.value }}">{{ c.value.title() }}</option>{% endfor %}
             </select>
           </div>
         </div>
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="field-label">Adversary</label>
-            <textarea name="adversary" rows="3" x-model="fields.adversary" @input="schedule()" class="field" placeholder="Who is behind the activity"></textarea>
+
+        {# Four features laid out as the diamond's geometry: adversary on top,
+           capability/infrastructure across the technical axis, victim at the
+           bottom — so the inputs mirror the diagram they produce. #}
+        <div class="field-label mt-1" style="margin-bottom:2px;">Four features
+          <span class="opt" style="text-transform:none;letter-spacing:0;">· laid out as the diamond</span></div>
+        <div class="space-y-2">
+          <div style="max-width:78%;margin:0 auto;">
+            <label class="field-label" style="color:#8a4bad;">▲ Adversary</label>
+            <textarea name="adversary" rows="2" x-model="fields.adversary" @input="schedule()" class="field" placeholder="Who is behind the activity"></textarea>
           </div>
-          <div>
-            <label class="field-label">Capability</label>
-            <textarea name="capability" rows="3" x-model="fields.capability" @input="schedule()" class="field" placeholder="Tooling, malware, TTPs"></textarea>
+          <div class="grid items-center gap-2" style="grid-template-columns:1fr auto 1fr;">
+            <div>
+              <label class="field-label" style="color:#3461bd;">◀ Capability</label>
+              <textarea name="capability" rows="2" x-model="fields.capability" @input="schedule()" class="field" placeholder="Tooling, malware, TTPs"></textarea>
+            </div>
+            <div class="mono" style="font-size:9.5px;letter-spacing:1px;color:var(--faint);white-space:nowrap;">↔ TECHNICAL</div>
+            <div>
+              <label class="field-label" style="color:#1c8a8a;">▶ Infrastructure</label>
+              <textarea name="infrastructure" rows="2" x-model="fields.infrastructure" @input="schedule()" class="field" placeholder="C2, staging, delivery"></textarea>
+            </div>
           </div>
-          <div>
-            <label class="field-label">Infrastructure</label>
-            <textarea name="infrastructure" rows="3" x-model="fields.infrastructure" @input="schedule()" class="field" placeholder="C2, staging, delivery"></textarea>
-          </div>
-          <div>
-            <label class="field-label">Victim</label>
-            <textarea name="victim" rows="3" x-model="fields.victim" @input="schedule()" class="field" placeholder="Targeted org / sector"></textarea>
+          <div class="mono" style="text-align:center;font-size:9.5px;letter-spacing:1px;color:var(--faint);">↕ SOCIO-POLITICAL</div>
+          <div style="max-width:78%;margin:0 auto;">
+            <label class="field-label" style="color:#b06a1f;">▼ Victim</label>
+            <textarea name="victim" rows="2" x-model="fields.victim" @input="schedule()" class="field" placeholder="Targeted org / sector"></textarea>
           </div>
         </div>
         <div>

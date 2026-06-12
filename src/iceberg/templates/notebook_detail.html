@@ -202,7 +202,6 @@
             <div class="row-title text-sm">{{ d.title or 'Untitled assessment' }}</div>
             <div class="flex items-center gap-2 mt-1 flex-wrap">
               <span class="mono text-xs" style="color:var(--accent-deep);">[[diamond:{{ d.id }}]]</span>
-              <span class="dconf dconf--{{ d.confidence.value | lower }}">{{ d.confidence.value.title() }}</span>
             </div>
             {% if can_write %}
               <div class="file-row-actions mt-2">

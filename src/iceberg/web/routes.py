@@ -487,6 +487,10 @@ def report_edit(
             "typst_available": typst_available(),
             "preview_html": diamond_service.render_report_body_html(session, report),
             "diamonds": list(notebook.diamond_models),
+            "diamond_svgs": {
+                d.id: diamond_service.render_diamond_svg(d)
+                for d in notebook.diamond_models
+            },
             "all_requirements": _open_requirements(session, report.requirements),
             "linked_req_ids": {r.id for r in report.requirements},
             "all_tags": tag_service.offerable_tags(session, report.tags),

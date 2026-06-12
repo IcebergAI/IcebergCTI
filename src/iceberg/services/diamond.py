@@ -176,29 +176,25 @@ def preview_body_html(session: Session, notebook_id: int, markdown_text: str) ->
 _SANS = "Archivo, 'Helvetica Neue', Arial, sans-serif"
 _MONO = "'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace"
 
-# Quotes must also be escaped for values placed in an *attribute* (the SVG is
-# injected past nh3, so unescaped " would let a crafted title break out of the
-# attribute and inject an event handler on the <svg> element).
-_ATTR_ESC = {'"': "&quot;", "'": "&#39;"}
-
-
-def _esc_attr(text: str) -> str:
-    return escape(text or "", _ATTR_ESC)
-
-
-# Confidence -> (accent colour, light tint, label).
-_CONFIDENCE_STYLE = {
-    DiamondConfidence.HIGH: ("#2f9e6f", "#e6f4ee", "HIGH CONFIDENCE"),
-    DiamondConfidence.MODERATE: ("#c2882b", "#f6eddb", "MODERATE CONFIDENCE"),
-    DiamondConfidence.LOW: ("#b0563f", "#f3e2db", "LOW CONFIDENCE"),
+# Confidence is rendered as an ORDINAL meter (count of filled pips on a single
+# ink hue) — deliberately NOT a fourth red/amber/green stamp competing with the
+# TLP and report-status markings already on the page. Level is read by count.
+_CONF_PIPS = {
+    DiamondConfidence.HIGH: 3,
+    DiamondConfidence.MODERATE: 2,
+    DiamondConfidence.LOW: 1,
 }
+_CONF_INK = "#2c6c8c"   # glacial-cyan ink (same family as --accent-ink)
+_CONF_OFF = "#d6dde4"   # empty pip
 
 # (kind label, DiamondModel attribute, kind colour, centre x, centre y)
+# Vertex hues harmonised into the design-system tag-kind family
+# (shared lightness/chroma, hue varies) so the diagram feels native.
 _VERTICES = [
-    ("ADVERSARY", "adversary", "#8146a8", 390, 162),
-    ("CAPABILITY", "capability", "#2f6fb0", 158, 350),
-    ("INFRASTRUCTURE", "infrastructure", "#1f8a8a", 622, 350),
-    ("VICTIM", "victim", "#b3722a", 390, 538),
+    ("ADVERSARY", "adversary", "#8a4bad", 390, 162),
+    ("CAPABILITY", "capability", "#3461bd", 158, 350),
+    ("INFRASTRUCTURE", "infrastructure", "#1c8a8a", 622, 350),
+    ("VICTIM", "victim", "#b06a1f", 390, 538),
 ]
 _NODE_W = 224
 _NODE_H = 104
@@ -239,37 +235,61 @@ def _node(kind_label: str, content: str, colour: str, cx: int, cy: int) -> str:
     y = cy - _NODE_H / 2
     out = [
         f'<rect x="{x:.0f}" y="{y:.0f}" width="{_NODE_W}" height="{_NODE_H}" '
-        'rx="10" ry="10" fill="#ffffff" stroke="#cdd6df" stroke-width="1.4"/>',
-        f'<rect x="{x:.0f}" y="{y:.0f}" width="{_NODE_W}" height="4" '
-        f'rx="2" ry="2" fill="{colour}"/>',
-        f'<text x="{cx}" y="{y + 26:.0f}" text-anchor="middle" font-family="{_MONO}" '
+        'rx="11" ry="11" fill="#ffffff" stroke="#cdd6df" stroke-width="1.4"/>',
+        # left rail — a stronger kind cue than a top hairline, reads like the
+        # app's editorial register (e.g. notebook source list left-borders).
+        f'<rect x="{x:.0f}" y="{y:.0f}" width="5" height="{_NODE_H}" '
+        f'rx="2.5" ry="2.5" fill="{colour}"/>',
+        f'<text x="{cx + 2}" y="{y + 25:.0f}" text-anchor="middle" font-family="{_MONO}" '
         f'font-size="11" font-weight="700" letter-spacing="1.1" fill="{colour}">'
         f"{escape(kind_label)}</text>",
     ]
     lines = _wrap_lines(content)
     if lines:
-        ty = y + 50
+        ty = y + 49
         for line in lines:
             out.append(
-                f'<text x="{cx}" y="{ty:.0f}" text-anchor="middle" '
+                f'<text x="{cx + 2}" y="{ty:.0f}" text-anchor="middle" '
                 f'font-family="{_SANS}" font-size="13" fill="#2b2f3a">'
                 f"{escape(line)}</text>"
             )
             ty += 18
     else:
         out.append(
-            f'<text x="{cx}" y="{y + 60:.0f}" text-anchor="middle" '
+            f'<text x="{cx + 2}" y="{y + 60:.0f}" text-anchor="middle" '
             f'font-family="{_SANS}" font-size="12" font-style="italic" '
-            'fill="#9aa3ad">not specified</text>'
+            'fill="#a6aeb8">— not specified —</text>'
         )
     return "".join(out)
+
+
+def _confidence_meter(confidence: DiamondConfidence) -> str:
+    """A neutral, ordinal pip meter (top-right) — not a traffic-light stamp."""
+    conf = DiamondConfidence(confidence)
+    filled = _CONF_PIPS[conf]
+    label = f"{conf.value} CONFIDENCE"
+    parts = [
+        '<rect x="540" y="20" width="210" height="30" rx="7" ry="7" '
+        'fill="#f1f5f8" stroke="#d6dde4" stroke-width="1"/>',
+        f'<text x="556" y="38" font-family="{_MONO}" font-size="9.5" '
+        f'font-weight="700" letter-spacing="0.5" fill="#5a6672">{escape(label)}</text>',
+    ]
+    for i in range(3):
+        fill = _CONF_INK if i < filled else _CONF_OFF
+        parts.append(
+            f'<rect x="{690 + i * 16}" y="29" width="11" height="12" '
+            f'rx="2.5" ry="2.5" fill="{fill}"/>'
+        )
+    return "".join(parts)
 
 
 def render_diamond_svg(diamond: DiamondModel) -> str:
     """Render a self-contained SVG diagram of a Diamond Model assessment.
 
-    The SVG carries its own title + confidence badge so it is meaningful
-    standalone (e.g. embedded in the PDF or shown as a notebook thumbnail).
+    The SVG carries its own title, a confidence meter, **labelled meta-axes**
+    and a provenance footer so it is meaningful standalone (embedded in the PDF
+    or shown as a notebook thumbnail). It also exposes an accessible name +
+    description (``<title>`` / ``<desc>``) covering all four features.
     """
     centres = {kind: (cx, cy) for kind, _attr, _c, cx, cy in _VERTICES}
     ax, ay = centres["ADVERSARY"]
@@ -277,12 +297,42 @@ def render_diamond_svg(diamond: DiamondModel) -> str:
     ix, iy = centres["INFRASTRUCTURE"]
     vx, vy = centres["VICTIM"]
 
-    colour, tint, conf_label = _CONFIDENCE_STYLE[DiamondConfidence(diamond.confidence)]
+    conf = DiamondConfidence(diamond.confidence)
+    title = (
+        _wrap_lines(diamond.title, max_chars=44, max_lines=1)[0]
+        if diamond.title.strip()
+        else "Untitled assessment"
+    )
+
+    # provenance: when this assessment was last touched (footer, right)
+    updated = ""
+    stamp = getattr(diamond, "updated_at", None)
+    if stamp is not None:
+        try:
+            updated = stamp.strftime("%Y-%m-%d")
+        except Exception:  # pragma: no cover - defensive
+            updated = ""
+
+    # accessible description from the four features (screen readers get more
+    # than just the title attribute did)
+    desc = ". ".join(
+        f"{k}: {(getattr(diamond, a, '') or '').strip() or 'not specified'}"
+        for k, a in (
+            ("Adversary", "adversary"),
+            ("Capability", "capability"),
+            ("Infrastructure", "infrastructure"),
+            ("Victim", "victim"),
+        )
+    )
+    # unique-per-diamond ids so multiple diagrams can coexist on one page
+    sid = diamond.id if getattr(diamond, "id", None) is not None else "x"
 
     parts = [
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 600" '
-        'width="442" height="340" role="img" '
-        f'aria-label="Diamond Model: {_esc_attr(diamond.title)}">',
+        f'width="442" height="340" role="img" aria-labelledby="dm-t-{sid} dm-d-{sid}">',
+        f'<title id="dm-t-{sid}">Diamond Model — {escape(title)} '
+        f"({escape(conf.value)} confidence)</title>",
+        f'<desc id="dm-d-{sid}">{escape(desc)}.</desc>',
         '<rect x="1" y="1" width="778" height="598" rx="14" ry="14" '
         'fill="#fbfdfe" stroke="#e3e9ef" stroke-width="1.5"/>',
         # eyebrow + title
@@ -290,25 +340,47 @@ def render_diamond_svg(diamond: DiamondModel) -> str:
         'font-weight="700" letter-spacing="1.6" fill="#1f6f93">'
         "DIAMOND MODEL · INTRUSION ANALYSIS</text>",
         f'<text x="30" y="60" font-family="{_SANS}" font-size="19" '
-        f'font-weight="800" fill="#23272f">{escape(_wrap_lines(diamond.title, max_chars=46, max_lines=1)[0] if diamond.title.strip() else "Untitled assessment")}</text>',
-        # confidence badge (top-right)
-        f'<rect x="566" y="22" width="184" height="26" rx="13" ry="13" '
-        f'fill="{tint}" stroke="{colour}" stroke-width="1"/>',
-        f'<circle cx="584" cy="35" r="4" fill="{colour}"/>',
-        f'<text x="596" y="39" font-family="{_MONO}" font-size="10" '
-        f'font-weight="700" letter-spacing="0.6" fill="{colour}">{conf_label}</text>',
+        f'font-weight="800" fill="#23272f">{escape(title)}</text>',
+        # confidence meter (top-right)
+        _confidence_meter(conf),
         # meta-axes (dashed, behind nodes)
-        f'<line x1="{ax}" y1="{ay}" x2="{vx}" y2="{vy}" stroke="#d6dde4" '
+        f'<line x1="{ax}" y1="{ay}" x2="{vx}" y2="{vy}" stroke="#cfd8e0" '
         'stroke-width="1.5" stroke-dasharray="5 6"/>',
-        f'<line x1="{cx_}" y1="{cy_}" x2="{ix}" y2="{iy}" stroke="#d6dde4" '
+        f'<line x1="{cx_}" y1="{cy_}" x2="{ix}" y2="{iy}" stroke="#cfd8e0" '
         'stroke-width="1.5" stroke-dasharray="5 6"/>',
         # diamond outline edges
-        f'<line x1="{ax}" y1="{ay}" x2="{cx_}" y2="{cy_}" stroke="#c2ccd6" stroke-width="2"/>',
-        f'<line x1="{ax}" y1="{ay}" x2="{ix}" y2="{iy}" stroke="#c2ccd6" stroke-width="2"/>',
-        f'<line x1="{cx_}" y1="{cy_}" x2="{vx}" y2="{vy}" stroke="#c2ccd6" stroke-width="2"/>',
-        f'<line x1="{ix}" y1="{iy}" x2="{vx}" y2="{vy}" stroke="#c2ccd6" stroke-width="2"/>',
+        f'<line x1="{ax}" y1="{ay}" x2="{cx_}" y2="{cy_}" stroke="#bcc6d1" stroke-width="2"/>',
+        f'<line x1="{ax}" y1="{ay}" x2="{ix}" y2="{iy}" stroke="#bcc6d1" stroke-width="2"/>',
+        f'<line x1="{cx_}" y1="{cy_}" x2="{vx}" y2="{vy}" stroke="#bcc6d1" stroke-width="2"/>',
+        f'<line x1="{ix}" y1="{iy}" x2="{vx}" y2="{vy}" stroke="#bcc6d1" stroke-width="2"/>',
+        # faint centre crosshair where the two meta-axes cross
+        '<circle cx="390" cy="350" r="3" fill="#c2ccd6"/>',
+        # AXIS LABELS — the core Diamond-Model concept, previously unlabelled.
+        # Socio-political axis (adversary <-> victim): vertical label, upper gap.
+        '<g transform="translate(390,272) rotate(-90)">'
+        '<rect x="-66" y="-9" width="132" height="18" rx="9" fill="#fbfdfe"/>'
+        f'<text x="0" y="4" text-anchor="middle" font-family="{_MONO}" '
+        'font-size="9.5" font-weight="700" letter-spacing="1.3" fill="#7a8694">'
+        "↕ SOCIO-POLITICAL</text></g>",
+        # Technical axis (capability <-> infrastructure): horizontal, right gap.
+        '<g transform="translate(462,350)">'
+        '<rect x="-52" y="-9" width="104" height="18" rx="9" fill="#fbfdfe"/>'
+        f'<text x="0" y="4" text-anchor="middle" font-family="{_MONO}" '
+        'font-size="9.5" font-weight="700" letter-spacing="1.3" fill="#7a8694">'
+        "↔ TECHNICAL</text></g>",
     ]
     for kind_label, attr, kind_colour, cx, cy in _VERTICES:
         parts.append(_node(kind_label, getattr(diamond, attr, ""), kind_colour, cx, cy))
+    # footer — hairline + a tiny key, plus provenance date when available
+    parts.append('<line x1="30" y1="572" x2="750" y2="572" stroke="#e3e9ef" stroke-width="1"/>')
+    parts.append(
+        f'<text x="30" y="589" font-family="{_MONO}" font-size="9" '
+        'letter-spacing="0.4" fill="#9aa3ad">FOUR FEATURES · TWO META-AXES</text>'
+    )
+    if updated:
+        parts.append(
+            f'<text x="750" y="589" text-anchor="end" font-family="{_MONO}" '
+            f'font-size="9" letter-spacing="0.4" fill="#9aa3ad">UPDATED {escape(updated)}</text>'
+        )
     parts.append("</svg>")
     return "".join(parts)

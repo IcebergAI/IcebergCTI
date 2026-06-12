@@ -843,19 +843,3 @@ select.field {
 }
 .diamond-thumb svg { max-width: 100%; height: auto; display: block; }
 .diamond-card-meta { padding: 12px 14px; }
-
-.dconf {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-family: var(--fs-mono);
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.4px;
-  border: 1px solid transparent;
-}
-.dconf--high     { color: var(--c-ok);   background: oklch(0.62 0.14 155 / 0.12); border-color: oklch(0.62 0.14 155 / 0.35); }
-.dconf--moderate { color: var(--c-warn); background: oklch(0.70 0.15 70 / 0.12);  border-color: oklch(0.70 0.15 70 / 0.35); }
-.dconf--low      { color: var(--c-crit); background: oklch(0.55 0.20 25 / 0.10);  border-color: oklch(0.55 0.20 25 / 0.30); }
