@@ -312,7 +312,16 @@
 // =============================================================================
 //  Body
 // =============================================================================
-#cmarker.render(data.body_md)
+// Override cmarker's `image` so paths resolve relative to THIS template (the
+// temp `--root`) rather than the cmarker package — used for inline Diamond
+// Model diagrams (`diamond-N.svg`, written there per render). Constrained to
+// 92% width so a diagram never overflows the text column in any format.
+#cmarker.render(
+  data.body_md,
+  scope: (
+    image: (path, ..args) => align(center, image(path, width: 92%, ..args)),
+  ),
+)
 
 // =============================================================================
 //  Appendices (FULL only): cited sources, then cited attachments

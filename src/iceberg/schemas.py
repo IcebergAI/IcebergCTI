@@ -3,6 +3,7 @@
 from pydantic import BaseModel
 
 from .models import (
+    DiamondConfidence,
     IntelLevel,
     Priority,
     ProductFormat,
@@ -62,10 +63,48 @@ class RenderRequest(BaseModel):
 
 class PreviewRequest(BaseModel):
     markdown: str = ""
+    # When set, the editor's live preview resolves `[[diamond:ID]]` tokens
+    # against this report's notebook.
+    report_id: int | None = None
 
 
 class PreviewResponse(BaseModel):
     html: str
+
+
+class DiamondCreate(BaseModel):
+    title: str
+    adversary: str = ""
+    capability: str = ""
+    infrastructure: str = ""
+    victim: str = ""
+    confidence: DiamondConfidence = DiamondConfidence.MODERATE
+    notes: str = ""
+
+
+class DiamondUpdate(BaseModel):
+    title: str | None = None
+    adversary: str | None = None
+    capability: str | None = None
+    infrastructure: str | None = None
+    victim: str | None = None
+    confidence: DiamondConfidence | None = None
+    notes: str | None = None
+
+
+class DiamondPreviewRequest(BaseModel):
+    """Render an unsaved Diamond Model to SVG (the notebook edit-page preview)."""
+
+    title: str = ""
+    adversary: str = ""
+    capability: str = ""
+    infrastructure: str = ""
+    victim: str = ""
+    confidence: DiamondConfidence = DiamondConfidence.MODERATE
+
+
+class DiamondPreviewResponse(BaseModel):
+    svg: str
 
 
 class RequirementCreate(BaseModel):

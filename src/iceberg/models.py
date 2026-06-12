@@ -117,6 +117,14 @@ class TagKind(StrEnum):
     TOPIC = "TOPIC"
 
 
+class DiamondConfidence(StrEnum):
+    """Analytic confidence in a Diamond Model assessment."""
+
+    LOW = "LOW"
+    MODERATE = "MODERATE"
+    HIGH = "HIGH"
+
+
 # --------------------------------------------------------------------------- #
 # Link tables
 # --------------------------------------------------------------------------- #
@@ -214,6 +222,9 @@ class Notebook(SQLModel, table=True):
     attachments: list["Attachment"] = Relationship(
         back_populates="notebook", cascade_delete=True
     )
+    diamond_models: list["DiamondModel"] = Relationship(
+        back_populates="notebook", cascade_delete=True
+    )
     reports: list["Report"] = Relationship(
         back_populates="notebook", cascade_delete=True
     )
@@ -244,6 +255,33 @@ class Note(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
 
     notebook: Notebook = Relationship(back_populates="notes")
+
+
+class DiamondModel(SQLModel, table=True):
+    """A Diamond Model of Intrusion Analysis assessment held against a notebook.
+
+    Captures the four core features (adversary / capability / infrastructure /
+    victim) plus an analytic confidence. Rendered to an SVG diagram and embedded
+    inline in a report by writing the ``[[diamond:ID]]`` token in the report
+    body — there is no explicit citation link table; the association is the
+    token, resolved (notebook-scoped) at render time. See ``services/diamond.py``.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    notebook_id: int = Field(
+        foreign_key="notebook.id", ondelete="CASCADE", index=True
+    )
+    title: str
+    adversary: str = ""
+    capability: str = ""
+    infrastructure: str = ""
+    victim: str = ""
+    confidence: DiamondConfidence = Field(default=DiamondConfidence.MODERATE)
+    notes: str = ""
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+    notebook: Notebook = Relationship(back_populates="diamond_models")
 
 
 class Attachment(SQLModel, table=True):

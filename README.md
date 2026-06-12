@@ -4,9 +4,10 @@ A cyber threat intelligence platform for **collecting** intelligence, **authorin
 finished intelligence products, and **disseminating** them to stakeholders.
 
 Analysts work in topic **notebooks** — gathering sources, notes and uploaded
-**attachments** (reference files) — and author **reports** (intelligence products)
-in markdown. Reports carry an intelligence level (Strategic / Tactical /
-Operational) and a TLP marking, cite sources and attachments, are classified with
+**attachments** (reference files), and modelling intrusions with the **Diamond
+Model** — and author **reports** (intelligence products) in markdown. Reports carry
+an intelligence level (Strategic / Tactical / Operational) and a TLP marking, cite
+sources and attachments, **embed Diamond Model diagrams inline**, are classified with
 **taxonomy tags** (threat actor / campaign / malware / ATT&CK technique / sector /
 topic), move through a review workflow, and can be rendered to branded PDF products.
 Everything is **searchable** — full-text + faceted across the report library.
@@ -95,6 +96,15 @@ Open <http://localhost:8000>. With `ICEBERG_DEV_AUTH=true` (the default) you'll 
 4. **Submit for review**, then sign in again as a `REVIEWER` to **Approve** and
    **Publish**.
 5. **Render** a PDF (FULL / EXEC_BRIEF / ONE_PAGER) and download it.
+
+### Model an intrusion (Diamond Model)
+1. In a notebook, open the **Diamond models** section and add one — adversary,
+   capability, infrastructure, victim and an analytic confidence. The **Edit** page
+   shows a live SVG preview of the diagram as you type.
+2. In a report editor, click **Insert** next to the model (or type its
+   `[[diamond:ID]]` token) to embed the diagram **inline at that point** in the body.
+3. The diagram renders in the live preview, the published report page, and the
+   Typst PDF — all from one server-generated SVG.
 
 ### Try requirements & tasking
 1. Sign in as a `STAKEHOLDER` → **My Requirements** → submit an intelligence requirement

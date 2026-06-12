@@ -28,6 +28,11 @@
     <strong>{{ attachments | length }}</strong>
     <span>Reference material</span>
   </a>
+  <a href="#diamonds" class="collection-step {{ 'is-done' if diamonds else '' }}">
+    <span class="step-kicker">Diamond</span>
+    <strong>{{ diamonds | length }}</strong>
+    <span>Intrusion models</span>
+  </a>
   <a href="#products" class="collection-step {{ 'is-done' if reports else '' }}">
     <span class="step-kicker">Products</span>
     <strong>{{ reports | length }}</strong>
@@ -177,6 +182,67 @@
       <input name="title" placeholder="Label (optional — defaults to filename)" class="field">
       <input name="summary" placeholder="Short summary (optional)" class="field">
       <button class="btn btn--ghost btn--sm">Upload attachment</button>
+    </form>
+  {% endif %}
+</section>
+
+<!-- Diamond models -->
+<section id="diamonds" class="card card-pad-lg mb-6">
+  <div class="head-row mb-4">
+    <h2 class="section-title">Diamond models</h2>
+    <span class="eyebrow">{{ diamonds | length }}</span>
+  </div>
+  <p class="text-xs mb-4" style="color:var(--muted);">Structured Diamond Model of Intrusion Analysis assessments. Embed one in a report by writing its <span class="mono" style="color:var(--accent-deep);">[[diamond:ID]]</span> token in the body.</p>
+  {% if diamonds %}
+    <div class="diamond-grid">
+      {% for d in diamonds %}
+        <div class="diamond-card">
+          <div class="diamond-thumb">{{ diamond_svgs[d.id] | safe }}</div>
+          <div class="diamond-card-meta">
+            <div class="row-title text-sm">{{ d.title or 'Untitled assessment' }}</div>
+            <div class="flex items-center gap-2 mt-1 flex-wrap">
+              <span class="mono text-xs" style="color:var(--accent-deep);">[[diamond:{{ d.id }}]]</span>
+              <span class="dconf dconf--{{ d.confidence.value | lower }}">{{ d.confidence.value.title() }}</span>
+            </div>
+            {% if can_write %}
+              <div class="file-row-actions mt-2">
+                <a class="btn btn--ghost btn--sm" href="/notebooks/{{ notebook.id }}/diamonds/{{ d.id }}/edit">Edit</a>
+                <form method="post" action="/notebooks/{{ notebook.id }}/diamonds/{{ d.id }}/delete"
+                      onsubmit="return confirm('Delete this Diamond Model?');">
+                  <button class="link-danger" style="background:none;border:0;cursor:pointer;">Delete</button>
+                </form>
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="empty">No Diamond Model assessments yet. Capture adversary, capability, infrastructure and victim to model an intrusion.</p>
+  {% endif %}
+  {% if can_write %}
+    <form method="post" action="/notebooks/{{ notebook.id }}/diamonds" class="well card-pad mt-4 space-y-3">
+      <div class="eyebrow">New Diamond Model</div>
+      <div class="grid sm:grid-cols-12 gap-3 items-end">
+        <div class="sm:col-span-9">
+          <label class="field-label">Title</label>
+          <input name="title" required placeholder="e.g. Volt Typhoon — SOHO router proxy" class="field">
+        </div>
+        <div class="sm:col-span-3">
+          <label class="field-label">Confidence</label>
+          <select name="confidence" class="field">
+            {% for c in confidences %}<option value="{{ c.value }}" {% if c.value == 'MODERATE' %}selected{% endif %}>{{ c.value.title() }}</option>{% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="grid sm:grid-cols-2 gap-3">
+        <div><label class="field-label">Adversary</label><textarea name="adversary" rows="2" placeholder="Who is behind the activity" class="field"></textarea></div>
+        <div><label class="field-label">Capability</label><textarea name="capability" rows="2" placeholder="Tooling, malware, TTPs" class="field"></textarea></div>
+        <div><label class="field-label">Infrastructure</label><textarea name="infrastructure" rows="2" placeholder="C2, staging, delivery" class="field"></textarea></div>
+        <div><label class="field-label">Victim</label><textarea name="victim" rows="2" placeholder="Targeted org / sector" class="field"></textarea></div>
+      </div>
+      <div><label class="field-label">Notes <span class="opt">optional</span></label><textarea name="notes" rows="2" placeholder="Analytic notes" class="field"></textarea></div>
+      <button class="btn btn--ink">Create Diamond Model</button>
     </form>
   {% endif %}
 </section>

@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% set can_edit = user.role != 'STAKEHOLDER' %}
+{% block title %}Diamond Model · {{ diamond.title or 'Untitled' }}{% endblock %}
+{% block content %}
+
+<div class="head-row mb-5">
+  <div>
+    <a href="/notebooks/{{ notebook.id }}#diamonds" class="backlink">← {{ notebook.title }}</a>
+    <div class="eyebrow eyebrow-accent mt-3">Diamond Model · Intrusion Analysis</div>
+    <h1 class="page-title mt-2">{{ diamond.title or 'Untitled assessment' }}</h1>
+    <div class="mt-3 flex gap-2 items-center flex-wrap">
+      <span class="mono text-xs" style="color:var(--accent-deep);">[[diamond:{{ diamond.id }}]]</span>
+      <span class="text-xs" style="color:var(--muted);">Write this token in a report body to embed the diagram.</span>
+    </div>
+  </div>
+</div>
+
+<div class="editor-grid"
+     x-data='{
+       fields: {
+         title: {{ diamond.title | tojson }},
+         adversary: {{ diamond.adversary | tojson }},
+         capability: {{ diamond.capability | tojson }},
+         infrastructure: {{ diamond.infrastructure | tojson }},
+         victim: {{ diamond.victim | tojson }},
+         confidence: {{ diamond.confidence.value | tojson }}
+       },
+       previewSvg: {{ preview_svg | tojson }},
+       timer: null,
+       schedule() { clearTimeout(this.timer); this.timer = setTimeout(() => this.refresh(), 300); },
+       async refresh() {
+         const res = await fetch("/api/preview/diamond", {
+           method: "POST",
+           headers: {"Content-Type": "application/json"},
+           body: JSON.stringify(this.fields)
+         });
+         if (res.ok) { this.previewSvg = (await res.json()).svg; }
+       }
+     }'>
+
+  <!-- Editor -->
+  <section class="card card-pad-lg">
+    <div class="pane-label"><span class="pip"></span> Assessment</div>
+    {% if can_edit %}
+      <form method="post" action="/notebooks/{{ notebook.id }}/diamonds/{{ diamond.id }}" class="space-y-3">
+        <div class="grid grid-cols-12 gap-3 items-end">
+          <div class="col-span-8">
+            <label class="field-label">Title</label>
+            <input name="title" x-model="fields.title" @input="schedule()" required class="field" style="font-weight:600;">
+          </div>
+          <div class="col-span-4">
+            <label class="field-label">Confidence</label>
+            <select name="confidence" x-model="fields.confidence" @change="schedule()" class="field">
+              {% for c in confidences %}<option value="{{ c.value }}">{{ c.value.title() }}</option>{% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="field-label">Adversary</label>
+            <textarea name="adversary" rows="3" x-model="fields.adversary" @input="schedule()" class="field" placeholder="Who is behind the activity"></textarea>
+          </div>
+          <div>
+            <label class="field-label">Capability</label>
+            <textarea name="capability" rows="3" x-model="fields.capability" @input="schedule()" class="field" placeholder="Tooling, malware, TTPs"></textarea>
+          </div>
+          <div>
+            <label class="field-label">Infrastructure</label>
+            <textarea name="infrastructure" rows="3" x-model="fields.infrastructure" @input="schedule()" class="field" placeholder="C2, staging, delivery"></textarea>
+          </div>
+          <div>
+            <label class="field-label">Victim</label>
+            <textarea name="victim" rows="3" x-model="fields.victim" @input="schedule()" class="field" placeholder="Targeted org / sector"></textarea>
+          </div>
+        </div>
+        <div>
+          <label class="field-label">Notes <span class="opt">optional</span></label>
+          <textarea name="notes" rows="2" class="field" placeholder="Analytic notes (not shown on the diagram)">{{ diamond.notes }}</textarea>
+        </div>
+        <button class="btn btn--ink">Save Diamond Model</button>
+      </form>
+    {% else %}
+      <p class="empty">Read-only — your role cannot edit assessments.</p>
+    {% endif %}
+  </section>
+
+  <!-- Live preview -->
+  <section class="card card-pad-lg" style="background:var(--surface-2);">
+    <div class="pane-label"><span class="pip"></span> Diagram preview</div>
+    <div class="diamond-svg mt-2" x-html="previewSvg"></div>
+  </section>
+</div>
+
+{% if can_edit %}
+  <div class="flex items-center mt-5">
+    <form method="post" action="/notebooks/{{ notebook.id }}/diamonds/{{ diamond.id }}/delete"
+          class="ml-auto" onsubmit="return confirm('Delete this Diamond Model? Any report embedding it will show an “unavailable” notice.');">
+      <button class="btn btn--ghost btn--sm link-danger">Delete assessment</button>
+    </form>
+  </div>
+{% endif %}
+{% endblock %}

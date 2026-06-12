@@ -11,13 +11,23 @@ from fastapi import (
     UploadFile,
     status,
 )
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from sqlmodel import Session, select
 
 from ..auth.dependencies import CurrentUser, require_role
 from ..db import get_session
-from ..models import Attachment, Note, Notebook, Role, Source, utcnow
+from ..models import (
+    Attachment,
+    DiamondModel,
+    Note,
+    Notebook,
+    Role,
+    Source,
+    utcnow,
+)
 from ..schemas import (
+    DiamondCreate,
+    DiamondUpdate,
     NoteCreate,
     NotebookCreate,
     NotebookUpdate,
@@ -25,6 +35,7 @@ from ..schemas import (
     SourceCreate,
 )
 from ..services import attachments as attachment_service
+from ..services import diamond as diamond_service
 from ..services.requirements import set_notebook_requirements
 
 router = APIRouter(prefix="/notebooks", tags=["notebooks"])
@@ -216,3 +227,59 @@ def delete_note(notebook_id: int, note_id: int, session: SessionDep, _w: Writer)
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Note not found")
     session.delete(note)
     session.commit()
+
+
+# --------------------------------------------------------------------------- #
+# Diamond Model assessments
+# --------------------------------------------------------------------------- #
+@router.post("/{notebook_id}/diamonds", status_code=status.HTTP_201_CREATED)
+def add_diamond(
+    notebook_id: int, body: DiamondCreate, session: SessionDep, _w: Writer
+) -> DiamondModel:
+    nb = _get_notebook(session, notebook_id)
+    return diamond_service.create_diamond(
+        session,
+        nb,
+        title=body.title,
+        adversary=body.adversary,
+        capability=body.capability,
+        infrastructure=body.infrastructure,
+        victim=body.victim,
+        confidence=body.confidence,
+        notes=body.notes,
+    )
+
+
+@router.patch("/{notebook_id}/diamonds/{diamond_id}")
+def update_diamond(
+    notebook_id: int,
+    diamond_id: int,
+    body: DiamondUpdate,
+    session: SessionDep,
+    _w: Writer,
+) -> DiamondModel:
+    diamond = diamond_service.get_scoped(session, notebook_id, diamond_id)
+    return diamond_service.update_diamond(
+        session, diamond, **body.model_dump(exclude_unset=True)
+    )
+
+
+@router.get("/{notebook_id}/diamonds/{diamond_id}/diagram.svg")
+def diamond_diagram(
+    notebook_id: int, diamond_id: int, session: SessionDep, _w: Writer
+):
+    diamond = diamond_service.get_scoped(session, notebook_id, diamond_id)
+    return Response(
+        content=diamond_service.render_diamond_svg(diamond),
+        media_type="image/svg+xml",
+    )
+
+
+@router.delete(
+    "/{notebook_id}/diamonds/{diamond_id}", status_code=status.HTTP_204_NO_CONTENT
+)
+def delete_diamond(
+    notebook_id: int, diamond_id: int, session: SessionDep, _w: Writer
+):
+    diamond = diamond_service.get_scoped(session, notebook_id, diamond_id)
+    diamond_service.delete_diamond(session, diamond)
