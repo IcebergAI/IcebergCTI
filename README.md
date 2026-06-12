@@ -17,6 +17,53 @@ Everything is **searchable** — full-text + faceted across the report library.
 > TLP into a personalized feed, with email notifications), and an admin-curated tag taxonomy
 > with full-text + faceted search. See [CLAUDE.md](CLAUDE.md).
 
+## Screenshots
+
+The portal is a server-rendered "light editorial-intel" design system (Archivo /
+JetBrains Mono / Spectral). The views below use realistic sample data.
+
+### The analyst workspace
+![Dashboard](docs/images/dashboard.png)
+*Notebooks in collection, reports in flight, and the most recent products — all in one place.*
+
+### The report library
+![Report library](docs/images/reports-list.png)
+*Every intelligence product with its status, intelligence level, TLP marking and taxonomy chips.*
+
+### Authoring with a live preview
+![Report editor](docs/images/report-editor.png)
+*The report editor: markdown with a side-by-side live preview, source/attachment citations,
+requirement traceability, and taxonomy tagging — all on one screen.*
+
+### The finished intelligence product
+![Published report](docs/images/report-view.png)
+*A published report — TLP and intelligence-level markings, taxonomy chips, numbered sources,
+cited attachments, and on-demand PDF products.*
+
+### Typeset to a branded PDF (Typst)
+![Sample PDF product](docs/images/pdf-sample.png)
+*The same report rendered to PDF via Typst — classification markings, masthead and the
+taxonomy stamp carried through. [Download the full sample »](docs/sample-report-volt-typhoon.pdf)*
+
+### Requirements → analyst tasking
+![Tasking board](docs/images/tasking-board.png)
+*Stakeholder requirements aggregated into a priority-ordered tasking board, grouped by status.*
+
+### Dissemination to a stakeholder feed
+![Intelligence feed](docs/images/feed.png)
+*On publish, a report is matched to stakeholders by preferred intel level + TLP and delivered
+to their personal feed (with an email notification).*
+
+### Full-text + faceted search
+![Search](docs/images/search.png)
+*Full-text search over the report library (SQLite FTS5, bm25), narrowed by tag / kind /
+intel-level / TLP / status facets — access-scoped so stakeholders only ever match published reports.*
+
+### Admin-curated tag taxonomy
+![Taxonomy](docs/images/taxonomy.png)
+*The controlled vocabulary — threat actor / campaign / malware / ATT&CK technique / sector /
+topic — that analysts classify reports against.*
+
 ## Stack
 - **Python ≥ 3.14**, **FastAPI** (single app: JSON API `/api/*` + server-rendered portal `/*`)
 - **SQLModel** on **SQLite**
@@ -113,7 +160,8 @@ Install the [`typst`](https://github.com/typst/typst) binary and ensure it's on
 uses the `cmarker` package, fetched from the Typst registry on first render
 (needs network once). If the pinned version is unavailable for your Typst
 install, change it at the top of that file. Render endpoints return **503** when
-Typst is not installed.
+Typst is not installed. A rendered example ships at
+[docs/sample-report-volt-typhoon.pdf](docs/sample-report-volt-typhoon.pdf).
 
 ## Tests
 ```bash
