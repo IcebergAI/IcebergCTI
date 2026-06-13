@@ -15,10 +15,11 @@ import socket
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from html.parser import HTMLParser
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, urlunparse
 
 import httpx
 from fastapi import HTTPException, status
+from sqlmodel import Session
 
 from ..config import get_settings
 from ..models import (
@@ -234,23 +235,57 @@ def _is_official_host(host: str) -> bool:
     )
 
 
-def _validate_public_http_url(raw_url: str) -> str:
+@dataclass
+class _PinnedTarget:
+    """A validated URL pinned to a resolved public IP.
+
+    ``connect_url`` carries the IP literal so httpx connects to exactly the
+    address we validated; ``host_header`` / ``sni_hostname`` preserve the real
+    hostname for routing and TLS verification.
+    """
+
+    connect_url: str
+    host_header: str
+    sni_hostname: str
+    scheme: str
+
+
+def _resolve_pinned(raw_url: str) -> _PinnedTarget:
+    """Validate a public HTTP(S) URL and pin it to a resolved public IP.
+
+    DNS is resolved *once* here and every returned address is required to be
+    globally routable; the request then connects to that IP literal rather than
+    re-resolving the hostname. This closes the DNS-rebinding (TOCTOU) gap where a
+    name could resolve to a public address at validation time and a private one
+    when httpx opened the connection.
+    """
     parsed = urlparse(raw_url.strip())
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise SourceFetchError("Only public HTTP(S) source URLs can be fetched")
 
     host = parsed.hostname
-    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    default_port = 443 if parsed.scheme == "https" else 80
+    port = parsed.port or default_port
     try:
         infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
     except OSError as exc:
         raise SourceFetchError("Could not resolve source host") from exc
+    if not infos:
+        raise SourceFetchError("Could not resolve source host")
 
     for info in infos:
-        ip = ipaddress.ip_address(info[4][0])
-        if not ip.is_global:
+        if not ipaddress.ip_address(info[4][0]).is_global:
             raise SourceFetchError("Source URL resolves to a non-public network address")
-    return raw_url
+    pinned_ip = infos[0][4][0]
+
+    ip_for_url = f"[{pinned_ip}]" if ":" in pinned_ip else pinned_ip
+    explicit_port = parsed.port not in (None, default_port)
+    netloc = f"{ip_for_url}:{parsed.port}" if explicit_port else ip_for_url
+    connect_url = urlunparse(
+        (parsed.scheme, netloc, parsed.path, parsed.params, parsed.query, "")
+    )
+    host_header = f"{host}:{parsed.port}" if explicit_port else host
+    return _PinnedTarget(connect_url, host_header, host, parsed.scheme)
 
 
 def _extract_text(content_type: str, body: bytes, max_chars: int) -> tuple[str, str]:
@@ -267,34 +302,48 @@ def _extract_text(content_type: str, body: bytes, max_chars: int) -> tuple[str, 
 
 def fetch_source_content(reference: str) -> FetchedSource:
     settings = get_settings()
-    url = _validate_public_http_url(reference)
     timeout = httpx.Timeout(settings.source_grader_fetch_timeout)
-    headers = {"User-Agent": "IcebergSourceGrader/1.0"}
+    base_headers = {"User-Agent": "IcebergSourceGrader/1.0"}
+    max_bytes = settings.source_grader_fetch_max_bytes
+    logical_url = reference.strip()
 
     with httpx.Client(timeout=timeout, follow_redirects=False, trust_env=False) as client:
         for _ in range(4):
-            response = client.get(url, headers=headers)
-            if response.is_redirect:
-                location = response.headers.get("location")
-                if not location:
-                    raise SourceFetchError("Source redirect did not include a target")
-                url = _validate_public_http_url(urljoin(url, location))
-                continue
-            response.raise_for_status()
-            content_length = response.headers.get("content-length")
-            if content_length and int(content_length) > settings.source_grader_fetch_max_bytes:
-                raise SourceFetchError("Source content is too large to auto-grade")
-            body = response.content
-            if len(body) > settings.source_grader_fetch_max_bytes:
-                raise SourceFetchError("Source content is too large to auto-grade")
-            title, text = _extract_text(
-                response.headers.get("content-type", ""),
-                body,
-                settings.source_grader_extract_max_chars,
+            target = _resolve_pinned(logical_url)
+            headers = {**base_headers, "Host": target.host_header}
+            extensions = (
+                {"sni_hostname": target.sni_hostname}
+                if target.scheme == "https"
+                else {}
             )
-            if len(text) < 120:
-                raise SourceFetchError("Source content was too sparse to judge credibility")
-            return FetchedSource(final_url=str(response.url), title=title, text=text)
+            # Stream so the byte cap bounds memory even when the server omits a
+            # Content-Length (the header check alone can't catch a chunked body).
+            with client.stream(
+                "GET", target.connect_url, headers=headers, extensions=extensions
+            ) as response:
+                if response.is_redirect:
+                    location = response.headers.get("location")
+                    if not location:
+                        raise SourceFetchError("Source redirect did not include a target")
+                    logical_url = urljoin(logical_url, location)
+                    continue
+                response.raise_for_status()
+                content_length = response.headers.get("content-length")
+                if content_length and content_length.isdigit() and int(content_length) > max_bytes:
+                    raise SourceFetchError("Source content is too large to auto-grade")
+                body = bytearray()
+                for chunk in response.iter_bytes():
+                    body.extend(chunk)
+                    if len(body) > max_bytes:
+                        raise SourceFetchError("Source content is too large to auto-grade")
+                title, text = _extract_text(
+                    response.headers.get("content-type", ""),
+                    bytes(body),
+                    settings.source_grader_extract_max_chars,
+                )
+                if len(text) < 120:
+                    raise SourceFetchError("Source content was too sparse to judge credibility")
+                return FetchedSource(final_url=logical_url, title=title, text=text)
         raise SourceFetchError("Source followed too many redirects")
 
 
@@ -458,7 +507,7 @@ def _credibility_from_text(category: str, text: str, has_readable_content: bool)
     if _WEAK_RE.search(text):
         return SourceCredibility.DOUBTFULLY_TRUE
     if category in {"official", "vendor"} and _CONFIRMED_RE.search(text):
-        return SourceCredibility.PROBABLY_TRUE
+        return SourceCredibility.CONFIRMED
     if category in {"official", "vendor"}:
         return SourceCredibility.PROBABLY_TRUE
     if category == "social":
@@ -603,3 +652,27 @@ def auto_grade(source: Source) -> AutoGradeOutcome:
 
 def regrade_source(source: Source) -> AutoGradeOutcome:
     return auto_grade(source)
+
+
+def needs_online_grading(source: Source) -> bool:
+    """Whether auto-grading this source would touch the network — i.e. fetch a
+    page (http(s) reference) or call an LLM provider. Used to decide whether to
+    defer grading to a background task instead of blocking the create request."""
+    provider = get_settings().source_grader_provider.lower().strip()
+    has_http_ref = source.reference.strip().lower().startswith(("http://", "https://"))
+    has_text = bool(source.summary.strip())
+    return has_http_ref or (provider != "heuristic" and has_text)
+
+
+def grade_source_async(source_id: int) -> None:
+    """Grade a source out-of-band (a FastAPI background task). Opens its own
+    session because the request session is closed by the time this runs."""
+    from .. import db  # access db.engine dynamically so tests can repoint it
+
+    with Session(db.engine) as session:
+        source = session.get(Source, source_id)
+        if source is None:
+            return
+        auto_grade(source)
+        session.add(source)
+        session.commit()

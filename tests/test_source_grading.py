@@ -1,5 +1,8 @@
 """Source reliability grading: auto, manual, fallback and fetch safety."""
 
+import socket
+
+import httpx
 import pytest
 
 from iceberg.models import (
@@ -50,12 +53,18 @@ def test_auto_grade_with_llm_success(client, login, monkeypatch):
     )
 
     assert resp.status_code == 201, resp.text
-    body = resp.json()
-    assert body["reliability"] == "B"
-    assert body["credibility"] == "2"
-    assert body["grading_origin"] == "AUTO"
-    assert body["grading_engine"] == "openai:test-model"
-    assert body["grading_error"] == ""
+    created = resp.json()
+    # The create response returns immediately; grading is deferred.
+    assert created["grading_origin"] == "PENDING"
+    assert created["reliability"] is None
+
+    # The background task (run by the TestClient before the POST returns) graded it.
+    source = client.get(f"/api/notebooks/{nb['id']}").json()["sources"][0]
+    assert source["reliability"] == "B"
+    assert source["credibility"] == "2"
+    assert source["grading_origin"] == "AUTO"
+    assert source["grading_engine"] == "openai:test-model"
+    assert source["grading_error"] == ""
     source_grading.get_settings.cache_clear()
 
 
@@ -76,11 +85,58 @@ def test_fetch_failure_uses_url_heuristic_and_marks_credibility_unknown(client, 
     )
 
     assert resp.status_code == 201, resp.text
-    body = resp.json()
-    assert body["reliability"] == "B"
-    assert body["credibility"] == "6"
-    assert body["grading_engine"] == "heuristic:v1"
-    assert "Could not read source content" in body["grading_error"]
+    assert resp.json()["grading_origin"] == "PENDING"
+
+    # Graded in the background: fetch failed, so it falls back to the heuristic.
+    source = client.get(f"/api/notebooks/{nb['id']}").json()["sources"][0]
+    assert source["reliability"] == "B"
+    assert source["credibility"] == "6"
+    assert source["grading_engine"] == "heuristic:v1"
+    assert "Could not read source content" in source["grading_error"]
+
+
+def test_pending_source_shows_grading_chip(client, login, monkeypatch):
+    login("ANALYST")
+    nb = _make_notebook(client)
+
+    # No-op the background grader so the source stays PENDING for the assertion.
+    monkeypatch.setattr(source_grading, "grade_source_async", lambda source_id: None)
+    client.post(
+        f"/notebooks/{nb['id']}/sources",
+        data={"title": "Queued", "reference": "https://www.cisa.gov/advisory"},
+    )
+
+    page = client.get(f"/notebooks/{nb['id']}")
+    assert page.status_code == 200
+    assert "Grading" in page.text
+    assert "source-grade--pending" in page.text
+
+
+def test_grade_source_async_persists_grade(client, login, monkeypatch):
+    login("ANALYST")
+    nb = _make_notebook(client)
+
+    # Hold the source at PENDING (no-op the scheduled task) so we can drive the
+    # real grader ourselves and confirm it loads, grades and persists.
+    real_grade = source_grading.grade_source_async
+    monkeypatch.setattr(source_grading, "grade_source_async", lambda source_id: None)
+    client.post(
+        f"/api/notebooks/{nb['id']}/sources",
+        json={"title": "CISA advisory", "reference": "https://www.cisa.gov/advisory"},
+    )
+    src = client.get(f"/api/notebooks/{nb['id']}").json()["sources"][0]
+    assert src["grading_origin"] == "PENDING"
+
+    def fail_fetch(_reference):
+        raise SourceFetchError("blocked")
+
+    monkeypatch.setattr(source_grading, "fetch_source_content", fail_fetch)
+    real_grade(src["id"])
+
+    graded = client.get(f"/api/notebooks/{nb['id']}").json()["sources"][0]
+    assert graded["grading_origin"] == "AUTO"
+    assert graded["reliability"] == "B"
+    assert graded["credibility"] == "6"
 
 
 def test_unknown_source_remains_ungraded(client, login):
@@ -175,6 +231,97 @@ def test_regrade_endpoint_updates_source(client, login, monkeypatch):
 def test_fetch_rejects_private_network_url():
     with pytest.raises(SourceFetchError):
         source_grading.fetch_source_content("http://127.0.0.1/admin")
+
+
+def test_heuristic_grades_confirmed_official_source():
+    # Regression: an official source whose content confirms an event should reach
+    # credibility 1 (CONFIRMED) — the confirmation branch previously fell through
+    # to PROBABLY_TRUE, so the heuristic could never assign 1.
+    src = Source(
+        notebook_id=1, title="CISA advisory", reference="https://www.cisa.gov/advisory"
+    )
+    fetched = FetchedSource(
+        final_url="https://www.cisa.gov/advisory",
+        title="Advisory",
+        text="CISA confirmed CVE-2024-1234 exploited in the wild; apply the patch now.",
+    )
+    result = source_grading.heuristic_grade(src, fetched)
+    assert result is not None
+    assert result.reliability == SourceReliability.B
+    assert result.credibility == SourceCredibility.CONFIRMED
+
+
+def test_heuristic_official_without_confirmation_stays_probably_true():
+    src = Source(
+        notebook_id=1, title="Gov page", reference="https://www.cisa.gov/about"
+    )
+    fetched = FetchedSource(
+        final_url="https://www.cisa.gov/about",
+        title="About",
+        text="General background about the agency and its mission for the public sector.",
+    )
+    result = source_grading.heuristic_grade(src, fetched)
+    assert result is not None
+    assert result.credibility == SourceCredibility.PROBABLY_TRUE
+
+
+def test_resolve_pinned_uses_validated_ip_and_keeps_hostname(monkeypatch):
+    def fake_getaddrinfo(host, port, *args, **kwargs):
+        assert host == "example.com"
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port))]
+
+    monkeypatch.setattr(source_grading.socket, "getaddrinfo", fake_getaddrinfo)
+    target = source_grading._resolve_pinned("https://example.com/path?q=1")
+    assert target.connect_url == "https://93.184.216.34/path?q=1"
+    assert target.host_header == "example.com"
+    assert target.sni_hostname == "example.com"
+
+
+def test_resolve_pinned_rejects_dns_rebinding_to_private_ip(monkeypatch):
+    # A public hostname that resolves to a private/link-local address must be
+    # rejected: the pin validates the *resolved* IP, not just literal-IP URLs.
+    def fake_getaddrinfo(host, port, *args, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("169.254.169.254", port))]
+
+    monkeypatch.setattr(source_grading.socket, "getaddrinfo", fake_getaddrinfo)
+    with pytest.raises(SourceFetchError):
+        source_grading.fetch_source_content("https://innocent.example/")
+
+
+def test_fetch_caps_oversized_chunked_body(monkeypatch):
+    # Regression: a body with no Content-Length must still be bounded by the byte
+    # cap (streamed), and the request must connect to the pinned IP with the real
+    # Host preserved.
+    def fake_getaddrinfo(host, port, *args, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port))]
+
+    monkeypatch.setattr(source_grading.socket, "getaddrinfo", fake_getaddrinfo)
+
+    seen: dict[str, str | None] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["host"] = request.headers.get("host")
+        seen["url_host"] = request.url.host
+
+        def chunks():
+            for _ in range(400):
+                yield b"a" * 1000  # 400 KB total, no Content-Length
+
+        return httpx.Response(200, headers={"content-type": "text/plain"}, content=chunks())
+
+    transport = httpx.MockTransport(handler)
+    real_client = httpx.Client
+    monkeypatch.setattr(
+        source_grading.httpx,
+        "Client",
+        lambda **kwargs: real_client(transport=transport, **kwargs),
+    )
+
+    with pytest.raises(SourceFetchError) as exc:
+        source_grading.fetch_source_content("https://example.com/big")
+    assert "too large" in str(exc.value)
+    assert seen["url_host"] == "93.184.216.34"
+    assert seen["host"] == "example.com"
 
 
 def test_portal_renders_grade_chip_and_warning(client, login, monkeypatch):
