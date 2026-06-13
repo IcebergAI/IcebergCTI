@@ -114,6 +114,25 @@ def test_stakeholder_cannot_read_unpublished_report(client, login):
     assert client.get(f"/api/reports/{rid}").status_code == 200
 
 
+def test_stakeholder_cannot_read_notebooks(client, login):
+    """Regression (S1): raw notebook material (sources/notes/attachments) is
+    writer-only — a read-only stakeholder must not list or open notebooks,
+    including unpublished collection work."""
+    login("ANALYST", email="author@example.com")
+    nb = _make_notebook(client)
+    client.post(
+        f"/api/notebooks/{nb['id']}/sources", json={"title": "secret source"}
+    )
+
+    login("STAKEHOLDER", email="nosy@example.com")
+    assert client.get("/api/notebooks").status_code == 403
+    assert client.get(f"/api/notebooks/{nb['id']}").status_code == 403
+
+    # A writer still has full access.
+    login("ANALYST", email="author@example.com")
+    assert client.get(f"/api/notebooks/{nb['id']}").status_code == 200
+
+
 def test_published_report_citations_are_immutable(client, login):
     """Regression: citations bypassed the published-immutability guard, so a
     published product could still be re-cited after the fact."""

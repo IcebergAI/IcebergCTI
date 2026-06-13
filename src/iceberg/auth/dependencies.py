@@ -9,6 +9,7 @@ page for browser (HTML) requests.
 from collections.abc import Callable
 from typing import Annotated
 
+import jwt
 from fastapi import Depends, HTTPException, Request, status
 from sqlmodel import Session
 
@@ -36,7 +37,10 @@ def get_optional_user(
     try:
         payload = decode_access_token(token)
         user = session.get(User, int(payload["sub"]))
-    except Exception:
+    except (jwt.PyJWTError, KeyError, ValueError):
+        # A malformed/expired/forged token (or a non-int subject) means
+        # "anonymous"; anything else (e.g. a DB error) should propagate rather
+        # than be silently downgraded to an unauthenticated request.
         return None
     return user
 
@@ -52,19 +56,26 @@ def get_current_user(
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
-OptionalUser = Annotated[User | None, Depends(get_optional_user)]
+
+
+def user_in_roles(user: User, *roles: Role) -> bool:
+    """True if the user holds one of ``roles``. ADMIN always qualifies."""
+    return user.role == Role.ADMIN or user.role in roles
+
+
+def ensure_role(user: User, *roles: Role, detail: str = "Insufficient role") -> User:
+    """Imperative role guard (raises 403). Shared by the JSON API's
+    :func:`require_role` dependency and the portal's inline checks so the rule
+    lives in exactly one place."""
+    if not user_in_roles(user, *roles):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail=detail)
+    return user
 
 
 def require_role(*roles: Role) -> Callable[[User], User]:
     """Dependency factory: allow only the given roles (ADMIN always passes)."""
 
-    allowed = set(roles)
-
     def checker(user: CurrentUser) -> User:
-        if user.role != Role.ADMIN and user.role not in allowed:
-            raise HTTPException(
-                status.HTTP_403_FORBIDDEN, detail="Insufficient role"
-            )
-        return user
+        return ensure_role(user, *roles)
 
     return checker

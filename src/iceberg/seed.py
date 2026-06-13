@@ -15,9 +15,9 @@ import argparse
 import json
 from collections import Counter
 
-from sqlmodel import Session, SQLModel
+from sqlmodel import Session
 
-from .db import engine
+from .db import engine, run_migrations
 from .services.tags import load_starter_tags, seed_default_taxonomy
 
 
@@ -62,7 +62,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{len(entries)} tag(s) — {summary}")
         return 0
 
-    SQLModel.metadata.create_all(engine)
+    run_migrations()  # ensure the schema exists / is up to date
     with Session(engine) as session:
         created = seed_default_taxonomy(session, entries, update=args.update)
     print(

@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # The default signing key shipped for local dev. It is public (it's in source
 # control), so running with it in production would let anyone forge JWTs.
-_INSECURE_DEFAULT_SECRET = "dev-insecure-change-me-0123456789abcdef"
+_INSECURE_DEFAULT_SECRET = "dev-insecure-change-me-0123456789abcdef"  # nosec B105 — public dev default, rejected in prod by _guard_production
 
 
 class Settings(BaseSettings):
@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     environment: str = "dev"
     secret_key: str = _INSECURE_DEFAULT_SECRET
     database_url: str = "sqlite:///./iceberg.db"
+
+    # Schema migrations. When true, init_db() runs `alembic upgrade head` on boot
+    # (idempotent) — convenient for local dev. Set false in production so the
+    # deploy step owns migrations explicitly.
+    auto_migrate: bool = True
 
     # App JWT (minted by us after OIDC or dev login)
     jwt_algorithm: str = "HS256"

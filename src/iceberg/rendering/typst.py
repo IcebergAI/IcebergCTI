@@ -13,7 +13,7 @@ not installed, :class:`TypstNotAvailable` is raised so callers/tests can skip.
 import json
 import re
 import shutil
-import subprocess
+import subprocess  # nosec B404 — invoked with a fixed arg list, no shell (see render_product)
 import tempfile
 import uuid
 from datetime import date
@@ -22,7 +22,6 @@ from pathlib import Path
 from ..config import get_settings
 from ..models import Attachment, ProductFormat, Report, Source, Tag, tlp_label
 
-settings = get_settings()
 _TEMPLATE = Path(__file__).resolve().parent.parent / "typst" / "product.typ"
 
 # Mirror of services.diamond.DIAMOND_TOKEN_RE — kept local so the rendering layer
@@ -57,7 +56,7 @@ class TypstRenderError(RuntimeError):
 
 
 def typst_available() -> bool:
-    return shutil.which(settings.typst_bin) is not None
+    return shutil.which(get_settings().typst_bin) is not None
 
 
 def _build_data(
@@ -76,7 +75,7 @@ def _build_data(
         "status": report.status.value,
         "author": author_name,
         "date": stamp.strftime("%Y-%m-%d") if stamp else date.today().isoformat(),
-        "cmarker_version": settings.cmarker_version,
+        "cmarker_version": get_settings().cmarker_version,
         "body_md": _rewrite_diamond_tokens(report.body_md or "", diamonds),
         "key_judgements": report.key_judgements or "",
         "key_assumptions": report.key_assumptions or "",
@@ -106,6 +105,7 @@ def render_product(
     diamonds: list[tuple[int, str, str]] | None = None,
     fmt: ProductFormat,
 ) -> Path:
+    settings = get_settings()
     if not typst_available():
         raise TypstNotAvailable(
             f"Typst binary '{settings.typst_bin}' not found on PATH"
@@ -144,7 +144,9 @@ def render_product(
             str(out_path),
         ]
         try:
-            result = subprocess.run(
+            # nosec B603: cmd is a fixed arg list (no shell); inputs are the
+            # configured binary, the format enum and server-generated temp paths.
+            result = subprocess.run(  # nosec B603
                 cmd, capture_output=True, text=True, timeout=settings.typst_timeout
             )
         except subprocess.TimeoutExpired:

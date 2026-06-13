@@ -244,3 +244,54 @@ def test_stakeholder_portal_is_read_only(client, login):
     # Stakeholder cannot create a notebook through the portal.
     resp = client.post("/notebooks", data={"title": "nope"})
     assert resp.status_code == 403
+
+
+def test_stakeholder_cannot_browse_notebooks_in_portal(client, login):
+    """Regression (S1): the portal must not expose notebook collection material
+    to read-only stakeholders — not the detail page, and not via the dashboard
+    (which previously listed every notebook and the latest reports incl. drafts)."""
+    login("ANALYST", email="author@example.com")
+    nb = client.post("/api/notebooks", json={"title": "Covert tracking"}).json()
+    client.post(
+        "/api/reports", json={"notebook_id": nb["id"], "title": "Draft secret"}
+    )
+
+    login("STAKEHOLDER", email="nosy@example.com")
+    assert client.get(f"/notebooks/{nb['id']}").status_code == 403
+    dash = client.get("/")
+    assert dash.status_code == 200
+    assert "Covert tracking" not in dash.text  # notebook list not leaked
+    assert "Draft secret" not in dash.text  # unpublished report not leaked
+
+
+def test_csrf_blocks_cross_origin_cookie_post(client, login):
+    """S2: a cookie-authenticated state-changing request from a foreign origin is
+    blocked; same-origin requests and Bearer API clients are allowed."""
+    login("ANALYST")
+
+    # Cross-origin POST carrying the session cookie -> blocked.
+    blocked = client.post(
+        "/api/notebooks",
+        json={"title": "evil"},
+        headers={"origin": "http://evil.example"},
+    )
+    assert blocked.status_code == 403
+
+    # Same-origin (the fixture's default Origin) -> allowed.
+    assert client.post("/api/notebooks", json={"title": "fine"}).status_code == 201
+
+    # A Bearer API client is not browser-CSRF-prone, so origin is not enforced.
+    token = client.cookies["iceberg_session"]
+    via_token = client.post(
+        "/api/notebooks",
+        json={"title": "via token"},
+        headers={"origin": "http://evil.example", "authorization": f"Bearer {token}"},
+    )
+    assert via_token.status_code == 201
+
+
+def test_logout_requires_post(client, login):
+    """S2: logout is POST-only (no GET side effect) and clears the session."""
+    login("ANALYST")
+    assert client.get("/auth/logout").status_code == 405
+    assert client.post("/auth/logout").status_code == 200  # follows redirect to login

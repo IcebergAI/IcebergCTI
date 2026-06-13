@@ -132,9 +132,11 @@ a:hover { color: var(--accent-deep); }
   border: 1px solid var(--accent-line);
   padding: 2px 7px; border-radius: 5px;
 }
+.nav-logout-form { display: inline-flex; margin: 0; }
 .nav-logout {
   font-size: 13px; color: var(--muted); padding: 6px 8px; border-radius: var(--radius-sm);
   white-space: nowrap;
+  background: transparent; border: 0; cursor: pointer; font-family: inherit;
 }
 .nav-logout:hover { color: var(--ink); background: var(--surface-2); }
 

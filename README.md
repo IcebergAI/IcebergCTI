@@ -74,7 +74,9 @@ topic — that analysts classify reports against.*
 - **SQLite FTS5** (bm25) for full-text report search
 - **Typst** for PDF rendering
 - **PyTest** for tests
-- Auth: **OIDC (Microsoft Entra ID)** with a dev-login bypass for local use
+- Auth: **OIDC (Microsoft Entra ID)** with a dev-login bypass for local use; role-based
+  access (notebook collection material is writer-only, stakeholders consume finished
+  products) with a same-origin CSRF guard on the cookie-authenticated portal
 
 ## Quick start
 ```bash
@@ -86,7 +88,8 @@ cp .env.example .env        # tweak settings if you like
 uvicorn iceberg.main:app --reload
 ```
 Open <http://localhost:8000>. With `ICEBERG_DEV_AUTH=true` (the default) you'll see a
-**dev login** on the sign-in page — pick a role (e.g. `ANALYST`) and continue.
+**dev login** on the sign-in page — pick a role (e.g. `ANALYST`) and continue. The schema is
+created automatically on first boot (`ICEBERG_AUTO_MIGRATE=true` runs migrations for you).
 
 ### Try the authoring loop
 1. Create a **notebook** from the dashboard.
@@ -177,12 +180,27 @@ install, change it at the top of that file. Render endpoints return **503** when
 Typst is not installed. A rendered example ships at
 [docs/sample-report-volt-typhoon.pdf](docs/sample-report-volt-typhoon.pdf).
 
+## Database migrations
+Schema is managed by **Alembic** (`src/iceberg/migrations/`); SQLModel models are the source
+of truth. By default `init_db()` runs `alembic upgrade head` on boot — set
+`ICEBERG_AUTO_MIGRATE=false` in production and migrate explicitly in the deploy step.
+
+```bash
+alembic upgrade head                          # apply migrations to ICEBERG_DATABASE_URL
+alembic revision --autogenerate -m "add x"    # create a migration after changing a model
+alembic downgrade -1                          # roll back one revision
+```
+The baseline migration also owns the SQLite FTS5 search objects (the `report_fts` virtual
+table + sync triggers). A database created by an older `create_all` build has the right tables
+but no version row — run **`alembic stamp head`** once to mark it current before upgrading.
+
 ## Tests
 ```bash
 pytest
 ```
-Tests run against in-memory SQLite using the dev-login bypass. The Typst render
-test skips automatically when the binary isn't present.
+Tests run against in-memory SQLite using the dev-login bypass; `tests/test_migrations.py`
+additionally applies the real migrations to a temp database and checks the models haven't
+drifted from them. The Typst render test skips automatically when the binary isn't present.
 
 ## Project layout
 See the structure diagram in [CLAUDE.md](CLAUDE.md).

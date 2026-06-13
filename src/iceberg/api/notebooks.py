@@ -36,6 +36,7 @@ from ..schemas import (
 )
 from ..services import attachments as attachment_service
 from ..services import diamond as diamond_service
+from ..services import notebooks as notebook_service
 from ..services.requirements import set_notebook_requirements
 
 router = APIRouter(prefix="/notebooks", tags=["notebooks"])
@@ -45,15 +46,13 @@ SessionDep = Annotated[Session, Depends(get_session)]
 Writer = Annotated[object, Depends(require_role(Role.ANALYST, Role.REVIEWER))]
 
 
-def _get_notebook(session: Session, notebook_id: int) -> Notebook:
-    notebook = session.get(Notebook, notebook_id)
-    if not notebook:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Notebook not found")
-    return notebook
+_get_notebook = notebook_service.get_or_404
 
 
 @router.get("")
-def list_notebooks(session: SessionDep, _user: CurrentUser) -> list[Notebook]:
+def list_notebooks(session: SessionDep, _w: Writer) -> list[Notebook]:
+    # Raw collection material is writer-only; read-only stakeholders consume
+    # finished products (reports/feed/search), never notebooks.
     return list(session.exec(select(Notebook).order_by(Notebook.updated_at.desc())).all())
 
 
@@ -61,15 +60,13 @@ def list_notebooks(session: SessionDep, _user: CurrentUser) -> list[Notebook]:
 def create_notebook(
     body: NotebookCreate, session: SessionDep, user: CurrentUser, _w: Writer
 ) -> Notebook:
-    notebook = Notebook(title=body.title, topic=body.topic, owner_id=user.id)
-    session.add(notebook)
-    session.commit()
-    session.refresh(notebook)
-    return notebook
+    return notebook_service.create_notebook(
+        session, title=body.title, topic=body.topic, owner_id=user.id
+    )
 
 
 @router.get("/{notebook_id}")
-def get_notebook(notebook_id: int, session: SessionDep, _user: CurrentUser) -> dict:
+def get_notebook(notebook_id: int, session: SessionDep, _w: Writer) -> dict:
     nb = _get_notebook(session, notebook_id)
     return {
         "notebook": nb,
@@ -120,17 +117,10 @@ def delete_notebook(notebook_id: int, session: SessionDep, user: CurrentUser):
 def add_source(
     notebook_id: int, body: SourceCreate, session: SessionDep, _w: Writer
 ) -> Source:
-    _get_notebook(session, notebook_id)
-    source = Source(
-        notebook_id=notebook_id,
-        title=body.title,
-        reference=body.reference,
-        summary=body.summary,
+    nb = _get_notebook(session, notebook_id)
+    return notebook_service.add_source(
+        session, nb, title=body.title, reference=body.reference, summary=body.summary
     )
-    session.add(source)
-    session.commit()
-    session.refresh(source)
-    return source
 
 
 @router.delete(
@@ -210,12 +200,8 @@ def update_notebook_requirements(
 def add_note(
     notebook_id: int, body: NoteCreate, session: SessionDep, _w: Writer
 ) -> Note:
-    _get_notebook(session, notebook_id)
-    note = Note(notebook_id=notebook_id, body_md=body.body_md)
-    session.add(note)
-    session.commit()
-    session.refresh(note)
-    return note
+    nb = _get_notebook(session, notebook_id)
+    return notebook_service.add_note(session, nb, body_md=body.body_md)
 
 
 @router.delete(

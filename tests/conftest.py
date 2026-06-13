@@ -42,6 +42,9 @@ def client_fixture(engine):
     app = create_app()
     app.dependency_overrides[get_session] = _get_session
     with TestClient(app) as client:
+        # Browsers send Origin on same-origin state-changing requests; mirror
+        # that so the same-origin CSRF middleware admits the test's POSTs.
+        client.headers["origin"] = "http://testserver"
         yield client
     app.dependency_overrides.clear()
 

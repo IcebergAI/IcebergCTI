@@ -3,12 +3,37 @@
 from sqlmodel import Session, col, select
 
 from ..models import (
+    IntelLevel,
     Notebook,
+    Priority,
     Report,
     Requirement,
     RequirementStatus,
     utcnow,
 )
+
+
+def create_requirement(
+    session: Session,
+    *,
+    stakeholder_id: int,
+    title: str,
+    description: str = "",
+    intel_level: IntelLevel = IntelLevel.STRATEGIC,
+    priority: Priority = Priority.MEDIUM,
+) -> Requirement:
+    """Create a stakeholder requirement. Shared by the JSON API and the portal."""
+    req = Requirement(
+        stakeholder_id=stakeholder_id,
+        title=title,
+        description=description,
+        intel_level=intel_level,
+        priority=priority,
+    )
+    session.add(req)
+    session.commit()
+    session.refresh(req)
+    return req
 
 
 def _requirements_by_id(session: Session, ids: list[int]) -> list[Requirement]:

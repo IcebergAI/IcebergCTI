@@ -10,7 +10,6 @@ from sqlmodel import Session, select
 from ..auth.dependencies import CurrentUser, require_role
 from ..db import get_session
 from ..models import (
-    Notebook,
     RenderedProduct,
     Report,
     ReportStatus,
@@ -31,6 +30,7 @@ from ..rendering.typst import TypstNotAvailable, TypstRenderError
 from ..services import dissemination, lifecycle
 from ..services.attachments import set_report_attachments
 from ..services.reports import (
+    create_report as create_report_record,
     ensure_author,
     ensure_editable,
     ensure_visible,
@@ -65,20 +65,15 @@ def list_reports(session: SessionDep, user: CurrentUser) -> list[Report]:
 def create_report(
     body: ReportCreate, session: SessionDep, user: CurrentUser, _w: Writer
 ) -> Report:
-    if not session.get(Notebook, body.notebook_id):
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Notebook not found")
-    report = Report(
+    return create_report_record(
+        session,
         notebook_id=body.notebook_id,
         title=body.title,
-        body_md=body.body_md,
+        author_id=user.id,
         intel_level=body.intel_level,
         tlp=body.tlp,
-        author_id=user.id,
+        body_md=body.body_md,
     )
-    session.add(report)
-    session.commit()
-    session.refresh(report)
-    return report
 
 
 @router.get("/{report_id}")

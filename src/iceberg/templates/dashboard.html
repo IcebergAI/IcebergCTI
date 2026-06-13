@@ -59,6 +59,7 @@
 {% endif %}
 
 <div class="grid lg:grid-cols-3 gap-7">
+  {% if user.role != 'STAKEHOLDER' %}
   <section class="lg:col-span-2">
     <div class="head-row mb-4">
       <h2 class="section-title">Notebooks</h2>
@@ -100,8 +101,9 @@
       </form>
     {% endif %}
   </section>
+  {% endif %}
 
-  <section>
+  <section{% if user.role == 'STAKEHOLDER' %} class="lg:col-span-3"{% endif %}>
     <div class="head-row mb-4">
       <h2 class="section-title">Recent reports</h2>
       <a href="/reports" class="btn-link">All →</a>

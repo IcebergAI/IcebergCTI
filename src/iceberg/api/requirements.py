@@ -76,17 +76,14 @@ def list_requirements(
 def create_requirement(
     body: RequirementCreate, session: SessionDep, user: CurrentUser, _s: Submitter
 ) -> Requirement:
-    req = Requirement(
+    return req_service.create_requirement(
+        session,
         stakeholder_id=user.id,
         title=body.title,
         description=body.description,
         intel_level=body.intel_level,
         priority=body.priority,
     )
-    session.add(req)
-    session.commit()
-    session.refresh(req)
-    return req
 
 
 @router.get("/{requirement_id}")

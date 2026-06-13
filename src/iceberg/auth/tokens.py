@@ -13,10 +13,9 @@ import jwt
 from ..config import get_settings
 from ..models import utcnow
 
-settings = get_settings()
-
 
 def create_access_token(*, user_id: int, email: str, role: str, name: str) -> str:
+    settings = get_settings()
     now = utcnow()
     payload = {
         "sub": str(user_id),
@@ -30,6 +29,7 @@ def create_access_token(*, user_id: int, email: str, role: str, name: str) -> st
 
 
 def decode_access_token(token: str) -> dict:
+    settings = get_settings()
     return jwt.decode(
         token, settings.secret_key, algorithms=[settings.jwt_algorithm]
     )

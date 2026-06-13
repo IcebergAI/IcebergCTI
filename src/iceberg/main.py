@@ -13,12 +13,11 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware
 
 from .api import api_router
+from .auth.csrf import SameOriginCSRFMiddleware
 from .auth.routes import router as auth_router
 from .config import get_settings
 from .db import init_db
 from .web import web_router
-
-settings = get_settings()
 
 
 @asynccontextmanager
@@ -28,7 +27,12 @@ async def lifespan(_app: FastAPI):
 
 
 def create_app() -> FastAPI:
+    settings = get_settings()
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
+    # CSRF defence for the cookie-authenticated portal (same-origin check on
+    # state-changing requests). Added before SessionMiddleware so it runs after
+    # it on the way in — it only needs cookies/headers, both already present.
+    app.add_middleware(SameOriginCSRFMiddleware)
     # Used by Authlib for the OIDC state/nonce during the code flow.
     app.add_middleware(SessionMiddleware, secret_key=settings.secret_key)
 
