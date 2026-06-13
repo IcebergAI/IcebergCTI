@@ -7,7 +7,7 @@ from sqlmodel import Session
 
 from ..auth.dependencies import CurrentUser
 from ..db import get_session
-from ..models import User, utcnow
+from ..models import User
 from ..schemas import PreferencesUpdate
 
 router = APIRouter(tags=["account"])

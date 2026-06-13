@@ -206,7 +206,7 @@ def test_published_report_attachments_immutable(client, login):
 # --------------------------------------------------------------------------- #
 def test_portal_attachment_flow(client, login):
     login("ANALYST", email="author@example.com")
-    nb = client.post(
+    client.post(
         "/notebooks", data={"title": "Ops", "topic": "x"}
     )  # creates + redirects
     nb_id = client.get("/api/notebooks").json()[0]["id"]

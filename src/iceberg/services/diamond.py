@@ -15,7 +15,7 @@ inject markup through a vertex field.
 """
 
 import re
-from xml.sax.saxutils import escape
+from xml.sax.saxutils import escape  # nosec B406 — used only to escape text for SVG output, never to parse XML
 
 from fastapi import HTTPException, status
 from sqlmodel import Session, col, select

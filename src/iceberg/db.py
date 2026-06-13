@@ -35,7 +35,7 @@ def _enable_sqlite_fk(dbapi_connection, _connection_record):
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
-    except Exception:
+    except Exception:  # nosec B110 — best-effort: non-SQLite backends ignore the pragma
         # Non-SQLite backends ignore this.
         pass
 

@@ -13,7 +13,7 @@ not installed, :class:`TypstNotAvailable` is raised so callers/tests can skip.
 import json
 import re
 import shutil
-import subprocess
+import subprocess  # nosec B404 — invoked with a fixed arg list, no shell (see render_product)
 import tempfile
 import uuid
 from datetime import date
@@ -144,7 +144,9 @@ def render_product(
             str(out_path),
         ]
         try:
-            result = subprocess.run(
+            # nosec B603: cmd is a fixed arg list (no shell); inputs are the
+            # configured binary, the format enum and server-generated temp paths.
+            result = subprocess.run(  # nosec B603
                 cmd, capture_output=True, text=True, timeout=settings.typst_timeout
             )
         except subprocess.TimeoutExpired:

@@ -17,7 +17,7 @@ from fastapi import HTTPException, UploadFile, status
 from sqlmodel import Session, col, select
 
 from ..config import get_settings
-from ..models import Attachment, Notebook, Report, ReportAttachment, utcnow
+from ..models import Attachment, Notebook, Report, utcnow
 
 # Canonical MIME -> allowed file extensions. Used to reject uploads whose
 # declared type and extension disagree. Custom types added via the env whitelist

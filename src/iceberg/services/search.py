@@ -40,23 +40,25 @@ _COLS = ", ".join(_FTS_COLS)
 _NEW = ", ".join(f"new.{c}" for c in _FTS_COLS)
 _OLD = ", ".join(f"old.{c}" for c in _FTS_COLS)
 
+# nosec B608: every interpolated name here (_FTS_TABLE, _COLS, _NEW, _OLD) is a
+# fixed internal identifier, never user input — there is no injection surface.
 _DDL = [
-    f"CREATE VIRTUAL TABLE IF NOT EXISTS {_FTS_TABLE} "
+    f"CREATE VIRTUAL TABLE IF NOT EXISTS {_FTS_TABLE} "  # nosec B608
     f"USING fts5({_COLS}, content='report', content_rowid='id')",
     f"""CREATE TRIGGER IF NOT EXISTS report_ai AFTER INSERT ON report BEGIN
         INSERT INTO {_FTS_TABLE}(rowid, {_COLS})
         VALUES (new.id, {_NEW});
-    END""",
+    END""",  # nosec B608
     f"""CREATE TRIGGER IF NOT EXISTS report_ad AFTER DELETE ON report BEGIN
         INSERT INTO {_FTS_TABLE}({_FTS_TABLE}, rowid, {_COLS})
         VALUES('delete', old.id, {_OLD});
-    END""",
+    END""",  # nosec B608
     f"""CREATE TRIGGER IF NOT EXISTS report_au AFTER UPDATE ON report BEGIN
         INSERT INTO {_FTS_TABLE}({_FTS_TABLE}, rowid, {_COLS})
         VALUES('delete', old.id, {_OLD});
         INSERT INTO {_FTS_TABLE}(rowid, {_COLS})
         VALUES (new.id, {_NEW});
-    END""",
+    END""",  # nosec B608
 ]
 
 _registered = False
@@ -84,7 +86,8 @@ def reindex(session: Session) -> None:
     the index). No-op on non-SQLite backends."""
     if session.bind is None or session.bind.dialect.name != "sqlite":
         return
-    session.execute(text(f"INSERT INTO {_FTS_TABLE}({_FTS_TABLE}) VALUES('rebuild')"))
+    # nosec B608: _FTS_TABLE is a fixed internal identifier, not user input.
+    session.execute(text(f"INSERT INTO {_FTS_TABLE}({_FTS_TABLE}) VALUES('rebuild')"))  # nosec B608
     session.commit()
 
 
@@ -116,8 +119,9 @@ def search_reports(
     match = _match_query(q) if q else None
     if match is not None:
         rows = session.execute(
+            # nosec B608: _FTS_TABLE is a constant; the user's query is bound via :m.
             text(
-                f"SELECT rowid FROM {_FTS_TABLE} WHERE {_FTS_TABLE} MATCH :m "
+                f"SELECT rowid FROM {_FTS_TABLE} WHERE {_FTS_TABLE} MATCH :m "  # nosec B608
                 f"ORDER BY bm25({_FTS_TABLE})"
             ),
             {"m": match},

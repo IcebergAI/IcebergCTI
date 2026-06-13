@@ -56,7 +56,6 @@ def get_current_user(
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
-OptionalUser = Annotated[User | None, Depends(get_optional_user)]
 
 
 def user_in_roles(user: User, *roles: Role) -> bool:
