@@ -21,6 +21,7 @@ This roadmap **prioritises two themes** — *Analytic Tradecraft (ICD 203)* and 
 
 **Gaps that matter for a *finished-intelligence* platform:**
 - **No estimative language.** No Report-level analytic confidence, no standardised probability/likelihood lexicon. ICD 203 keeps *confidence* and *likelihood* distinct; Iceberg expresses neither (Diamond confidence is the only confidence anywhere).
+- **Limited structured analytic techniques.** Key Judgements / Key Assumptions / Intelligence Gaps are implemented, but deeper structured analytic techniques like Analysis of Competing Hypotheses (ACH) are still missing.
 - **Flat knowledge layer.** Actor/malware/campaign are flat `Tag` rows; aliases are concatenated into a description string ("Fancy Bear / Sofacy — Russia (GRU)"). No aliasing, no relationships, no entity profiles — the classic APT28/Fancy Bear/Sofacy naming problem is unmodelled.
 - **No machine-readable interop** (STIX/TAXII/Navigator) and **email/feed-only dissemination** — noted as secondary backlog below.
 - **Need-to-know gap:** stakeholders consume published products, but the published report library is not yet compartmented by named sharing, tags, teams, or entitlement groups.
@@ -46,9 +47,9 @@ This roadmap **prioritises two themes** — *Analytic Tradecraft (ICD 203)* and 
 - **Impact:** High / **Effort:** Low–Medium. The confidence field is small; the lexicon panel + optional lint is the larger (but optional) part.
 
 ### 1c. Structured judgement scaffolding (KJ / KA / Gaps) — ✅ **implemented**
-> Shipped: `key_judgements` / `key_assumptions` / `intelligence_gaps` markdown fields on `Report`, editable in the report editor (publish-immutable), rendered as discrete sections in the web view and PDF; EXEC_BRIEF / ONE_PAGER are Key-Judgements-only. ACH deferred. Plan: [docs/plans/1c-judgement-scaffolding.md](docs/plans/1c-judgement-scaffolding.md).
+> Shipped: `key_judgements` / `key_assumptions` / `intelligence_gaps` markdown fields on `Report`, editable in the report editor (publish-immutable), rendered as discrete sections in the web view and PDF; EXEC_BRIEF / ONE_PAGER are Key-Judgements-only. ACH is deferred. Plan: [docs/plans/1c-judgement-scaffolding.md](docs/plans/1c-judgement-scaffolding.md).
 - Promote **Key Judgements**, **Key Assumptions**, and **Intelligence Gaps** to first-class optional markdown fields on `Report` ([models.py:312-344](src/iceberg/models.py#L312-L344)), rendered as standard sections in the web view and PDF — and let the **EXEC_BRIEF / ONE_PAGER** formats render *just* the Key Judgements (this is what those formats are for).
-- **Stretch:** add **Analysis of Competing Hypotheses (ACH)** as a second analytic model alongside Diamond, reusing the exact `services/diamond.py` pattern (per-notebook model → server-rendered artefact → `[[ach:ID]]` inline token). This squarely advances "structured analytic techniques".
+- **Stretch:** add **ACH** as a second analytic model alongside Diamond, reusing the exact `services/diamond.py` pattern (per-notebook model → server-rendered artefact → `[[ach:ID]]` inline token). This squarely advances "structured analytic techniques".
 - **Impact:** Medium–High / **Effort:** Medium (fields) + Medium-Large (ACH stretch).
 
 ---
