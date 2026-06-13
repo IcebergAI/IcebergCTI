@@ -13,7 +13,6 @@ from email.message import EmailMessage
 
 from ..config import get_settings
 
-settings = get_settings()
 logger = logging.getLogger("iceberg.email")
 
 
@@ -29,7 +28,7 @@ OUTBOX: list[SentEmail] = []
 
 
 def send_email(to: str, subject: str, body: str) -> None:
-    if settings.email_backend.lower() == "smtp":
+    if get_settings().email_backend.lower() == "smtp":
         _send_smtp(to, subject, body)
     else:
         _send_console(to, subject, body)
@@ -41,6 +40,7 @@ def _send_console(to: str, subject: str, body: str) -> None:
 
 
 def _send_smtp(to: str, subject: str, body: str) -> None:
+    settings = get_settings()
     msg = EmailMessage()
     msg["From"] = settings.email_from
     msg["To"] = to

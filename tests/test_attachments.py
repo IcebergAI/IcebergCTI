@@ -4,16 +4,17 @@ the portal flow."""
 
 import pytest
 
+from iceberg.config import get_settings
 from iceberg.rendering.typst import typst_available
-from iceberg.services import attachments as attachment_service
 
 
 @pytest.fixture(autouse=True)
 def _attachments_dir(tmp_path, monkeypatch):
-    """Redirect attachment storage to a per-test temp dir (the service reads the
-    live module-level settings object)."""
+    """Redirect attachment storage to a per-test temp dir. Services read config
+    via the cached ``get_settings()`` singleton, so patching its attribute is
+    seen everywhere."""
     target = tmp_path / "att"
-    monkeypatch.setattr(attachment_service.settings, "attachments_dir", str(target))
+    monkeypatch.setattr(get_settings(), "attachments_dir", str(target))
     return target
 
 
@@ -92,7 +93,7 @@ def test_reject_extension_type_mismatch(client, login):
 def test_reject_oversize(client, login, _attachments_dir, monkeypatch):
     login("ANALYST")
     nb = _notebook(client)
-    monkeypatch.setattr(attachment_service.settings, "attachment_max_mb", 0)
+    monkeypatch.setattr(get_settings(), "attachment_max_mb", 0)
     resp = _upload(client, nb["id"], content=b"more than zero bytes")
     assert resp.status_code == 413
     # The partial write must be cleaned up.
@@ -241,9 +242,7 @@ def test_portal_attachment_flow(client, login):
 # --------------------------------------------------------------------------- #
 @pytest.mark.skipif(not typst_available(), reason="Typst binary not installed")
 def test_render_includes_cited_attachment(client, login, tmp_path, monkeypatch):
-    from iceberg.rendering import typst as typst_mod
-
-    monkeypatch.setattr(typst_mod.settings, "render_output_dir", str(tmp_path / "out"))
+    monkeypatch.setattr(get_settings(), "render_output_dir", str(tmp_path / "out"))
     login("ANALYST", email="author@example.com")
     nb = _notebook(client)
     att = _upload(client, nb["id"], name="annex.pdf").json()

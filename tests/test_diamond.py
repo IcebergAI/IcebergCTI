@@ -5,7 +5,7 @@ writer-only access, and the Typst token rewrite + a render smoke test."""
 
 import pytest
 
-from iceberg.rendering import typst as typst_mod
+from iceberg.config import get_settings
 from iceberg.rendering.typst import _rewrite_diamond_tokens, typst_available
 from iceberg.services import diamond as diamond_service
 
@@ -281,7 +281,7 @@ def test_rewrite_diamond_tokens():
 
 @pytest.mark.skipif(not typst_available(), reason="Typst binary not installed")
 def test_render_with_diamond(client, login, tmp_path, monkeypatch):
-    monkeypatch.setattr(typst_mod.settings, "render_output_dir", str(tmp_path / "out"))
+    monkeypatch.setattr(get_settings(), "render_output_dir", str(tmp_path / "out"))
     login("ANALYST", email="author@example.com")
     nb = _notebook(client)
     did = _diamond(

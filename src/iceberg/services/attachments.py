@@ -19,8 +19,6 @@ from sqlmodel import Session, col, select
 from ..config import get_settings
 from ..models import Attachment, Notebook, Report, ReportAttachment, utcnow
 
-settings = get_settings()
-
 # Canonical MIME -> allowed file extensions. Used to reject uploads whose
 # declared type and extension disagree. Custom types added via the env whitelist
 # that aren't listed here are accepted on MIME alone (no extension constraint).
@@ -50,7 +48,7 @@ class _TooLarge(Exception):
 
 def _validate_type(content_type: str, ext: str) -> str:
     ct = (content_type or "").lower()
-    if ct not in settings.allowed_attachment_types:
+    if ct not in get_settings().allowed_attachment_types:
         raise HTTPException(
             status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             f"File type '{content_type or 'unknown'}' is not allowed",
@@ -73,6 +71,7 @@ def save_upload(
     summary: str = "",
 ) -> Attachment:
     """Validate, stream to disk and persist an uploaded file for a notebook."""
+    settings = get_settings()
     original = Path(upload.filename or "").name
     if not original:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "A filename is required")
@@ -120,7 +119,7 @@ def save_upload(
 def attachment_path(attachment: Attachment) -> Path:
     """Resolve an attachment's on-disk path, asserting it stays inside the
     configured directory (defense in depth — stored names are UUIDs)."""
-    base = Path(settings.attachments_dir).resolve()
+    base = Path(get_settings().attachments_dir).resolve()
     path = (base / attachment.stored_filename).resolve()
     if path != base and base not in path.parents:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Attachment not found")
@@ -129,7 +128,7 @@ def attachment_path(attachment: Attachment) -> Path:
 
 def delete_attachment(session: Session, attachment: Attachment) -> None:
     """Delete the row, then best-effort remove the file from disk."""
-    path = Path(settings.attachments_dir) / attachment.stored_filename
+    path = Path(get_settings().attachments_dir) / attachment.stored_filename
     session.delete(attachment)
     session.commit()
     try:

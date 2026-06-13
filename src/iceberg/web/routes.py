@@ -21,14 +21,13 @@ from fastapi import (
 from fastapi.responses import FileResponse, RedirectResponse
 from sqlmodel import Session, col, select
 
-from ..auth.dependencies import CurrentUser
+from ..auth.dependencies import CurrentUser, ensure_role
 from ..db import get_session
 from ..models import (
     Attachment,
     DiamondConfidence,
     DisseminationEvent,
     IntelLevel,
-    Note,
     Notebook,
     Priority,
     ProductFormat,
@@ -38,7 +37,6 @@ from ..models import (
     Requirement,
     RequirementStatus,
     Role,
-    Source,
     Tag,
     TagKind,
     TLP,
@@ -52,11 +50,13 @@ from ..services import (
     diamond as diamond_service,
     dissemination,
     lifecycle,
+    notebooks as notebook_service,
     requirements as req_service,
     search as search_service,
     tags as tag_service,
 )
 from ..services.reports import (
+    create_report as create_report_record,
     delete_rendered_product,
     ensure_author,
     ensure_editable,
@@ -71,22 +71,19 @@ SessionDep = Annotated[Session, Depends(get_session)]
 
 
 def _require_writer(user: User) -> None:
-    if user.role == Role.STAKEHOLDER:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Read-only user")
+    ensure_role(user, Role.ANALYST, Role.REVIEWER, detail="Read-only user")
 
 
 def _require_submitter(user: User) -> None:
     """Requirements are submitted by stakeholders (or admins)."""
-    if user.role not in (Role.STAKEHOLDER, Role.ADMIN):
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN, "Only stakeholders can submit requirements"
-        )
+    ensure_role(
+        user, Role.STAKEHOLDER, detail="Only stakeholders can submit requirements"
+    )
 
 
 def _require_admin(user: User) -> None:
     """Taxonomy curation is admin-only (controlled vocabulary)."""
-    if user.role != Role.ADMIN:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin role required")
+    ensure_role(user, Role.ADMIN, detail="Admin role required")
 
 
 def _redirect(url: str) -> RedirectResponse:
@@ -120,12 +117,19 @@ def _open_requirements(
 # --------------------------------------------------------------------------- #
 @router.get("/")
 def dashboard(request: Request, session: SessionDep, user: CurrentUser):
-    notebooks = list(
-        session.exec(select(Notebook).order_by(Notebook.updated_at.desc())).all()
+    is_stakeholder = user.role == Role.STAKEHOLDER
+    # Notebooks are writer-only collection material; stakeholders never see them.
+    notebooks = (
+        []
+        if is_stakeholder
+        else list(
+            session.exec(select(Notebook).order_by(Notebook.updated_at.desc())).all()
+        )
     )
-    recent = list(
-        session.exec(select(Report).order_by(Report.updated_at.desc()).limit(8)).all()
-    )
+    recent_stmt = select(Report).order_by(Report.updated_at.desc())
+    if is_stakeholder:  # read-only consumers only ever see published reports
+        recent_stmt = recent_stmt.where(Report.status == ReportStatus.PUBLISHED)
+    recent = list(session.exec(recent_stmt.limit(8)).all())
     report_counts = {
         "draft": sum(1 for r in recent if ReportStatus(r.status) == ReportStatus.DRAFT),
         "in_review": sum(
@@ -170,10 +174,9 @@ def create_notebook(
     topic: Annotated[str, Form()] = "",
 ):
     _require_writer(user)
-    nb = Notebook(title=title, topic=topic, owner_id=user.id)
-    session.add(nb)
-    session.commit()
-    session.refresh(nb)
+    nb = notebook_service.create_notebook(
+        session, title=title, topic=topic, owner_id=user.id
+    )
     return _redirect(f"/notebooks/{nb.id}")
 
 
@@ -181,9 +184,8 @@ def create_notebook(
 def notebook_detail(
     notebook_id: int, request: Request, session: SessionDep, user: CurrentUser
 ):
-    nb = session.get(Notebook, notebook_id)
-    if not nb:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Notebook not found")
+    _require_writer(user)  # raw collection material is writer-only
+    nb = _get_notebook(session, notebook_id)
     diamonds = list(nb.diamond_models)
     return templates.TemplateResponse(
         request,
@@ -214,14 +216,10 @@ def add_source(
     summary: Annotated[str, Form()] = "",
 ):
     _require_writer(user)
-    if not session.get(Notebook, notebook_id):
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Notebook not found")
-    session.add(
-        Source(
-            notebook_id=notebook_id, title=title, reference=reference, summary=summary
-        )
+    nb = _get_notebook(session, notebook_id)
+    notebook_service.add_source(
+        session, nb, title=title, reference=reference, summary=summary
     )
-    session.commit()
     return _redirect(f"/notebooks/{notebook_id}")
 
 
@@ -233,18 +231,12 @@ def add_note(
     body_md: Annotated[str, Form()] = "",
 ):
     _require_writer(user)
-    if not session.get(Notebook, notebook_id):
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Notebook not found")
-    session.add(Note(notebook_id=notebook_id, body_md=body_md))
-    session.commit()
+    nb = _get_notebook(session, notebook_id)
+    notebook_service.add_note(session, nb, body_md=body_md)
     return _redirect(f"/notebooks/{notebook_id}")
 
 
-def _get_notebook(session: Session, notebook_id: int) -> Notebook:
-    nb = session.get(Notebook, notebook_id)
-    if not nb:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Notebook not found")
-    return nb
+_get_notebook = notebook_service.get_or_404
 
 
 def _get_attachment(session: Session, notebook_id: int, attachment_id: int):
@@ -402,18 +394,14 @@ def create_report(
     tlp: Annotated[TLP, Form()] = TLP.AMBER,
 ):
     _require_writer(user)
-    if not session.get(Notebook, notebook_id):
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Notebook not found")
-    report = Report(
+    report = create_report_record(
+        session,
         notebook_id=notebook_id,
         title=title,
+        author_id=user.id,
         intel_level=intel_level,
         tlp=tlp,
-        author_id=user.id,
     )
-    session.add(report)
-    session.commit()
-    session.refresh(report)
     return _redirect(f"/reports/{report.id}/edit")
 
 
@@ -718,16 +706,14 @@ def requirement_create(
     priority: Annotated[Priority, Form()] = Priority.MEDIUM,
 ):
     _require_submitter(user)
-    req = Requirement(
+    req = req_service.create_requirement(
+        session,
         stakeholder_id=user.id,
         title=title,
         description=description,
         intel_level=intel_level,
         priority=priority,
     )
-    session.add(req)
-    session.commit()
-    session.refresh(req)
     return _redirect(f"/requirements/{req.id}")
 
 

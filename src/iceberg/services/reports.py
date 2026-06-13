@@ -7,6 +7,8 @@ from fastapi import HTTPException, status
 from sqlmodel import Session, col, select
 
 from ..models import (
+    IntelLevel,
+    Notebook,
     ProductFormat,
     RenderedProduct,
     Report,
@@ -14,6 +16,7 @@ from ..models import (
     ReportStatus,
     Role,
     Source,
+    TLP,
     User,
 )
 from ..rendering.typst import render_product
@@ -48,6 +51,34 @@ def ensure_editable(report: Report, user: User) -> Report:
         raise HTTPException(
             status.HTTP_409_CONFLICT, "Published reports are immutable"
         )
+    return report
+
+
+def create_report(
+    session: Session,
+    *,
+    notebook_id: int,
+    title: str,
+    author_id: int,
+    intel_level: IntelLevel,
+    tlp: TLP,
+    body_md: str = "",
+) -> Report:
+    """Create a report under an existing notebook (404 if the notebook is gone).
+    Shared by the JSON API and the portal."""
+    if not session.get(Notebook, notebook_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Notebook not found")
+    report = Report(
+        notebook_id=notebook_id,
+        title=title,
+        body_md=body_md,
+        intel_level=intel_level,
+        tlp=tlp,
+        author_id=author_id,
+    )
+    session.add(report)
+    session.commit()
+    session.refresh(report)
     return report
 
 

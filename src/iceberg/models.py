@@ -1,9 +1,8 @@
 """SQLModel domain models and enums for Iceberg.
 
 Kept in a single module so cross-model relationships resolve without circular
-imports. See the plan: User/Notebook/Source/Note/Report (+ links) form the
-authoring core; Requirement is modelled now, with its UI arriving in a later
-milestone.
+imports. User/Notebook/Source/Note/Report (+ link tables) form the authoring
+core; Requirement drives stakeholder intake and the analyst tasking board.
 """
 
 from datetime import datetime, timezone

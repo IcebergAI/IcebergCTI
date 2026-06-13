@@ -22,12 +22,10 @@ from ..models import (
 )
 from . import email as email_service
 
-settings = get_settings()
-
 
 def _max_tlp() -> TLP:
     try:
-        return TLP(settings.dissemination_max_tlp)
+        return TLP(get_settings().dissemination_max_tlp)
     except ValueError:
         return TLP.AMBER
 
@@ -73,7 +71,7 @@ def send_notifications(
 ) -> None:
     """Email recipients [(email, name)] a link to the report. No DB access, so
     it is safe to run as a FastAPI background task after the response."""
-    url = f"{settings.portal_base_url.rstrip('/')}/reports/{report_id}"
+    url = f"{get_settings().portal_base_url.rstrip('/')}/reports/{report_id}"
     subject = f"[Iceberg] New intelligence: {report_title}"
     for to, name in recipients:
         body = (

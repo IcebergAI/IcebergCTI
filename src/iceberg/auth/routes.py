@@ -15,7 +15,6 @@ from ..templating import templates
 from .dependencies import COOKIE_NAME
 from .tokens import create_access_token
 
-settings = get_settings()
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 # Lazily-configured OAuth client for Microsoft Entra ID.
@@ -25,6 +24,7 @@ _oauth: OAuth | None = None
 def _get_oauth() -> OAuth:
     global _oauth
     if _oauth is None:
+        settings = get_settings()
         oauth = OAuth()
         oauth.register(
             name="entra",
@@ -41,6 +41,7 @@ def _get_oauth() -> OAuth:
 
 
 def _set_session_cookie(response: RedirectResponse, token: str) -> None:
+    settings = get_settings()
     response.set_cookie(
         COOKIE_NAME,
         token,
@@ -53,6 +54,7 @@ def _set_session_cookie(response: RedirectResponse, token: str) -> None:
 
 @router.get("/login")
 def login_page(request: Request):
+    settings = get_settings()
     return templates.TemplateResponse(
         request,
         "login.html",
@@ -69,6 +71,7 @@ def login_page(request: Request):
 
 @router.get("/entra/login")
 async def entra_login(request: Request):
+    settings = get_settings()
     if not settings.oidc_enabled:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "OIDC is not enabled")
     oauth = _get_oauth()
@@ -76,7 +79,7 @@ async def entra_login(request: Request):
 
 
 def _role_from_claims(claims: dict) -> Role:
-    raw = claims.get(settings.oidc_role_claim) or []
+    raw = claims.get(get_settings().oidc_role_claim) or []
     if isinstance(raw, str):
         raw = [raw]
     valid = {r.value for r in Role}
@@ -92,6 +95,7 @@ def _role_from_claims(claims: dict) -> Role:
 async def entra_callback(
     request: Request, session: Annotated[Session, Depends(get_session)]
 ):
+    settings = get_settings()
     if not settings.oidc_enabled:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "OIDC is not enabled")
     oauth = _get_oauth()
@@ -123,6 +127,7 @@ def dev_login(
     name: Annotated[str, Form()] = "",
     role: Annotated[str, Form()] = "",
 ):
+    settings = get_settings()
     if not settings.dev_login_enabled:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Dev login is disabled")
 
@@ -144,8 +149,10 @@ def dev_login(
     return response
 
 
-@router.get("/logout")
+@router.post("/logout")
 def logout():
+    # POST (not GET) so logout can't be triggered cross-site by a stray link or
+    # prefetch; the nav posts a small same-origin form.
     response = RedirectResponse("/auth/login", status_code=status.HTTP_303_SEE_OTHER)
     response.delete_cookie(COOKIE_NAME)
     return response

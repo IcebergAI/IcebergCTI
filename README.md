@@ -74,7 +74,9 @@ topic — that analysts classify reports against.*
 - **SQLite FTS5** (bm25) for full-text report search
 - **Typst** for PDF rendering
 - **PyTest** for tests
-- Auth: **OIDC (Microsoft Entra ID)** with a dev-login bypass for local use
+- Auth: **OIDC (Microsoft Entra ID)** with a dev-login bypass for local use; role-based
+  access (notebook collection material is writer-only, stakeholders consume finished
+  products) with a same-origin CSRF guard on the cookie-authenticated portal
 
 ## Quick start
 ```bash

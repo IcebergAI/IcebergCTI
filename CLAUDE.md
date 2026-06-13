@@ -12,6 +12,8 @@ A **single FastAPI application** serves both the JSON API under `/api/*` and the
 
 Authentication is **OIDC against Microsoft Entra ID** (Authorization Code flow); the IdP's app-role/group claim maps to an Iceberg role. After login Iceberg mints its own short-lived JWT — sent as a Bearer header by API clients, or stored in a signed session cookie by the portal — so the "all endpoints JWT-authenticated" rule holds uniformly. A **dev-login bypass** (`ICEBERG_DEV_AUTH=true`, disabled when `ICEBERG_ENVIRONMENT=prod`) issues a JWT for a chosen role without an IdP, for local development and tests.
 
+The session cookie is `SameSite=Lax` + `HttpOnly` (and `Secure` in prod); as defence-in-depth a **same-origin CSRF middleware** (`auth/csrf.py`) rejects any cookie-authenticated state-changing request whose `Origin`/`Referer` doesn't match the host (Bearer API clients and anonymous requests are exempt — token auth isn't browser-CSRF-prone). Logout is **POST-only** so it can't be triggered cross-site.
+
 Roles: `ADMIN`, `ANALYST`, `REVIEWER`, `STAKEHOLDER` (read-only).
 
 ### Technologies
@@ -22,7 +24,7 @@ Roles: `ADMIN`, `ANALYST`, `REVIEWER`, `STAKEHOLDER` (read-only).
 
 ### Domain model (`src/iceberg/models.py`)
 - **User** — identity, role, optional `preferred_intel_level`.
-- **Notebook** — topic workspace owned by an analyst; has many sources, notes and reports.
+- **Notebook** — topic workspace owned by an analyst; has many sources, notes and reports. Collection material (the notebook, its sources/notes/attachments/diamonds) is **writer-only**: read-only stakeholders never list or open notebooks — they consume only finished products (reports/feed/search). Create/read helpers live in `services/notebooks.py` and are shared by the API and portal.
 - **Source** / **Note** — collected material inside a notebook.
 - **Attachment** — an uploaded reference file held against a notebook. Stored on disk under `ICEBERG_ATTACHMENTS_DIR` with a server-generated UUID name; the DB row keeps metadata + the original filename. Upload/download are **writer-only** (read-only stakeholders have no access); uploads are MIME-whitelisted and size-capped (`ICEBERG_ATTACHMENT_MAX_MB`, default 25). Citable in reports via `ReportAttachment` and listed in the rendered PDF's appendix. See `services/attachments.py`.
 - **DiamondModel** — a Diamond Model of Intrusion Analysis assessment held against a notebook (the four core features `adversary`/`capability`/`infrastructure`/`victim` + an analytic `confidence` + notes). Rendered server-side to an **SVG** diagram and **embedded inline in a report** by writing a `[[diamond:ID]]` token in the markdown body — there is **no citation link table**; the token is the association, resolved (notebook-scoped) at render time for the web view, the live preview, and the Typst PDF (Typst renders SVG natively; vertex text is XML-escaped). See `services/diamond.py`.
@@ -65,17 +67,17 @@ A Diamond Model is rendered to a **self-contained SVG** by hand-built string tem
 ### Project structure
 ```
 src/iceberg/
-  main.py          # app factory: mounts API + portal, session mw, auth redirect
+  main.py          # app factory: mounts API + portal, session + CSRF mw, auth redirect
   config.py        # pydantic-settings (ICEBERG_ env prefix)
   db.py            # SQLite engine/session, FK pragma, create_all
   models.py        # SQLModel models + enums
   schemas.py       # API request bodies
   seed.py          # CLI: import the tag taxonomy (python -m iceberg.seed)
   templating.py    # shared Jinja2Templates instance
-  auth/            # OIDC (Entra) + dev login, JWT, role dependencies
+  auth/            # OIDC (Entra) + dev login, JWT, role dependencies, same-origin CSRF mw
   api/             # JSON routers: notebooks, reports, requirements, feed, account, preview, tags, search
   web/             # portal routes (Jinja2)
-  services/        # users, lifecycle, citations/rendering, requirements, attachments, diamond, dissemination, email, tags, search
+  services/        # users, notebooks, lifecycle, citations/rendering (reports), requirements, attachments, diamond, dissemination, email, tags, search
   rendering/       # markdown->HTML, report->PDF
   data/            # starter_tags.json (importable starter taxonomy)
   templates/       # Jinja2 + Alpine (base, _glyph, _macros, one per screen)
