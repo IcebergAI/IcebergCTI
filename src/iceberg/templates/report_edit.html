@@ -216,6 +216,7 @@
                    {% if s.id in cited_ids %}checked{% endif %} {% if not can_edit %}disabled{% endif %}>
             <span>
               <span class="font-medium">{{ s.title }}</span>
+              <span class="ml-1">{{ m.source_grade_chip(s) }}</span>
               {% if s.reference %}<span class="mono text-xs block mt-0.5" style="color:var(--accent-deep);">{{ s.reference }}</span>{% endif %}
             </span>
           </label>

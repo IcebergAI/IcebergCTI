@@ -20,7 +20,17 @@ from datetime import date
 from pathlib import Path
 
 from ..config import get_settings
-from ..models import Attachment, ProductFormat, Report, Source, Tag, tlp_label
+from ..models import (
+    Attachment,
+    ProductFormat,
+    Report,
+    Source,
+    Tag,
+    source_credibility_label,
+    source_grade_label,
+    source_reliability_label,
+    tlp_label,
+)
 
 _TEMPLATE = Path(__file__).resolve().parent.parent / "typst" / "product.typ"
 
@@ -81,7 +91,18 @@ def _build_data(
         "key_assumptions": report.key_assumptions or "",
         "intelligence_gaps": report.intelligence_gaps or "",
         "sources": [
-            {"title": s.title, "reference": s.reference, "summary": s.summary}
+            {
+                "title": s.title,
+                "reference": s.reference,
+                "summary": s.summary,
+                "grade": source_grade_label(s.reliability, s.credibility),
+                "reliability_label": (
+                    source_reliability_label(s.reliability) if s.reliability else ""
+                ),
+                "credibility_label": (
+                    source_credibility_label(s.credibility) if s.credibility else ""
+                ),
+            }
             for s in sources
         ],
         "attachments": [

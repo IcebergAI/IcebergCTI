@@ -13,6 +13,9 @@ from .models import (
     RequirementStatus,
     TagKind,
     TLP,
+    source_credibility_label,
+    source_grade_label,
+    source_reliability_label,
     tlp_label,
 )
 
@@ -30,3 +33,6 @@ templates.env.globals["ProductFormat"] = ProductFormat
 templates.env.globals["Priority"] = Priority
 templates.env.globals["RequirementStatus"] = RequirementStatus
 templates.env.globals["TagKind"] = TagKind
+templates.env.globals["source_grade_label"] = source_grade_label
+templates.env.globals["source_reliability_label"] = source_reliability_label
+templates.env.globals["source_credibility_label"] = source_credibility_label

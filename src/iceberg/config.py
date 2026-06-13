@@ -81,6 +81,18 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_starttls: bool = False
 
+    # Source reliability grading. External LLM grading is opt-in; the app falls
+    # back to the local heuristic grader when no provider is configured or a
+    # provider/fetch attempt fails.
+    source_grader_provider: str = "heuristic"
+    source_grader_model: str = ""
+    source_grader_api_key: str = ""
+    source_grader_base_url: str = ""
+    source_grader_fallback: str = "heuristic"
+    source_grader_fetch_timeout: float = 6.0
+    source_grader_fetch_max_bytes: int = 200_000
+    source_grader_extract_max_chars: int = 12_000
+
     @property
     def max_attachment_bytes(self) -> int:
         return self.attachment_max_mb * 1024 * 1024

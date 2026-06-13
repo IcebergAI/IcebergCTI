@@ -392,6 +392,12 @@
           text(font: f-mono, size: 11pt, weight: "bold", fill: c-accent-deep)[[#(i + 1)]],
           [
             #text(font: f-sans, weight: 600, size: 11pt, fill: c-ink)[#s.title]
+            #if s.at("grade", default: "Ungraded") != "Ungraded" {
+              h(6pt)
+              box(inset: (x: 5pt, y: 1.5pt), radius: 3.5pt, fill: c-accent-soft,
+                  stroke: 0.5pt + c-accent-line, baseline: 1.5pt,
+                  text(font: f-mono, size: 8.5pt, weight: 700, fill: c-accent-deep)[#s.grade])
+            }
             #if s.reference != "" {
               h(6pt)
               box(inset: (x: 5pt, y: 1.5pt), radius: 3.5pt, fill: c-surface-2,

@@ -15,11 +15,11 @@ This roadmap **prioritises two themes** — *Analytic Tradecraft (ICD 203)* and 
 **Strengths — keep and build on:**
 - **TLP 2.0 done correctly** — `CLEAR` + `AMBER_STRICT`, restrictiveness-ranked for dissemination gating ([models.py:36-78](src/iceberg/models.py#L36-L78)). Ahead of many platforms.
 - **Diamond Model** as a first-class per-notebook analytic artefact: four core features + ordinal confidence pip-meter + labelled meta-axes ([models.py:260-284](src/iceberg/models.py#L260-L284), [services/diamond.py](src/iceberg/services/diamond.py)).
+- **Source reliability grading** — Admiralty/NATO-style reliability + credibility chips on notebook sources, report citations, report source lists, and the PDF appendix, with opt-in LLM grading, safe URL fetch, heuristic fallback, and manual override ([services/source_grading.py](src/iceberg/services/source_grading.py)).
 - **ATT&CK identifiers** carried on a controlled, admin-curated taxonomy — T-codes (technique), G-codes (actor), S-codes (malware) in `Tag.external_id` ([models.py:392-410](src/iceberg/models.py#L392-L410), [data/starter_tags.json](src/iceberg/data/starter_tags.json)).
 - Clean lifecycle, requirement→product traceability, FTS5 + faceted search, multi-format Typst PDFs.
 
 **Gaps that matter for a *finished-intelligence* platform:**
-- **No source reliability grading.** `Source` is title/reference/summary/captured_at only ([models.py:236-246](src/iceberg/models.py#L236-L246)) — no Admiralty/NATO grading, the bedrock of CTI source evaluation.
 - **No estimative language.** No Report-level analytic confidence, no standardised probability/likelihood lexicon. ICD 203 keeps *confidence* and *likelihood* distinct; Iceberg expresses neither (Diamond confidence is the only confidence anywhere).
 - **No structured judgement scaffolding.** Key Judgements / Key Assumptions / Intelligence Gaps live (if at all) as freeform prose, not first-class, not renderable into briefs.
 - **Flat knowledge layer.** Actor/malware/campaign are flat `Tag` rows; aliases are concatenated into a description string ("Fancy Bear / Sofacy — Russia (GRU)"). No aliasing, no relationships, no entity profiles — the classic APT28/Fancy Bear/Sofacy naming problem is unmodelled.
@@ -32,11 +32,12 @@ This roadmap **prioritises two themes** — *Analytic Tradecraft (ICD 203)* and 
 
 *The single biggest uplift for a finished-intelligence platform. Three sub-initiatives, each independently shippable.*
 
-### 1a. Source reliability grading (Admiralty / NATO System)
+### 1a. Source reliability grading (Admiralty / NATO System) — ✅ **implemented**
+- Shipped: `Source` carries reliability (`A-F`), credibility (`1-6`), grading origin, engine, rationale, warning, and timestamp. Auto grading safely fetches public source URLs, uses configured OpenAI/Anthropic/OpenAI-compatible grading when available, falls back to `heuristic:v1`, and leaves credibility as `6` when source content cannot be assessed. Analysts can manually override, clear, and regrade. Chips render in notebook sources, report citations, report source lists, and the FULL PDF source appendix.
 - Add to `Source` ([models.py:236-246](src/iceberg/models.py#L236-L246)) two graded fields:
   - **`reliability`** — A–F (A *completely reliable* … E *unreliable*, F *cannot be judged*).
   - **`credibility`** — 1–6 (1 *confirmed* … 5 *improbable*, 6 *cannot be judged*).
-- Surface as a compact **"B2"-style chip** in the notebook source list, the report citation list, and the **PDF source appendix** (`typst/product.typ`). Default to F6 ("cannot be judged") so existing rows remain valid.
+- Surface as a compact **"B2"-style chip** in the notebook source list, the report citation list, and the **PDF source appendix** (`typst/product.typ`). Existing rows remain ungraded until manually graded or regraded.
 - **Impact:** High / **Effort:** Low. New enums + two columns + schema field ([schemas.py](src/iceberg/schemas.py)) + template/PDF chip. Highest impact-to-effort item in the whole roadmap.
 
 ### 1b. Estimative language — analytic confidence *and* likelihood
@@ -90,8 +91,8 @@ This roadmap **prioritises two themes** — *Analytic Tradecraft (ICD 203)* and 
 
 ## Suggested sequencing
 
-1. **Quick wins first:** 1a (Admiralty grading) → A (Navigator export) → 2a (aliases). All Low-effort, High-impact, low blast-radius.
-2. **Core rigour:** 1b (estimative language) → 1c (KJ/KA/Gaps).
+1. **Quick wins first:** A (Navigator export) → 2a (aliases). All Low-effort, High-impact, low blast-radius.
+2. **Core rigour:** 1b (estimative language). 1a and 1c are shipped.
 3. **Knowledge layer:** 2b (profiles) → 2c (relationships) → then B (STIX export) becomes a natural payoff.
 4. **Process/governance:** D (feedback loop), C (channels), F (need-to-know) as capacity allows.
 

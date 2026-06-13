@@ -37,7 +37,11 @@
         {% for s in cited_sources %}
           <li class="flex gap-3 text-sm" style="counter-increment:src;">
             <span class="mono" style="color:var(--accent-deep); font-size:12px; min-width:1.6em;">[{{ loop.index }}]</span>
-            <span><span class="font-medium">{{ s.title }}</span>{% if s.reference %} — <span class="mono text-xs break-all" style="color:var(--accent-deep);">{{ s.reference }}</span>{% endif %}</span>
+            <span>
+              <span class="font-medium">{{ s.title }}</span>
+              <span class="ml-1">{{ m.source_grade_chip(s) }}</span>
+              {% if s.reference %} — <span class="mono text-xs break-all" style="color:var(--accent-deep);">{{ s.reference }}</span>{% endif %}
+            </span>
           </li>
         {% endfor %}
       </ol>

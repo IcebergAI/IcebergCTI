@@ -37,6 +37,8 @@ from ..models import (
     Requirement,
     RequirementStatus,
     Role,
+    SourceCredibility,
+    SourceReliability,
     Tag,
     TagKind,
     TLP,
@@ -53,6 +55,7 @@ from ..services import (
     notebooks as notebook_service,
     requirements as req_service,
     search as search_service,
+    source_grading,
     tags as tag_service,
 )
 from ..services.reports import (
@@ -88,6 +91,22 @@ def _require_admin(user: User) -> None:
 
 def _redirect(url: str) -> RedirectResponse:
     return RedirectResponse(url, status_code=status.HTTP_303_SEE_OTHER)
+
+
+def _parse_source_grade(
+    reliability: str, credibility: str
+) -> tuple[SourceReliability | None, SourceCredibility | None]:
+    if not reliability and not credibility:
+        return None, None
+    if not reliability or not credibility:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Reliability and credibility must be set together",
+        )
+    try:
+        return SourceReliability(reliability), SourceCredibility(credibility)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid source grade") from exc
 
 
 def _open_requirements(
@@ -182,7 +201,13 @@ def create_notebook(
 
 @router.get("/notebooks/{notebook_id}")
 def notebook_detail(
-    notebook_id: int, request: Request, session: SessionDep, user: CurrentUser
+    notebook_id: int,
+    request: Request,
+    session: SessionDep,
+    user: CurrentUser,
+    updated: str = "",
+    source_notice_id: int | None = None,
+    source_edit_id: int | None = None,
 ):
     _require_writer(user)  # raw collection material is writer-only
     nb = _get_notebook(session, notebook_id)
@@ -200,8 +225,13 @@ def notebook_detail(
             "diamonds": diamonds,
             "diamond_svgs": {d.id: diamond_service.render_diamond_svg(d) for d in diamonds},
             "confidences": list(DiamondConfidence),
+            "source_reliabilities": list(SourceReliability),
+            "source_credibilities": list(SourceCredibility),
             "all_requirements": _open_requirements(session, nb.requirements),
             "linked_req_ids": {r.id for r in nb.requirements},
+            "updated": updated,
+            "source_notice_id": source_notice_id,
+            "source_edit_id": source_edit_id,
         },
     )
 
@@ -214,13 +244,102 @@ def add_source(
     title: Annotated[str, Form()],
     reference: Annotated[str, Form()] = "",
     summary: Annotated[str, Form()] = "",
+    reliability: Annotated[str, Form()] = "",
+    credibility: Annotated[str, Form()] = "",
+    grading_rationale: Annotated[str, Form()] = "",
 ):
     _require_writer(user)
     nb = _get_notebook(session, notebook_id)
+    rel, cred = _parse_source_grade(reliability, credibility)
     notebook_service.add_source(
-        session, nb, title=title, reference=reference, summary=summary
+        session,
+        nb,
+        title=title,
+        reference=reference,
+        summary=summary,
+        reliability=rel,
+        credibility=cred,
+        grading_rationale=grading_rationale,
     )
-    return _redirect(f"/notebooks/{notebook_id}")
+    return _redirect(f"/notebooks/{notebook_id}?updated=source-added#sources")
+
+
+@router.post("/notebooks/{notebook_id}/sources/{source_id}")
+def update_source(
+    notebook_id: int,
+    source_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+    title: Annotated[str, Form()],
+    reference: Annotated[str, Form()] = "",
+    summary: Annotated[str, Form()] = "",
+    reliability: Annotated[str | None, Form()] = None,
+    credibility: Annotated[str | None, Form()] = None,
+    grading_rationale: Annotated[str | None, Form()] = None,
+):
+    _require_writer(user)
+    source = notebook_service.get_source_or_404(session, notebook_id, source_id)
+    notebook_service.update_source(
+        session, source, title=title, reference=reference, summary=summary
+    )
+    if reliability is not None or credibility is not None or grading_rationale is not None:
+        rel, cred = _parse_source_grade(reliability or "", credibility or "")
+        rationale = grading_rationale or ""
+        current_form_rationale = source.grading_rationale
+        grade_changed = (
+            rel != source.reliability
+            or cred != source.credibility
+            or rationale != current_form_rationale
+        )
+        if grade_changed:
+            source_grading.set_manual_grade(
+                source, reliability=rel, credibility=cred, rationale=rationale
+            )
+            session.add(source)
+            session.commit()
+    return _redirect(
+        f"/notebooks/{notebook_id}?updated=source-updated&source_notice_id={source_id}#sources"
+    )
+
+
+@router.post("/notebooks/{notebook_id}/sources/{source_id}/grade")
+def update_source_grade(
+    notebook_id: int,
+    source_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+    reliability: Annotated[str, Form()] = "",
+    credibility: Annotated[str, Form()] = "",
+    grading_rationale: Annotated[str, Form()] = "",
+):
+    _require_writer(user)
+    source = notebook_service.get_source_or_404(session, notebook_id, source_id)
+    rel, cred = _parse_source_grade(reliability, credibility)
+    source_grading.set_manual_grade(
+        source, reliability=rel, credibility=cred, rationale=grading_rationale
+    )
+    session.add(source)
+    session.commit()
+    return _redirect(
+        f"/notebooks/{notebook_id}?updated=source-grade&source_notice_id={source_id}&source_edit_id={source_id}#sources"
+    )
+
+
+@router.post("/notebooks/{notebook_id}/sources/{source_id}/auto-grade")
+def auto_grade_source(
+    notebook_id: int,
+    source_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+):
+    _require_writer(user)
+    source = notebook_service.get_source_or_404(session, notebook_id, source_id)
+    source_grading.regrade_source(source)
+    session.add(source)
+    session.commit()
+    return _redirect(
+        f"/notebooks/{notebook_id}?updated=source-regrade&source_notice_id={source_id}&source_edit_id={source_id}#sources"
+    )
 
 
 @router.post("/notebooks/{notebook_id}/notes")

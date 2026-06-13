@@ -124,6 +124,69 @@ class DiamondConfidence(StrEnum):
     HIGH = "HIGH"
 
 
+class SourceReliability(StrEnum):
+    """Admiralty/NATO source reliability rating."""
+
+    A = "A"
+    B = "B"
+    C = "C"
+    D = "D"
+    E = "E"
+    F = "F"
+
+
+class SourceCredibility(StrEnum):
+    """Admiralty/NATO information credibility rating."""
+
+    CONFIRMED = "1"
+    PROBABLY_TRUE = "2"
+    POSSIBLY_TRUE = "3"
+    DOUBTFULLY_TRUE = "4"
+    IMPROBABLE = "5"
+    CANNOT_BE_JUDGED = "6"
+
+
+class SourceGradingOrigin(StrEnum):
+    UNGRADED = "UNGRADED"
+    AUTO = "AUTO"
+    MANUAL = "MANUAL"
+
+
+_SOURCE_RELIABILITY_LABELS = {
+    SourceReliability.A: "Completely reliable",
+    SourceReliability.B: "Usually reliable",
+    SourceReliability.C: "Fairly reliable",
+    SourceReliability.D: "Not usually reliable",
+    SourceReliability.E: "Unreliable",
+    SourceReliability.F: "Cannot be judged",
+}
+
+_SOURCE_CREDIBILITY_LABELS = {
+    SourceCredibility.CONFIRMED: "Confirmed",
+    SourceCredibility.PROBABLY_TRUE: "Probably true",
+    SourceCredibility.POSSIBLY_TRUE: "Possibly true",
+    SourceCredibility.DOUBTFULLY_TRUE: "Doubtfully true",
+    SourceCredibility.IMPROBABLE: "Improbable",
+    SourceCredibility.CANNOT_BE_JUDGED: "Cannot be judged",
+}
+
+
+def source_reliability_label(reliability: SourceReliability) -> str:
+    return _SOURCE_RELIABILITY_LABELS[SourceReliability(reliability)]
+
+
+def source_credibility_label(credibility: SourceCredibility) -> str:
+    return _SOURCE_CREDIBILITY_LABELS[SourceCredibility(credibility)]
+
+
+def source_grade_label(
+    reliability: SourceReliability | None, credibility: SourceCredibility | None
+) -> str:
+    if not reliability or not credibility:
+        return "Ungraded"
+    return f"{SourceReliability(reliability).value}{SourceCredibility(credibility).value}"
+
+
 # --------------------------------------------------------------------------- #
 # Link tables
 # --------------------------------------------------------------------------- #
@@ -240,6 +303,13 @@ class Source(SQLModel, table=True):
     title: str
     reference: str = ""  # URL or citation reference
     summary: str = ""
+    reliability: SourceReliability | None = Field(default=None)
+    credibility: SourceCredibility | None = Field(default=None)
+    grading_origin: SourceGradingOrigin = Field(default=SourceGradingOrigin.UNGRADED)
+    grading_engine: str = ""
+    grading_rationale: str = ""
+    grading_error: str = ""
+    graded_at: datetime | None = Field(default=None)
     captured_at: datetime = Field(default_factory=utcnow)
 
     notebook: Notebook = Relationship(back_populates="sources")

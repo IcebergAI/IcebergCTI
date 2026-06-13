@@ -33,10 +33,13 @@ from ..schemas import (
     NotebookUpdate,
     RequirementLinks,
     SourceCreate,
+    SourceGradeUpdate,
+    SourceUpdate,
 )
 from ..services import attachments as attachment_service
 from ..services import diamond as diamond_service
 from ..services import notebooks as notebook_service
+from ..services import source_grading
 from ..services.requirements import set_notebook_requirements
 
 router = APIRouter(prefix="/notebooks", tags=["notebooks"])
@@ -119,8 +122,69 @@ def add_source(
 ) -> Source:
     nb = _get_notebook(session, notebook_id)
     return notebook_service.add_source(
-        session, nb, title=body.title, reference=body.reference, summary=body.summary
+        session,
+        nb,
+        title=body.title,
+        reference=body.reference,
+        summary=body.summary,
+        reliability=body.reliability,
+        credibility=body.credibility,
+        grading_rationale=body.grading_rationale,
     )
+
+
+@router.patch("/{notebook_id}/sources/{source_id}")
+def update_source(
+    notebook_id: int,
+    source_id: int,
+    body: SourceUpdate,
+    session: SessionDep,
+    _w: Writer,
+) -> Source:
+    source = notebook_service.get_source_or_404(session, notebook_id, source_id)
+    return notebook_service.update_source(
+        session,
+        source,
+        title=body.title,
+        reference=body.reference,
+        summary=body.summary,
+    )
+
+
+@router.put("/{notebook_id}/sources/{source_id}/grade")
+def update_source_grade(
+    notebook_id: int,
+    source_id: int,
+    body: SourceGradeUpdate,
+    session: SessionDep,
+    _w: Writer,
+) -> Source:
+    source = notebook_service.get_source_or_404(session, notebook_id, source_id)
+    source_grading.set_manual_grade(
+        source,
+        reliability=body.reliability,
+        credibility=body.credibility,
+        rationale=body.grading_rationale,
+    )
+    session.add(source)
+    session.commit()
+    session.refresh(source)
+    return source
+
+
+@router.post("/{notebook_id}/sources/{source_id}/auto-grade")
+def auto_grade_source(
+    notebook_id: int,
+    source_id: int,
+    session: SessionDep,
+    _w: Writer,
+) -> dict:
+    source = notebook_service.get_source_or_404(session, notebook_id, source_id)
+    outcome = source_grading.regrade_source(source)
+    session.add(source)
+    session.commit()
+    session.refresh(source)
+    return {"source": source, "applied": outcome.applied, "reason": outcome.reason}
 
 
 @router.delete(
@@ -129,9 +193,7 @@ def add_source(
 def delete_source(
     notebook_id: int, source_id: int, session: SessionDep, _w: Writer
 ):
-    source = session.get(Source, source_id)
-    if not source or source.notebook_id != notebook_id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Source not found")
+    source = notebook_service.get_source_or_404(session, notebook_id, source_id)
     session.delete(source)
     session.commit()
 
