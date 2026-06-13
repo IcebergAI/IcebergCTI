@@ -93,9 +93,13 @@ Open <http://localhost:8000>. With `ICEBERG_DEV_AUTH=true` (the default) you'll 
 2. Add a couple of **sources**, a **note**, and upload an **attachment** (e.g. a PDF).
 3. Create an **intelligence product**, write markdown in the editor and watch the
    **live preview**; tick sources and attachments to cite them.
-4. **Submit for review**, then sign in again as a `REVIEWER` to **Approve** and
+4. Fill the **analytic scaffolding** (ICD 203) — **Key Judgements** (the BLUF),
+   **Key Assumptions** and **Intelligence Gaps**. They render as discrete sections
+   on the report page.
+5. **Submit for review**, then sign in again as a `REVIEWER` to **Approve** and
    **Publish**.
-5. **Render** a PDF (FULL / EXEC_BRIEF / ONE_PAGER) and download it.
+6. **Render** a PDF and download it: **FULL** (judgements + body + caveats +
+   appendix) or **EXEC_BRIEF / ONE_PAGER** (Key-Judgements-only briefs).
 
 ### Model an intrusion (Diamond Model)
 1. In a notebook, open the **Diamond models** section and add one — adversary,

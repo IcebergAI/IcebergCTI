@@ -45,7 +45,8 @@ This roadmap **prioritises two themes** — *Analytic Tradecraft (ICD 203)* and 
 - Ship the **standardised probability yardstick** as an authoring aid: a controlled lexicon mapped to percentage bands (*almost no chance 01–05 · very unlikely 05–20 · unlikely 20–45 · roughly even chance 45–55 · likely 55–80 · very likely 80–95 · almost certain 95–99*), shown as a reference panel in the editor, with an optional **lint** that flags vague hedging ("could", "might") in `body_md` on save/preview ([rendering/markdown.py](src/iceberg/rendering/markdown.py) preview path).
 - **Impact:** High / **Effort:** Low–Medium. The confidence field is small; the lexicon panel + optional lint is the larger (but optional) part.
 
-### 1c. Structured judgement scaffolding (KJ / KA / Gaps)
+### 1c. Structured judgement scaffolding (KJ / KA / Gaps) — ✅ **implemented**
+> Shipped: `key_judgements` / `key_assumptions` / `intelligence_gaps` markdown fields on `Report`, editable in the report editor (publish-immutable), rendered as discrete sections in the web view and PDF; EXEC_BRIEF / ONE_PAGER are Key-Judgements-only. ACH deferred. Plan: [docs/plans/1c-judgement-scaffolding.md](docs/plans/1c-judgement-scaffolding.md).
 - Promote **Key Judgements**, **Key Assumptions**, and **Intelligence Gaps** to first-class optional markdown fields on `Report` ([models.py:312-344](src/iceberg/models.py#L312-L344)), rendered as standard sections in the web view and PDF — and let the **EXEC_BRIEF / ONE_PAGER** formats render *just* the Key Judgements (this is what those formats are for).
 - **Stretch:** add **Analysis of Competing Hypotheses (ACH)** as a second analytic model alongside Diamond, reusing the exact `services/diamond.py` pattern (per-notebook model → server-rendered artefact → `[[ach:ID]]` inline token). This squarely advances "structured analytic techniques".
 - **Impact:** Medium–High / **Effort:** Medium (fields) + Medium-Large (ACH stretch).

@@ -139,6 +139,44 @@ def test_published_report_citations_are_immutable(client, login):
     assert resp.status_code == 409
 
 
+def test_report_judgement_scaffolding(client, login):
+    """ICD 203 scaffolding: Key Judgements / Key Assumptions / Intelligence Gaps
+    are first-class editable fields, and immutable once published (they route
+    through ensure_editable, like the body)."""
+    login("ANALYST", email="author@example.com")
+    nb = _make_notebook(client)
+    rid = client.post(
+        "/api/reports",
+        json={"notebook_id": nb["id"], "title": "R", "tlp": "GREEN"},
+    ).json()["id"]
+
+    upd = client.patch(
+        f"/api/reports/{rid}",
+        json={
+            "key_judgements": "- We assess **with high confidence**…",
+            "key_assumptions": "Logs are authentic.",
+            "intelligence_gaps": "Attribution unconfirmed.",
+        },
+    )
+    assert upd.status_code == 200, upd.text
+    body = upd.json()
+    assert body["key_judgements"].startswith("- We assess")
+    assert body["key_assumptions"] == "Logs are authentic."
+    assert body["intelligence_gaps"] == "Attribution unconfirmed."
+
+    # Publish, then confirm the scaffolding is locked like the body.
+    client.post(f"/api/reports/{rid}/transition", json={"target": "IN_REVIEW"})
+    login("REVIEWER", email="rev@example.com")
+    client.post(f"/api/reports/{rid}/transition", json={"target": "APPROVED"})
+    client.post(f"/api/reports/{rid}/transition", json={"target": "PUBLISHED"})
+
+    login("ANALYST", email="author@example.com")
+    locked = client.patch(
+        f"/api/reports/{rid}", json={"key_judgements": "tampered"}
+    )
+    assert locked.status_code == 409
+
+
 def test_preview_sanitizes_html(client, login):
     login("ANALYST")
     resp = client.post(
@@ -150,3 +188,39 @@ def test_preview_sanitizes_html(client, login):
     assert "<h1" in html
     assert "<strong>bold</strong>" in html
     assert "<script" not in html
+
+
+def test_preview_product_assembles_and_sanitizes(client, login):
+    """The editor's live preview assembles the whole product (Key Judgements +
+    body + Assumptions + Gaps) and sanitizes every fragment."""
+    login("ANALYST", email="author@example.com")
+    nb = _make_notebook(client)
+    rid = client.post(
+        "/api/reports", json={"notebook_id": nb["id"], "title": "R"}
+    ).json()["id"]
+
+    resp = client.post(
+        "/api/preview/product",
+        json={
+            "report_id": rid,
+            "body_md": "# Body\n\nNarrative uniquebodyphrase.",
+            "key_judgements": "We **assess** uniquekjphrase.",
+            "key_assumptions": "An assumption.",
+            "intelligence_gaps": "<script>alert(1)</script> a gap.",
+        },
+    )
+    assert resp.status_code == 200
+    html = resp.json()["html"]
+    assert "Key judgements" in html and "uniquekjphrase" in html
+    assert "uniquebodyphrase" in html
+    assert "Key assumptions" in html
+    assert "Intelligence gaps" in html
+    assert "<script" not in html  # every fragment is nh3-sanitized
+
+    # Empty scaffolding fields collapse — only the body renders.
+    bare = client.post(
+        "/api/preview/product",
+        json={"report_id": rid, "body_md": "Just a body."},
+    ).json()["html"]
+    assert "Key judgements" not in bare
+    assert "Just a body." in bare

@@ -171,6 +171,73 @@ def preview_body_html(session: Session, notebook_id: int, markdown_text: str) ->
 
 
 # --------------------------------------------------------------------------- #
+# Finished-product HTML: Key Judgements callout + body + Key Assumptions +
+# Intelligence Gaps, assembled in one place so the published report view and the
+# editor's live / read-only preview render identically (no markup drift). All
+# fragments go through render_markdown (nh3-sanitised); the body additionally has
+# its diamond diagrams inlined.
+# --------------------------------------------------------------------------- #
+def _scaffold_section(label: str, md: str) -> str:
+    if not (md or "").strip():
+        return ""
+    return (
+        f'<h2 class="section-title mt-9 mb-3">{label}</h2>'
+        f'<div class="md">{render_markdown(md)}</div>'
+    )
+
+
+def _assemble_product_html(
+    *,
+    body_html: str,
+    key_judgements: str,
+    key_assumptions: str,
+    intelligence_gaps: str,
+) -> str:
+    parts: list[str] = []
+    if (key_judgements or "").strip():
+        parts.append(
+            '<section class="kj-callout">'
+            '<div class="eyebrow eyebrow-accent mb-2">Key judgements</div>'
+            f'<div class="md">{render_markdown(key_judgements)}</div>'
+            "</section>"
+        )
+    parts.append(f'<div class="md">{body_html}</div>')
+    parts.append(_scaffold_section("Key assumptions", key_assumptions))
+    parts.append(_scaffold_section("Intelligence gaps", intelligence_gaps))
+    return "".join(parts)
+
+
+def render_report_product_html(session: Session, report: Report) -> str:
+    """A saved report rendered to finished-product HTML (Key Judgements + body
+    with inline diagrams + Key Assumptions + Intelligence Gaps)."""
+    return _assemble_product_html(
+        body_html=render_report_body_html(session, report),
+        key_judgements=report.key_judgements,
+        key_assumptions=report.key_assumptions,
+        intelligence_gaps=report.intelligence_gaps,
+    )
+
+
+def preview_report_product_html(
+    session: Session,
+    notebook_id: int,
+    *,
+    body_md: str,
+    key_judgements: str,
+    key_assumptions: str,
+    intelligence_gaps: str,
+) -> str:
+    """Live-preview variant: assemble the editor's unsaved field values (body
+    diagrams resolved against the report's notebook)."""
+    return _assemble_product_html(
+        body_html=preview_body_html(session, notebook_id, body_md),
+        key_judgements=key_judgements,
+        key_assumptions=key_assumptions,
+        intelligence_gaps=intelligence_gaps,
+    )
+
+
+# --------------------------------------------------------------------------- #
 # SVG diagram
 # --------------------------------------------------------------------------- #
 _SANS = "Archivo, 'Helvetica Neue', Arial, sans-serif"

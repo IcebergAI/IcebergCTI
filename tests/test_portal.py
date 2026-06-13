@@ -152,6 +152,46 @@ def test_report_citation_autosave_returns_no_content(client, login):
     assert detail["cited_sources"][0]["id"] == src["id"]
 
 
+def test_report_judgement_scaffolding_persists_and_renders(client, login):
+    login("ANALYST", email="author@example.com")
+    nb = client.post("/api/notebooks", json={"title": "Scaffolding nb"}).json()
+    rid = client.post(
+        "/api/reports", json={"notebook_id": nb["id"], "title": "Assessment"}
+    ).json()["id"]
+
+    # Editor form posts the body alongside the three scaffolding fields.
+    saved = client.post(
+        f"/reports/{rid}",
+        data={
+            "title": "Assessment",
+            "body_md": "Narrative body.",
+            "key_judgements": "We assess the intrusion is ongoing.",
+            "key_assumptions": "Telemetry is complete.",
+            "intelligence_gaps": "Initial access vector unknown.",
+        },
+    )
+    assert saved.status_code == 200, saved.text
+
+    detail = client.get(f"/api/reports/{rid}").json()["report"]
+    assert detail["key_judgements"] == "We assess the intrusion is ongoing."
+    assert detail["intelligence_gaps"] == "Initial access vector unknown."
+
+    # Report view renders the three sections.
+    view = client.get(f"/reports/{rid}")
+    assert view.status_code == 200
+    assert "Key judgements" in view.text
+    assert "We assess the intrusion is ongoing." in view.text
+    assert "Key assumptions" in view.text
+    assert "Intelligence gaps" in view.text
+
+    # The editor seeds its preview with the same assembled product, so the
+    # read-only / live-preview pane shows the scaffolding, not just the body.
+    edit = client.get(f"/reports/{rid}/edit")
+    assert edit.status_code == 200
+    assert "Key judgements" in edit.text
+    assert "Intelligence gaps" in edit.text
+
+
 def test_rendered_product_can_be_deleted_from_portal(
     client, login, engine, tmp_path
 ):

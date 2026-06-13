@@ -146,6 +146,32 @@
   v(18pt)
 }
 
+// Key Judgements — the BLUF callout (rendered in every format). Tinted box with
+// an accent edge so it reads as the product's leading assessment.
+#let kj-block(body-md) = block(
+  width: 100%, inset: (x: 16pt, y: 13pt), radius: 5pt, breakable: true,
+  fill: c-accent-soft, stroke: (left: 2.5pt + c-accent, rest: 0.6pt + c-accent-line),
+)[
+  #text(font: f-mono, size: 8.5pt, weight: "bold", tracking: 1.8pt, fill: c-accent-deep)[
+    #upper("Key Judgements")
+  ]
+  #v(7pt)
+  #cmarker.render(body-md)
+]
+
+// Analytic-scaffolding section (Key Assumptions / Intelligence Gaps): a sans
+// heading + thin rule + the markdown field, matching the in-app section style.
+#let scaffold-section(label, body-md) = {
+  v(1.5em)
+  block(width: 100%)[
+    #text(font: f-sans, weight: 700, size: 1.16em, fill: c-ink)[#label]
+    #v(0.35em, weak: true)
+    #line(length: 100%, stroke: 0.6pt + c-line)
+  ]
+  v(0.8em)
+  cmarker.render(body-md)
+}
+
 // status → semantic colour
 #let status-col = if data.status in ("PUBLISHED", "APPROVED") {
   tlp-green
@@ -310,18 +336,42 @@
 #v(if cfg.compact { 12pt } else { 18pt })
 
 // =============================================================================
-//  Body
+//  Key Judgements — the BLUF, rendered in every format. Brief formats
+//  (EXEC_BRIEF / ONE_PAGER) are Key-Judgements-only products: they carry the
+//  masthead, markings and judgements but omit the narrative body and caveats.
 // =============================================================================
-// Override cmarker's `image` so paths resolve relative to THIS template (the
-// temp `--root`) rather than the cmarker package — used for inline Diamond
-// Model diagrams (`diamond-N.svg`, written there per render). Constrained to
-// 92% width so a diagram never overflows the text column in any format.
-#cmarker.render(
-  data.body_md,
-  scope: (
-    image: (path, ..args) => align(center, image(path, width: 92%, ..args)),
-  ),
-)
+#let kj = data.at("key_judgements", default: "")
+#if kj.trim() != "" {
+  kj-block(kj)
+} else if fmt != "FULL" {
+  // A brief with no judgements would otherwise be near-empty — say so plainly.
+  block(width: 100%, inset: (x: 16pt, y: 13pt), radius: 5pt,
+        fill: c-surface-2, stroke: 0.6pt + c-line)[
+    #text(font: f-serif, style: "italic", fill: c-muted)[No key judgements recorded.]
+  ]
+}
+
+// =============================================================================
+//  Body + analytic caveats (FULL only)
+// =============================================================================
+#if fmt == "FULL" {
+  v(18pt)
+  // Override cmarker's `image` so paths resolve relative to THIS template (the
+  // temp `--root`) rather than the cmarker package — used for inline Diamond
+  // Model diagrams (`diamond-N.svg`, written there per render). Constrained to
+  // 92% width so a diagram never overflows the text column in any format.
+  cmarker.render(
+    data.body_md,
+    scope: (
+      image: (path, ..args) => align(center, image(path, width: 92%, ..args)),
+    ),
+  )
+
+  let ka = data.at("key_assumptions", default: "")
+  if ka.trim() != "" { scaffold-section("Key Assumptions", ka) }
+  let gaps = data.at("intelligence_gaps", default: "")
+  if gaps.trim() != "" { scaffold-section("Intelligence Gaps", gaps) }
+}
 
 // =============================================================================
 //  Appendices (FULL only): cited sources, then cited attachments

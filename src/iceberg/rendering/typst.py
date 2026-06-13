@@ -78,6 +78,9 @@ def _build_data(
         "date": stamp.strftime("%Y-%m-%d") if stamp else date.today().isoformat(),
         "cmarker_version": settings.cmarker_version,
         "body_md": _rewrite_diamond_tokens(report.body_md or "", diamonds),
+        "key_judgements": report.key_judgements or "",
+        "key_assumptions": report.key_assumptions or "",
+        "intelligence_gaps": report.intelligence_gaps or "",
         "sources": [
             {"title": s.title, "reference": s.reference, "summary": s.summary}
             for s in sources

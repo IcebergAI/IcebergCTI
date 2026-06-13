@@ -157,6 +157,13 @@ a:hover { color: var(--accent-deep); }
 .section-title {
   font-size: 16px; font-weight: 700; letter-spacing: -0.01em; color: var(--ink); margin: 0;
 }
+/* Key Judgements (ICD 203 BLUF) — leading callout on the report view + preview */
+.kj-callout {
+  margin-bottom: 28px; padding: 18px 22px;
+  background: var(--surface-2);
+  border: 1px solid var(--line); border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+}
 .lede { color: var(--ink-soft); font-size: 14px; max-width: 60ch; }
 .muted { color: var(--muted); }
 .title-rule {

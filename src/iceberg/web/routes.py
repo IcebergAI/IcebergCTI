@@ -449,7 +449,7 @@ def report_view(
         {
             "user": user,
             "report": report,
-            "body_html": diamond_service.render_report_body_html(session, report),
+            "product_html": diamond_service.render_report_product_html(session, report),
             "cited_sources": list(report.cited_sources),
             "cited_attachments": list(report.cited_attachments),
             "products": list(report.rendered_products),
@@ -485,7 +485,7 @@ def report_edit(
             "cited_attachment_ids": {a.id for a in report.cited_attachments},
             "products": list(report.rendered_products),
             "typst_available": typst_available(),
-            "preview_html": diamond_service.render_report_body_html(session, report),
+            "preview_html": diamond_service.render_report_product_html(session, report),
             "diamonds": list(notebook.diamond_models),
             "diamond_svgs": {
                 d.id: diamond_service.render_diamond_svg(d)
@@ -507,6 +507,9 @@ def report_save(
     user: CurrentUser,
     title: Annotated[str, Form()],
     body_md: Annotated[str, Form()] = "",
+    key_judgements: Annotated[str, Form()] = "",
+    key_assumptions: Annotated[str, Form()] = "",
+    intelligence_gaps: Annotated[str, Form()] = "",
     intel_level: Annotated[IntelLevel, Form()] = IntelLevel.OPERATIONAL,
     tlp: Annotated[TLP, Form()] = TLP.AMBER,
 ):
@@ -514,6 +517,9 @@ def report_save(
     report = ensure_editable(_get_report(session, report_id), user)
     report.title = title
     report.body_md = body_md
+    report.key_judgements = key_judgements
+    report.key_assumptions = key_assumptions
+    report.intelligence_gaps = intelligence_gaps
     report.intel_level = intel_level
     report.tlp = tlp
     report.updated_at = utcnow()
