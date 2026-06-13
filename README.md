@@ -173,6 +173,7 @@ All settings use the `ICEBERG_` env prefix and can live in `.env` (see
 | `ICEBERG_SOURCE_GRADER_PROVIDER` | `heuristic` by default; opt into `openai`, `anthropic`, or `openai_compatible` |
 | `ICEBERG_SOURCE_GRADER_MODEL` / `ICEBERG_SOURCE_GRADER_API_KEY` | Model/key for external source grading |
 | `ICEBERG_SOURCE_GRADER_BASE_URL` | Optional OpenAI-compatible or alternate provider base URL |
+| `ICEBERG_SOURCE_GRADER_FALLBACK` | `heuristic` by default; controls local fallback after fetch/provider failure |
 
 ### Source reliability grading
 Notebook sources carry Admiralty/NATO-style grades: source reliability (`A-F`) plus
@@ -180,9 +181,10 @@ information credibility (`1-6`), displayed as chips such as `B2` or `B6`. Auto-g
 is conservative: Iceberg safely fetches public HTTP(S) source pages, extracts readable
 text, and then uses the configured grader. Without provider config, or when fetching/LLM
 grading fails, it falls back to a local heuristic. If only the source identity can be
-judged, credibility is marked `6` ("cannot be judged") and the notebook page shows a
-warning. External LLM grading sends only source metadata and extracted page text, never
-notebook notes, report bodies, attachments, or stakeholder data.
+judged, credibility is marked `6` ("cannot be judged"); when URL fetching fails, the
+notebook page shows a compact warning after grade/regrade. External LLM grading sends
+only source metadata and extracted page text, never notebook notes, report bodies,
+attachments, or stakeholder data.
 
 ### Entra ID (OIDC)
 Set `ICEBERG_OIDC_ENABLED=true` and fill in `ICEBERG_OIDC_TENANT_ID`,
