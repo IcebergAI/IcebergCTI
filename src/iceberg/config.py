@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     secret_key: str = _INSECURE_DEFAULT_SECRET
     database_url: str = "sqlite:///./iceberg.db"
 
+    # Schema migrations. When true, init_db() runs `alembic upgrade head` on boot
+    # (idempotent) — convenient for local dev. Set false in production so the
+    # deploy step owns migrations explicitly.
+    auto_migrate: bool = True
+
     # App JWT (minted by us after OIDC or dev login)
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 480

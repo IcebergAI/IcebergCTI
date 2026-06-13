@@ -64,12 +64,29 @@ The portal is a "light editorial-intel" design — clean, print-like, authoritat
 ### Diamond Model diagrams (`src/iceberg/services/diamond.py`)
 A Diamond Model is rendered to a **self-contained SVG** by hand-built string templating (no extra deps; same spirit as the inline `_glyph.html` mark). One generator (`render_diamond_svg`) feeds three surfaces from a single source: (a) **web report view / live preview** — the `[[diamond:ID]]` token is swapped for an inline `<figure>` **after** nh3 sanitisation (nh3 would otherwise strip server `<svg>`); the figure is safe because every vertex value is XML-escaped at generation; (b) **Typst PDF** — `render_report` writes each referenced diagram to `diamond-{id}.svg` in the per-render temp `--root` and rewrites the token to a markdown image, so it embeds **inline at the token's position**. `product.typ` overrides cmarker's `image` in its `scope` so the path resolves against the template dir (the temp root), not the cmarker package, and constrains the diagram to 92% column width. Tokens are **notebook-scoped**: a token resolves only to a diamond in the report's own notebook; unknown / cross-notebook ids degrade to an "unavailable" notice. The diagram **labels its two meta-axes** (`↕ SOCIO-POLITICAL` adversary↔victim, `↔ TECHNICAL` capability↔infrastructure — the Diamond Model's defining idea), renders confidence as an **ordinal pip-meter** (not a 4th red/amber/green stamp competing with TLP/status), and exposes accessibility via `<title>`/`<desc>` (so the title lives in escaped text content, never a raw attribute).
 
+### Database & migrations (`src/iceberg/db.py`, `src/iceberg/migrations/`)
+Schema is owned by **Alembic** (SQLModel models are the source autogenerate compares
+against). `init_db()` runs `alembic upgrade head` on boot when `ICEBERG_AUTO_MIGRATE=true`
+(the default — convenient for dev), then seeds the taxonomy and rebuilds the FTS index (both
+idempotent); set the flag false in prod and run migrations in the deploy step. Migrations run
+against the app's own engine via a **shared connection** (`db.run_migrations` injects it into
+`env.py`) so an in-memory `sqlite://` DB works too. The **FTS5 objects are not in SQLModel
+metadata** — the baseline migration owns a frozen copy of the `report_fts` virtual table +
+sync triggers (kept identical to `services/search.py`'s runtime DDL), and `env.py` excludes
+`report_fts*` from autogenerate so it never tries to drop them. `env.py` uses
+`render_as_batch=True` for SQLite ALTER support. Tests keep the fast in-memory `create_all`
+path; `tests/test_migrations.py` runs a real `upgrade head` on a temp DB and asserts (via
+`alembic check`) that models and migrations don't drift. New change → `alembic revision
+--autogenerate -m "..."`; pre-existing DBs built by the old `create_all` → `alembic stamp head`
+once.
+
 ### Project structure
 ```
 src/iceberg/
   main.py          # app factory: mounts API + portal, session + CSRF mw, auth redirect
   config.py        # pydantic-settings (ICEBERG_ env prefix)
-  db.py            # SQLite engine/session, FK pragma, create_all
+  db.py            # SQLite engine/session, FK pragma, Alembic upgrade on boot
+  migrations/      # Alembic env + versioned migrations (baseline owns the FTS DDL)
   models.py        # SQLModel models + enums
   schemas.py       # API request bodies
   seed.py          # CLI: import the tag taxonomy (python -m iceberg.seed)
@@ -115,7 +132,7 @@ Tests use an in-memory SQLite database (overriding the `get_session` dependency)
 
 - **Analytic tradecraft — structured judgements (done, ICD 203 §1c)** — reports carry optional Key Judgements / Key Assumptions / Intelligence Gaps fields, rendered as discrete sections (Key Judgements as the BLUF) in the web view and PDF; the brief PDF formats are Key-Judgements-only. See the CTI roadmap [`CTI_ROADMAP.md`](CTI_ROADMAP.md) §1c. **Next on that roadmap:** §1a Admiralty source reliability grading, §1b estimative language (analytic confidence + probability yardstick).
 
-The original vision (collect → author → disseminate, aligned to stakeholder requirements) is now implemented end-to-end, with tagging + search and analytic models layered on top. Deployment is still dev-oriented; SQLite throughout (migrations via `create_all`, Alembic to follow once the schema stabilises). Production hardening to consider: a built Tailwind stylesheet (vs CDN), Alembic migrations, a real SMTP backend + durable job queue for notifications, and verifying the Entra OIDC flow against a live tenant. **Tagging/search fast-follows:** notebook tagging, stakeholder tag *subscriptions* for dissemination (match on shared tags, not just intel_level), tag merge/rename tooling, and a full ATT&CK import. **Diamond Model fast-follows:** the classic meta-features (phase/methodology/direction/result/timestamp), alternative layouts, and per-vertex source linking.
+The original vision (collect → author → disseminate, aligned to stakeholder requirements) is now implemented end-to-end, with tagging + search and analytic models layered on top. Deployment is still dev-oriented; SQLite throughout, with **Alembic migrations** now managing the schema (see *Database & migrations*). Production hardening to consider: a built Tailwind stylesheet (vs CDN), a real SMTP backend + durable job queue for notifications, and verifying the Entra OIDC flow against a live tenant. **Tagging/search fast-follows:** notebook tagging, stakeholder tag *subscriptions* for dissemination (match on shared tags, not just intel_level), tag merge/rename tooling, and a full ATT&CK import. **Diamond Model fast-follows:** the classic meta-features (phase/methodology/direction/result/timestamp), alternative layouts, and per-vertex source linking.
 
 ## Maintenance
 - Maintain an up to date CLAUDE.md
