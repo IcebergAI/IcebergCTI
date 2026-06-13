@@ -31,22 +31,31 @@ from ..models import (
 
 _FTS_TABLE = "report_fts"
 
+# Indexed columns mirror report columns by name so FTS5's external-content
+# 'rebuild' (used by reindex) can backfill them straight from `report`. The
+# ICD 203 judgement scaffolding is indexed alongside the body so the core
+# assessment (Key Judgements) is discoverable, not just the narrative.
+_FTS_COLS = ("title", "body_md", "key_judgements", "key_assumptions", "intelligence_gaps")
+_COLS = ", ".join(_FTS_COLS)
+_NEW = ", ".join(f"new.{c}" for c in _FTS_COLS)
+_OLD = ", ".join(f"old.{c}" for c in _FTS_COLS)
+
 _DDL = [
     f"CREATE VIRTUAL TABLE IF NOT EXISTS {_FTS_TABLE} "
-    f"USING fts5(title, body_md, content='report', content_rowid='id')",
+    f"USING fts5({_COLS}, content='report', content_rowid='id')",
     f"""CREATE TRIGGER IF NOT EXISTS report_ai AFTER INSERT ON report BEGIN
-        INSERT INTO {_FTS_TABLE}(rowid, title, body_md)
-        VALUES (new.id, new.title, new.body_md);
+        INSERT INTO {_FTS_TABLE}(rowid, {_COLS})
+        VALUES (new.id, {_NEW});
     END""",
     f"""CREATE TRIGGER IF NOT EXISTS report_ad AFTER DELETE ON report BEGIN
-        INSERT INTO {_FTS_TABLE}({_FTS_TABLE}, rowid, title, body_md)
-        VALUES('delete', old.id, old.title, old.body_md);
+        INSERT INTO {_FTS_TABLE}({_FTS_TABLE}, rowid, {_COLS})
+        VALUES('delete', old.id, {_OLD});
     END""",
     f"""CREATE TRIGGER IF NOT EXISTS report_au AFTER UPDATE ON report BEGIN
-        INSERT INTO {_FTS_TABLE}({_FTS_TABLE}, rowid, title, body_md)
-        VALUES('delete', old.id, old.title, old.body_md);
-        INSERT INTO {_FTS_TABLE}(rowid, title, body_md)
-        VALUES (new.id, new.title, new.body_md);
+        INSERT INTO {_FTS_TABLE}({_FTS_TABLE}, rowid, {_COLS})
+        VALUES('delete', old.id, {_OLD});
+        INSERT INTO {_FTS_TABLE}(rowid, {_COLS})
+        VALUES (new.id, {_NEW});
     END""",
 ]
 

@@ -81,14 +81,23 @@
 
 <div class="editor-grid" x-data='{
        body: {{ report.body_md | tojson }},
+       kj: {{ report.key_judgements | tojson }},
+       ka: {{ report.key_assumptions | tojson }},
+       gaps: {{ report.intelligence_gaps | tojson }},
        previewHtml: {{ preview_html | tojson }},
        timer: null,
        schedule() { clearTimeout(this.timer); this.timer = setTimeout(() => this.refresh(), 350); },
        async refresh() {
-         const res = await fetch("/api/preview", {
+         const res = await fetch("/api/preview/product", {
            method: "POST",
            headers: {"Content-Type": "application/json"},
-           body: JSON.stringify({markdown: this.body, report_id: {{ report.id }}})
+           body: JSON.stringify({
+             report_id: {{ report.id }},
+             body_md: this.body,
+             key_judgements: this.kj,
+             key_assumptions: this.ka,
+             intelligence_gaps: this.gaps
+           })
          });
          if (res.ok) { this.previewHtml = (await res.json()).html; }
        }
@@ -115,11 +124,29 @@
         </div>
         <textarea name="body_md" rows="22" x-model="body" @input="schedule()"
                   class="field field-mono"></textarea>
+
+        <div class="eyebrow eyebrow-accent" style="margin-top:6px;">Analytic scaffolding · ICD 203</div>
+        <div>
+          <label class="field-label">Key judgements</label>
+          <p class="text-xs mb-1" style="color:var(--muted);">Markdown · the BLUF — leads the report and is the sole content of the Executive Brief / One-Pager.</p>
+          <textarea name="key_judgements" rows="5" x-model="kj" @input="schedule()" class="field field-mono"></textarea>
+        </div>
+        <div>
+          <label class="field-label">Key assumptions</label>
+          <p class="text-xs mb-1" style="color:var(--muted);">Markdown · the analytic assumptions the judgements rest on.</p>
+          <textarea name="key_assumptions" rows="4" x-model="ka" @input="schedule()" class="field field-mono"></textarea>
+        </div>
+        <div>
+          <label class="field-label">Intelligence gaps</label>
+          <p class="text-xs mb-1" style="color:var(--muted);">Markdown · what is not known, and collection still required.</p>
+          <textarea name="intelligence_gaps" rows="4" x-model="gaps" @input="schedule()" class="field field-mono"></textarea>
+        </div>
+
         <button class="btn btn--ink">Save draft</button>
       </form>
     {% else %}
       <div class="pane-label"><span class="pip"></span> Read-only{% if report.status.value == 'PUBLISHED' %} · published{% endif %}</div>
-      <div class="md-preview mt-1" x-html="previewHtml"></div>
+      <div class="mt-1" x-html="previewHtml"></div>
     {% endif %}
   </section>
 
@@ -127,7 +154,7 @@
   {% if can_edit %}
   <section class="card card-pad-lg" style="background:var(--surface-2);">
     <div class="pane-label"><span class="pip"></span> Finished preview</div>
-    <div class="md-preview" x-html="previewHtml"></div>
+    <div x-html="previewHtml"></div>
   </section>
   {% endif %}
 </div>

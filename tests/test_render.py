@@ -10,6 +10,27 @@ import pytest
 from iceberg.rendering.typst import typst_available
 
 
+def test_build_data_includes_judgement_scaffolding():
+    """The ICD 203 scaffolding fields reach the Typst template via data.json
+    (no binary needed). Brief-vs-FULL omission is enforced in product.typ."""
+    from iceberg.models import Report
+    from iceberg.rendering.typst import _build_data
+
+    report = Report(
+        notebook_id=1,
+        title="R",
+        author_id=1,
+        body_md="Body.",
+        key_judgements="We assess X.",
+        key_assumptions="Assume Y.",
+        intelligence_gaps="Gap Z.",
+    )
+    data = _build_data(report, "Author", [], [], [], [])
+    assert data["key_judgements"] == "We assess X."
+    assert data["key_assumptions"] == "Assume Y."
+    assert data["intelligence_gaps"] == "Gap Z."
+
+
 def _published_report(client, login):
     login("ANALYST", email="author@example.com")
     nb = client.post("/api/notebooks", json={"title": "nb"}).json()
@@ -17,7 +38,15 @@ def _published_report(client, login):
         "/api/reports",
         json={"notebook_id": nb["id"], "title": "Render me", "tlp": "GREEN"},
     ).json()["id"]
-    client.patch(f"/api/reports/{rid}", json={"body_md": "# Findings\n\nBody text."})
+    client.patch(
+        f"/api/reports/{rid}",
+        json={
+            "body_md": "# Findings\n\nBody text.",
+            "key_judgements": "- The actor is likely escalating.",
+            "key_assumptions": "Collection is representative.",
+            "intelligence_gaps": "Funding source unknown.",
+        },
+    )
     # Classify it so the PDF tag-chip rendering path is exercised.
     login("ADMIN", email="admin@example.com")
     tag = client.post(
@@ -46,8 +75,12 @@ def test_render_produces_pdf(client, login, tmp_path, monkeypatch):
         pytest.skip(f"Typst could not render (offline package fetch?): {resp.text}")
     assert resp.status_code == 201, resp.text
 
+    # The brief format (Key-Judgements-only product) must also compile.
+    brief = client.post(f"/api/reports/{rid}/render", json={"format": "EXEC_BRIEF"})
+    assert brief.status_code == 201, brief.text
+
     products = client.get(f"/api/reports/{rid}/products").json()
-    assert len(products) == 1
+    assert len(products) == 2
     dl = client.get(
         f"/api/reports/{rid}/products/{products[0]['id']}/download"
     )

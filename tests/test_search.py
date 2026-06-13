@@ -50,6 +50,26 @@ def test_fts_prefix_match(client, login):
     assert client.get("/api/search", params={"q": "ransom"}).json()["count"] == 1
 
 
+def test_fts_matches_judgement_scaffolding(client, login):
+    """ICD 203 scaffolding is indexed too: a term appearing only in Key
+    Judgements / Intelligence Gaps (not the title or body) is still found, and
+    the update trigger keeps the new columns in sync."""
+    rid = _report(client, login, "Intrusion set update", "Generic narrative body.")
+    login("ANALYST", email="author@example.com")
+    client.patch(
+        f"/api/reports/{rid}",
+        json={
+            "key_judgements": "We assess uniquejudgementterm with high confidence.",
+            "intelligence_gaps": "uniquegapterm remains unknown.",
+        },
+    )
+    assert client.get("/api/search", params={"q": "uniquejudgementterm"}).json()["count"] == 1
+    assert client.get("/api/search", params={"q": "uniquegapterm"}).json()["count"] == 1
+    # Sync on update: clearing the field removes it from the index.
+    client.patch(f"/api/reports/{rid}", json={"key_judgements": ""})
+    assert client.get("/api/search", params={"q": "uniquejudgementterm"}).json()["count"] == 0
+
+
 def test_bm25_ranks_more_relevant_first(client, login):
     _report(client, login, "Lazarus Group operations", "Lazarus Lazarus Lazarus activity.")
     _report(client, login, "Quarterly roundup", "A brief mention of Lazarus once.")

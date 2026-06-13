@@ -316,6 +316,12 @@ class Report(SQLModel, table=True):
     )
     title: str
     body_md: str = ""
+    # ICD 203 structured-judgement scaffolding (optional markdown). Key Judgements
+    # lead the product (the BLUF, and the sole content of the brief formats); Key
+    # Assumptions and Intelligence Gaps surface the analytic caveats.
+    key_judgements: str = ""
+    key_assumptions: str = ""
+    intelligence_gaps: str = ""
     intel_level: IntelLevel = Field(default=IntelLevel.OPERATIONAL)
     tlp: TLP = Field(default=TLP.AMBER)
     status: ReportStatus = Field(default=ReportStatus.DRAFT)

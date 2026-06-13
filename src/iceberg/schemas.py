@@ -45,6 +45,9 @@ class ReportCreate(BaseModel):
 class ReportUpdate(BaseModel):
     title: str | None = None
     body_md: str | None = None
+    key_judgements: str | None = None
+    key_assumptions: str | None = None
+    intelligence_gaps: str | None = None
     intel_level: IntelLevel | None = None
     tlp: TLP | None = None
 
@@ -70,6 +73,18 @@ class PreviewRequest(BaseModel):
 
 class PreviewResponse(BaseModel):
     html: str
+
+
+class ReportPreviewRequest(BaseModel):
+    """Live-preview the whole finished product — body (diamonds resolved against
+    the report's notebook) plus the ICD 203 judgement scaffolding — from the
+    editor's unsaved field values."""
+
+    report_id: int
+    body_md: str = ""
+    key_judgements: str = ""
+    key_assumptions: str = ""
+    intelligence_gaps: str = ""
 
 
 class DiamondCreate(BaseModel):

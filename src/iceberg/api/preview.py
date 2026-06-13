@@ -15,6 +15,7 @@ from ..schemas import (
     DiamondPreviewResponse,
     PreviewRequest,
     PreviewResponse,
+    ReportPreviewRequest,
 )
 from ..services import diamond as diamond_service
 
@@ -36,6 +37,28 @@ def preview(
                 )
             )
     return PreviewResponse(html=render_markdown(body.markdown))
+
+
+@router.post("/preview/product", response_model=PreviewResponse)
+def preview_product(
+    body: ReportPreviewRequest, session: SessionDep, _user: CurrentUser
+) -> PreviewResponse:
+    """Render the full finished product (Key Judgements + body + Key Assumptions
+    + Intelligence Gaps) for the report editor's live preview."""
+    report = session.get(Report, body.report_id)
+    if report is None:
+        # Unknown report — fall back to a notebook-less render (no diamond scope).
+        return PreviewResponse(html=render_markdown(body.body_md))
+    return PreviewResponse(
+        html=diamond_service.preview_report_product_html(
+            session,
+            report.notebook_id,
+            body_md=body.body_md,
+            key_judgements=body.key_judgements,
+            key_assumptions=body.key_assumptions,
+            intelligence_gaps=body.intelligence_gaps,
+        )
+    )
 
 
 @router.post("/preview/diamond", response_model=DiamondPreviewResponse)
