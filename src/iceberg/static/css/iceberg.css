@@ -363,6 +363,19 @@ a.row:hover, .row-hover:hover { background: var(--surface-2); }
   border-style: dashed;
   font-weight: 600;
 }
+.source-grade--pending {
+  color: var(--muted);
+  background: var(--surface-2);
+  border-style: dashed;
+  font-weight: 600;
+  font-family: var(--fs-sans);
+  letter-spacing: .01em;
+  animation: source-grade-pulse 1.4s ease-in-out infinite;
+}
+@keyframes source-grade-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .55; }
+}
 
 /* --------------------------------------------------------------------------
  *  Taxonomy tag chips (controlled CTI vocabulary)

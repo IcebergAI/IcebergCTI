@@ -162,13 +162,17 @@ def test_portal_source_edit_preserves_auto_grade(client, login, monkeypatch):
         raise SourceFetchError("blocked")
 
     monkeypatch.setattr(source_grading, "fetch_source_content", fail_fetch)
-    src = client.post(
+    client.post(
         f"/api/notebooks/{nb['id']}/sources",
         json={
             "title": "CISA source",
             "reference": "https://www.cisa.gov/news-events/cybersecurity-advisories/test",
         },
-    ).json()
+    )
+    # Grading is deferred to a background task; read the graded source back so we
+    # resubmit its real (auto) grade unchanged when editing the title.
+    src = client.get(f"/api/notebooks/{nb['id']}").json()["sources"][0]
+    assert src["grading_origin"] == "AUTO"
 
     resp = client.post(
         f"/notebooks/{nb['id']}/sources/{src['id']}",
@@ -176,8 +180,8 @@ def test_portal_source_edit_preserves_auto_grade(client, login, monkeypatch):
             "title": "CISA source renamed",
             "reference": src["reference"],
             "summary": "",
-            "reliability": "B",
-            "credibility": "6",
+            "reliability": src["reliability"],
+            "credibility": src["credibility"],
             "grading_rationale": src["grading_rationale"],
         },
     )

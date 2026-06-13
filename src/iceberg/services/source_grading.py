@@ -19,6 +19,7 @@ from urllib.parse import urljoin, urlparse, urlunparse
 
 import httpx
 from fastapi import HTTPException, status
+from sqlmodel import Session
 
 from ..config import get_settings
 from ..models import (
@@ -651,3 +652,27 @@ def auto_grade(source: Source) -> AutoGradeOutcome:
 
 def regrade_source(source: Source) -> AutoGradeOutcome:
     return auto_grade(source)
+
+
+def needs_online_grading(source: Source) -> bool:
+    """Whether auto-grading this source would touch the network — i.e. fetch a
+    page (http(s) reference) or call an LLM provider. Used to decide whether to
+    defer grading to a background task instead of blocking the create request."""
+    provider = get_settings().source_grader_provider.lower().strip()
+    has_http_ref = source.reference.strip().lower().startswith(("http://", "https://"))
+    has_text = bool(source.summary.strip())
+    return has_http_ref or (provider != "heuristic" and has_text)
+
+
+def grade_source_async(source_id: int) -> None:
+    """Grade a source out-of-band (a FastAPI background task). Opens its own
+    session because the request session is closed by the time this runs."""
+    from .. import db  # access db.engine dynamically so tests can repoint it
+
+    with Session(db.engine) as session:
+        source = session.get(Source, source_id)
+        if source is None:
+            return
+        auto_grade(source)
+        session.add(source)
+        session.commit()

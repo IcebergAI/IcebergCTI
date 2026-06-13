@@ -4,6 +4,7 @@ from typing import Annotated
 
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Depends,
     File,
     Form,
@@ -118,7 +119,11 @@ def delete_notebook(notebook_id: int, session: SessionDep, user: CurrentUser):
 
 @router.post("/{notebook_id}/sources", status_code=status.HTTP_201_CREATED)
 def add_source(
-    notebook_id: int, body: SourceCreate, session: SessionDep, _w: Writer
+    notebook_id: int,
+    body: SourceCreate,
+    session: SessionDep,
+    background_tasks: BackgroundTasks,
+    _w: Writer,
 ) -> Source:
     nb = _get_notebook(session, notebook_id)
     return notebook_service.add_source(
@@ -130,6 +135,7 @@ def add_source(
         reliability=body.reliability,
         credibility=body.credibility,
         grading_rationale=body.grading_rationale,
+        background_tasks=background_tasks,
     )
 
 

@@ -61,6 +61,17 @@ via `ICEBERG_SOURCE_GRADER_PROVIDER` (`heuristic` default, `openai`, `anthropic`
 or `openai_compatible`) plus model/key/base URL config; failures fall back to
 `heuristic:v1`. Analysts can manually override, clear, or regrade sources.
 
+Auto-grading that would touch the network (fetching a URL, or calling an LLM
+provider) runs **after** the create response as a FastAPI background task —
+mirroring the dissemination email pattern — so adding a source never blocks on an
+external host. Such a source is created `PENDING` (a transient "Grading…" chip)
+and flips to `AUTO` once the task resolves; the portal is server-rendered, so the
+chip refreshes on the next page load. Manual grades and the pure-offline heuristic
+path (no URL, `heuristic` provider) stay synchronous. SSRF safety on the fetch path:
+DNS is resolved once and the connection is pinned to that validated public IP
+(hostname preserved for `Host`/TLS SNI), closing the DNS-rebinding window, and the
+body is streamed so the byte cap holds even without a `Content-Length`.
+
 ### Tagging & search (`src/iceberg/services/tags.py`, `services/search.py`)
 A **controlled tag taxonomy** classifies reports by threat actor / campaign / malware / ATT&CK technique / sector / topic. The vocabulary is **admin-curated** (only `ADMIN` creates/edits/retires tags, at `/admin/tags`); analysts *select* from it in the report editor. Tags are classification metadata and are **deliberately editable after a report is published** (CTI re-tags retrospectively) — the tag endpoints guard on `ensure_author` only, not `ensure_editable`. Tags surface as kind-tinted chips in the portal (report view / list / search) and are stamped onto the **rendered PDF** below the masthead (`typst/product.typ` `tag-chip`).
 

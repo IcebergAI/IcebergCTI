@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
-from iceberg import models  # noqa: F401  -- register tables on metadata
+from iceberg import db, models  # noqa: F401  -- register tables on metadata
 from iceberg.db import get_session
 from iceberg.main import create_app
 
@@ -34,7 +34,7 @@ def engine_fixture():
 
 
 @pytest.fixture(name="client")
-def client_fixture(engine):
+def client_fixture(engine, monkeypatch):
     def _get_session():
         with Session(engine) as session:
             yield session
@@ -42,6 +42,11 @@ def client_fixture(engine):
     app = create_app()
     app.dependency_overrides[get_session] = _get_session
     with TestClient(app) as client:
+        # Startup (init_db / migrations) has now run against the module engine.
+        # Repoint db.engine at the test's StaticPool engine so background tasks
+        # (async source grading) — which open their own session via db.engine —
+        # share one in-memory database with the request sessions.
+        monkeypatch.setattr(db, "engine", engine)
         # Browsers send Origin on same-origin state-changing requests; mirror
         # that so the same-origin CSRF middleware admits the test's POSTs.
         client.headers["origin"] = "http://testserver"

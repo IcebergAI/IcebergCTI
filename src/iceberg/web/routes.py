@@ -241,6 +241,7 @@ def add_source(
     notebook_id: int,
     session: SessionDep,
     user: CurrentUser,
+    background_tasks: BackgroundTasks,
     title: Annotated[str, Form()],
     reference: Annotated[str, Form()] = "",
     summary: Annotated[str, Form()] = "",
@@ -260,6 +261,7 @@ def add_source(
         reliability=rel,
         credibility=cred,
         grading_rationale=grading_rationale,
+        background_tasks=background_tasks,
     )
     return _redirect(f"/notebooks/{notebook_id}?updated=source-added#sources")
 

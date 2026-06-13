@@ -53,12 +53,18 @@ def test_auto_grade_with_llm_success(client, login, monkeypatch):
     )
 
     assert resp.status_code == 201, resp.text
-    body = resp.json()
-    assert body["reliability"] == "B"
-    assert body["credibility"] == "2"
-    assert body["grading_origin"] == "AUTO"
-    assert body["grading_engine"] == "openai:test-model"
-    assert body["grading_error"] == ""
+    created = resp.json()
+    # The create response returns immediately; grading is deferred.
+    assert created["grading_origin"] == "PENDING"
+    assert created["reliability"] is None
+
+    # The background task (run by the TestClient before the POST returns) graded it.
+    source = client.get(f"/api/notebooks/{nb['id']}").json()["sources"][0]
+    assert source["reliability"] == "B"
+    assert source["credibility"] == "2"
+    assert source["grading_origin"] == "AUTO"
+    assert source["grading_engine"] == "openai:test-model"
+    assert source["grading_error"] == ""
     source_grading.get_settings.cache_clear()
 
 
@@ -79,11 +85,58 @@ def test_fetch_failure_uses_url_heuristic_and_marks_credibility_unknown(client, 
     )
 
     assert resp.status_code == 201, resp.text
-    body = resp.json()
-    assert body["reliability"] == "B"
-    assert body["credibility"] == "6"
-    assert body["grading_engine"] == "heuristic:v1"
-    assert "Could not read source content" in body["grading_error"]
+    assert resp.json()["grading_origin"] == "PENDING"
+
+    # Graded in the background: fetch failed, so it falls back to the heuristic.
+    source = client.get(f"/api/notebooks/{nb['id']}").json()["sources"][0]
+    assert source["reliability"] == "B"
+    assert source["credibility"] == "6"
+    assert source["grading_engine"] == "heuristic:v1"
+    assert "Could not read source content" in source["grading_error"]
+
+
+def test_pending_source_shows_grading_chip(client, login, monkeypatch):
+    login("ANALYST")
+    nb = _make_notebook(client)
+
+    # No-op the background grader so the source stays PENDING for the assertion.
+    monkeypatch.setattr(source_grading, "grade_source_async", lambda source_id: None)
+    client.post(
+        f"/notebooks/{nb['id']}/sources",
+        data={"title": "Queued", "reference": "https://www.cisa.gov/advisory"},
+    )
+
+    page = client.get(f"/notebooks/{nb['id']}")
+    assert page.status_code == 200
+    assert "Grading" in page.text
+    assert "source-grade--pending" in page.text
+
+
+def test_grade_source_async_persists_grade(client, login, monkeypatch):
+    login("ANALYST")
+    nb = _make_notebook(client)
+
+    # Hold the source at PENDING (no-op the scheduled task) so we can drive the
+    # real grader ourselves and confirm it loads, grades and persists.
+    real_grade = source_grading.grade_source_async
+    monkeypatch.setattr(source_grading, "grade_source_async", lambda source_id: None)
+    client.post(
+        f"/api/notebooks/{nb['id']}/sources",
+        json={"title": "CISA advisory", "reference": "https://www.cisa.gov/advisory"},
+    )
+    src = client.get(f"/api/notebooks/{nb['id']}").json()["sources"][0]
+    assert src["grading_origin"] == "PENDING"
+
+    def fail_fetch(_reference):
+        raise SourceFetchError("blocked")
+
+    monkeypatch.setattr(source_grading, "fetch_source_content", fail_fetch)
+    real_grade(src["id"])
+
+    graded = client.get(f"/api/notebooks/{nb['id']}").json()["sources"][0]
+    assert graded["grading_origin"] == "AUTO"
+    assert graded["reliability"] == "B"
+    assert graded["credibility"] == "6"
 
 
 def test_unknown_source_remains_ungraded(client, login):

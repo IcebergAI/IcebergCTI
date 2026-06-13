@@ -150,6 +150,9 @@ class SourceGradingOrigin(StrEnum):
     UNGRADED = "UNGRADED"
     AUTO = "AUTO"
     MANUAL = "MANUAL"
+    # Transient: an auto-grade has been queued (background task) but not yet
+    # applied. The source shows a "Grading…" chip until it resolves to AUTO.
+    PENDING = "PENDING"
 
 
 _SOURCE_RELIABILITY_LABELS = {
