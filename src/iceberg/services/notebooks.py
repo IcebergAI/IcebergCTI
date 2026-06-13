@@ -4,7 +4,8 @@ portal, so the two presentation layers create rows through one code path."""
 from fastapi import HTTPException, status
 from sqlmodel import Session
 
-from ..models import Note, Notebook, Source
+from ..models import Note, Notebook, Source, SourceCredibility, SourceReliability
+from . import source_grading
 
 
 def get_or_404(session: Session, notebook_id: int) -> Notebook:
@@ -31,10 +32,49 @@ def add_source(
     title: str,
     reference: str = "",
     summary: str = "",
+    reliability: SourceReliability | None = None,
+    credibility: SourceCredibility | None = None,
+    grading_rationale: str = "",
 ) -> Source:
     source = Source(
         notebook_id=notebook.id, title=title, reference=reference, summary=summary
     )
+    if reliability or credibility:
+        source_grading.set_manual_grade(
+            source,
+            reliability=reliability,
+            credibility=credibility,
+            rationale=grading_rationale,
+        )
+    else:
+        source_grading.auto_grade(source)
+    session.add(source)
+    session.commit()
+    session.refresh(source)
+    return source
+
+
+def get_source_or_404(session: Session, notebook_id: int, source_id: int) -> Source:
+    source = session.get(Source, source_id)
+    if not source or source.notebook_id != notebook_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Source not found")
+    return source
+
+
+def update_source(
+    session: Session,
+    source: Source,
+    *,
+    title: str | None = None,
+    reference: str | None = None,
+    summary: str | None = None,
+) -> Source:
+    if title is not None:
+        source.title = title
+    if reference is not None:
+        source.reference = reference
+    if summary is not None:
+        source.summary = summary
     session.add(source)
     session.commit()
     session.refresh(source)

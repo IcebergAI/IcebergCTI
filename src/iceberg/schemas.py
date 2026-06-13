@@ -1,6 +1,6 @@
 """Request bodies for the JSON API (responses serialise models/dicts directly)."""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from .models import (
     DiamondConfidence,
@@ -9,6 +9,8 @@ from .models import (
     ProductFormat,
     ReportStatus,
     RequirementStatus,
+    SourceCredibility,
+    SourceReliability,
     TagKind,
     TLP,
 )
@@ -28,6 +30,33 @@ class SourceCreate(BaseModel):
     title: str
     reference: str = ""
     summary: str = ""
+    reliability: SourceReliability | None = None
+    credibility: SourceCredibility | None = None
+    grading_rationale: str = ""
+
+    @model_validator(mode="after")
+    def _grade_pair(self) -> "SourceCreate":
+        if bool(self.reliability) != bool(self.credibility):
+            raise ValueError("Reliability and credibility must be set together")
+        return self
+
+
+class SourceUpdate(BaseModel):
+    title: str | None = None
+    reference: str | None = None
+    summary: str | None = None
+
+
+class SourceGradeUpdate(BaseModel):
+    reliability: SourceReliability | None = None
+    credibility: SourceCredibility | None = None
+    grading_rationale: str = ""
+
+    @model_validator(mode="after")
+    def _grade_pair(self) -> "SourceGradeUpdate":
+        if bool(self.reliability) != bool(self.credibility):
+            raise ValueError("Reliability and credibility must be set together")
+        return self
 
 
 class NoteCreate(BaseModel):

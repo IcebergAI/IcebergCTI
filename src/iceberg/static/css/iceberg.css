@@ -263,6 +263,11 @@ a:hover { color: var(--accent-deep); }
   font-size: 13px; font-weight: 700;
   padding: 7px 10px;
 }
+.inline-notice--warn {
+  background: color-mix(in oklch, var(--c-warn) 10%, var(--surface));
+  border-color: color-mix(in oklch, var(--c-warn) 38%, var(--line-strong));
+  color: var(--c-warn);
+}
 .autosave-state {
   color: var(--muted);
   font-family: var(--fs-mono);
@@ -338,6 +343,26 @@ a.row:hover, .row-hover:hover { background: var(--surface-2); }
 
 /* Intel level — accent register */
 .lvl { color: var(--accent-deep); background: var(--accent-soft); border-color: var(--accent-line); }
+
+.source-grade {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 34px;
+  font-family: var(--fs-mono); font-size: 10.5px; font-weight: 700;
+  line-height: 1; white-space: nowrap;
+  padding: 4px 7px 3px; border-radius: 5px;
+  border: 1px solid var(--line-strong);
+}
+.source-grade--graded {
+  color: var(--accent-deep);
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+}
+.source-grade--empty {
+  color: var(--muted);
+  background: var(--surface-2);
+  border-style: dashed;
+  font-weight: 600;
+}
 
 /* --------------------------------------------------------------------------
  *  Taxonomy tag chips (controlled CTI vocabulary)
@@ -584,6 +609,80 @@ a.tagk:hover { border-color: var(--k-line); box-shadow: var(--shadow); }
 .field:focus { outline: none; border-color: var(--accent); box-shadow: var(--ring); }
 textarea.field { line-height: 1.55; resize: vertical; }
 .field-mono { font-family: var(--fs-mono); font-size: 13px; line-height: 1.6; letter-spacing: 0; }
+
+.source-editor-form {
+  display: grid;
+  width: 100%;
+  gap: 8px;
+}
+.source-editor-grid {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(210px, 1.25fr);
+  gap: 7px;
+  align-items: center;
+  width: 100%;
+}
+.source-editor-grid .field { font-size: 12px; padding: 7px 9px; }
+.source-editor-grid textarea[name="grading_rationale"] { grid-column: 1 / -1; }
+.source-rationale-field {
+  min-height: 64px;
+  max-height: 260px;
+  resize: vertical;
+}
+.source-save-btn { justify-self: start; }
+.source-row-tools {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  margin-top: 8px;
+}
+.source-inline-editor > summary {
+  width: max-content;
+  cursor: pointer;
+  list-style: none;
+}
+.source-inline-editor > summary::-webkit-details-marker { display: none; }
+.source-add-editor > summary {
+  width: max-content;
+  cursor: pointer;
+  list-style: none;
+}
+.source-add-editor > summary::-webkit-details-marker { display: none; }
+.source-inline-editor[open] {
+  flex-basis: 100%;
+}
+.source-inline-editor[open] > summary { margin-bottom: 8px; }
+.source-inline-editor-panel {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+.source-row-editor-panel {
+  flex-direction: column;
+}
+.source-row-editor-panel .source-editor-form {
+  width: 100%;
+  flex: 0 0 auto;
+}
+.source-secondary-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 1px;
+}
+.source-grade-warning {
+  display: block;
+  color: color-mix(in oklch, var(--c-warn) 78%, var(--muted));
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+@media (max-width: 760px) {
+  .source-editor-grid { grid-template-columns: 1fr; }
+  .source-editor-grid textarea[name="grading_rationale"] { grid-column: auto; }
+}
 
 select.field {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");

@@ -13,7 +13,12 @@ from iceberg.rendering.typst import typst_available
 def test_build_data_includes_judgement_scaffolding():
     """The ICD 203 scaffolding fields reach the Typst template via data.json
     (no binary needed). Brief-vs-FULL omission is enforced in product.typ."""
-    from iceberg.models import Report
+    from iceberg.models import (
+        Report,
+        Source,
+        SourceCredibility,
+        SourceReliability,
+    )
     from iceberg.rendering.typst import _build_data
 
     report = Report(
@@ -25,10 +30,21 @@ def test_build_data_includes_judgement_scaffolding():
         key_assumptions="Assume Y.",
         intelligence_gaps="Gap Z.",
     )
-    data = _build_data(report, "Author", [], [], [], [])
+    source = Source(
+        notebook_id=1,
+        title="CISA advisory",
+        reliability=SourceReliability.B,
+        credibility=SourceCredibility.PROBABLY_TRUE,
+        grading_engine="heuristic:v1",
+        grading_rationale="Internal grading rationale should not render.",
+    )
+    data = _build_data(report, "Author", [source], [], [], [])
     assert data["key_judgements"] == "We assess X."
     assert data["key_assumptions"] == "Assume Y."
     assert data["intelligence_gaps"] == "Gap Z."
+    assert data["sources"][0]["grade"] == "B2"
+    assert "grading_engine" not in data["sources"][0]
+    assert "grading_rationale" not in data["sources"][0]
 
 
 def _published_report(client, login):

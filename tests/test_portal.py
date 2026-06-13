@@ -5,6 +5,8 @@ the HTML routes."""
 from sqlmodel import Session
 
 from iceberg.models import ProductFormat, RenderedProduct
+from iceberg.services import source_grading
+from iceberg.services.source_grading import SourceFetchError
 
 
 def _first_notebook_id(client) -> int:
@@ -122,6 +124,69 @@ def test_report_citation_update_returns_to_citation_section(client, login):
     assert saved.status_code == 200
     assert "Update citations" not in saved.text
     assert "Citations updated." not in saved.text
+
+
+def test_portal_can_edit_source(client, login):
+    login("ANALYST")
+    nb = client.post("/api/notebooks", json={"title": "Editable source"}).json()
+    src = client.post(
+        f"/api/notebooks/{nb['id']}/sources", json={"title": "Original source"}
+    ).json()
+
+    resp = client.post(
+        f"/notebooks/{nb['id']}/sources/{src['id']}",
+        data={
+            "title": "Updated source",
+            "reference": "https://example.test/updated",
+            "summary": "",
+            "reliability": "C",
+            "credibility": "3",
+            "grading_rationale": "Reviewed during source edit.",
+        },
+    )
+
+    assert resp.status_code == 200
+    assert "Source updated." in resp.text
+    assert "Updated source" in resp.text
+    assert "https://example.test/updated" in resp.text
+    assert "C3" in resp.text
+    assert "Reviewed during source edit." in resp.text
+    assert "Original source" not in resp.text
+
+
+def test_portal_source_edit_preserves_auto_grade(client, login, monkeypatch):
+    login("ANALYST")
+    nb = client.post("/api/notebooks", json={"title": "Auto source edit"}).json()
+
+    def fail_fetch(_reference):
+        raise SourceFetchError("blocked")
+
+    monkeypatch.setattr(source_grading, "fetch_source_content", fail_fetch)
+    src = client.post(
+        f"/api/notebooks/{nb['id']}/sources",
+        json={
+            "title": "CISA source",
+            "reference": "https://www.cisa.gov/news-events/cybersecurity-advisories/test",
+        },
+    ).json()
+
+    resp = client.post(
+        f"/notebooks/{nb['id']}/sources/{src['id']}",
+        data={
+            "title": "CISA source renamed",
+            "reference": src["reference"],
+            "summary": "",
+            "reliability": "B",
+            "credibility": "6",
+            "grading_rationale": src["grading_rationale"],
+        },
+    )
+
+    assert resp.status_code == 200
+    saved = client.get(f"/api/notebooks/{nb['id']}").json()["sources"][0]
+    assert saved["title"] == "CISA source renamed"
+    assert saved["grading_origin"] == "AUTO"
+    assert saved["grading_engine"] == "heuristic:v1"
 
 
 def test_report_citation_autosave_returns_no_content(client, login):

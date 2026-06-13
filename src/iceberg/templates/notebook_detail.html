@@ -102,13 +102,68 @@
       <h2 class="section-title">Sources</h2>
       <span class="eyebrow">{{ sources | length }}</span>
     </div>
+    {% if updated == 'source-added' %}
+      <div class="inline-notice mb-4">Source added.</div>
+    {% elif updated == 'source-updated' %}
+      <div class="inline-notice mb-4">Source updated.</div>
+    {% elif updated == 'source-grade' %}
+      <div class="inline-notice mb-4">Source grade updated.</div>
+    {% elif updated == 'source-regrade' %}
+      <div class="inline-notice mb-4">Source regraded.</div>
+    {% endif %}
     {% if sources %}
-      <ul class="space-y-2.5">
+      <ul class="space-y-4">
         {% for s in sources %}
+          {% set is_graded = s.grading_origin.value != 'UNGRADED' %}
           <li class="pl-3" style="border-left:2px solid var(--accent-line);">
-            <div class="row-title text-sm">{{ s.title }}</div>
+            <div class="flex items-start gap-2 flex-wrap">
+              <div class="row-title text-sm">{{ s.title }}</div>
+              {{ m.source_grade_chip(s) }}
+            </div>
             {% if s.reference %}<div class="mono text-xs break-all mt-0.5" style="color:var(--accent-deep);">{{ s.reference }}</div>{% endif %}
             {% if s.summary %}<div class="text-xs mt-0.5" style="color:var(--muted);">{{ s.summary }}</div>{% endif %}
+            {% if s.grading_rationale %}<div class="text-xs mt-1" style="color:var(--ink-soft);">{{ s.grading_rationale }}</div>{% endif %}
+            {% if s.grading_error and updated in ['source-grade', 'source-regrade'] and source_notice_id == s.id %}
+              <div class="source-grade-warning mt-1" role="status" title="{{ s.grading_error }}">Could not read source content; heuristic fallback used.</div>
+            {% endif %}
+            {% if can_write %}
+              <div class="source-row-tools">
+                <details class="source-inline-editor source-row-editor" {% if not is_graded or source_edit_id == s.id %}open{% endif %}>
+                  <summary class="btn btn--ghost btn--sm">Edit</summary>
+                  <div class="source-inline-editor-panel source-row-editor-panel">
+                    <form method="post" action="/notebooks/{{ notebook.id }}/sources/{{ s.id }}" class="source-editor-form">
+                      <input type="hidden" name="summary" value="{{ s.summary }}">
+                      <div class="source-editor-grid">
+                        <input name="title" required value="{{ s.title }}" placeholder="Source title" class="field">
+                        <input name="reference" value="{{ s.reference }}" placeholder="URL / reference" class="field">
+                        <select name="reliability" class="field" aria-label="Source reliability">
+                          <option value="">Reliability</option>
+                          {% for r in source_reliabilities %}
+                            <option value="{{ r.value }}" {% if s.reliability and s.reliability.value == r.value %}selected{% endif %}>{{ r.value }} · {{ source_reliability_label(r) }}</option>
+                          {% endfor %}
+                        </select>
+                        <select name="credibility" class="field" aria-label="Information credibility">
+                          <option value="">Credibility</option>
+                          {% for c in source_credibilities %}
+                            <option value="{{ c.value }}" {% if s.credibility and s.credibility.value == c.value %}selected{% endif %}>{{ c.value }} · {{ source_credibility_label(c) }}</option>
+                          {% endfor %}
+                        </select>
+                        <textarea name="grading_rationale" rows="2" placeholder="Rationale" class="field source-rationale-field">{{ s.grading_rationale }}</textarea>
+                      </div>
+                      <button class="btn btn--ghost btn--sm source-save-btn">Save changes</button>
+                    </form>
+                    <div class="source-secondary-actions">
+                      <form method="post" action="/notebooks/{{ notebook.id }}/sources/{{ s.id }}/grade">
+                        <button class="btn btn--quiet btn--sm">Clear grade</button>
+                      </form>
+                      <form method="post" action="/notebooks/{{ notebook.id }}/sources/{{ s.id }}/auto-grade">
+                        <button class="btn btn--quiet btn--sm">Regrade</button>
+                      </form>
+                    </div>
+                  </div>
+                </details>
+              </div>
+            {% endif %}
           </li>
         {% endfor %}
       </ul>
@@ -116,12 +171,29 @@
       <p class="empty">No sources collected yet. Add the first source with a URL, citation, or reference note.</p>
     {% endif %}
     {% if can_write %}
-      <form method="post" action="/notebooks/{{ notebook.id }}/sources" class="space-y-2.5 mt-5 pt-5 border-t border-line">
-        <input name="title" required placeholder="Source title" class="field">
-        <input name="reference" placeholder="URL / reference" class="field">
-        <input name="summary" placeholder="Short summary" class="field">
-        <button class="btn btn--ghost btn--sm">Add source</button>
-      </form>
+      <details class="source-add-editor mt-5 pt-5 border-t border-line" {% if not sources %}open{% endif %}>
+        <summary class="btn btn--ghost btn--sm">Add source</summary>
+        <form method="post" action="/notebooks/{{ notebook.id }}/sources" class="space-y-2.5 mt-3">
+          <input name="title" required placeholder="Source title" class="field">
+          <input name="reference" placeholder="URL / reference" class="field">
+          <div class="grid sm:grid-cols-2 gap-2">
+            <select name="reliability" class="field" aria-label="Source reliability">
+              <option value="">Auto reliability</option>
+              {% for r in source_reliabilities %}
+                <option value="{{ r.value }}">{{ r.value }} · {{ source_reliability_label(r) }}</option>
+              {% endfor %}
+            </select>
+            <select name="credibility" class="field" aria-label="Information credibility">
+              <option value="">Auto credibility</option>
+              {% for c in source_credibilities %}
+                <option value="{{ c.value }}">{{ c.value }} · {{ source_credibility_label(c) }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <textarea name="grading_rationale" rows="2" placeholder="Rationale" class="field source-rationale-field"></textarea>
+          <button class="btn btn--ghost btn--sm">Create source</button>
+        </form>
+      </details>
     {% endif %}
   </section>
 

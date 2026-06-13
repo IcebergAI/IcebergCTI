@@ -11,9 +11,10 @@ Analysts work in topic **notebooks** — gathering sources, notes and uploaded
 **attachments** (reference files), and modelling intrusions with the **Diamond
 Model** — and author **reports** (intelligence products) in markdown. Reports carry
 an intelligence level (Strategic / Tactical / Operational) and a TLP marking, cite
-sources and attachments, **embed Diamond Model diagrams inline**, are classified with
-**taxonomy tags** (threat actor / campaign / malware / ATT&CK technique / sector /
-topic), move through a review workflow, and can be rendered to branded PDF products.
+sources and attachments, carry Admiralty/NATO-style **source reliability grading**,
+**embed Diamond Model diagrams inline**, are classified with **taxonomy tags** (threat
+actor / campaign / malware / ATT&CK technique / sector / topic), move through a review
+workflow, and can be rendered to branded PDF products.
 Everything is **searchable** — full-text + faceted across the report library.
 
 > **Status:** Milestones 1–4 are implemented — the full vision plus a knowledge layer:
@@ -98,6 +99,8 @@ created automatically on first boot (`ICEBERG_AUTO_MIGRATE=true` runs migrations
 ### Try the authoring loop
 1. Create a **notebook** from the dashboard.
 2. Add a couple of **sources**, a **note**, and upload an **attachment** (e.g. a PDF).
+   Sources are auto-graded when Iceberg can infer enough signal; analysts can override
+   or clear the Admiralty/NATO reliability + credibility chip.
 3. Create an **intelligence product**, write markdown in the editor and watch the
    **live preview**; tick sources and attachments to cite them.
 4. Fill the **analytic scaffolding** (ICD 203) — **Key Judgements** (the BLUF),
@@ -167,6 +170,21 @@ All settings use the `ICEBERG_` env prefix and can live in `.env` (see
 | `ICEBERG_DISSEMINATION_MAX_TLP` | Broadcast ceiling (default `AMBER`; RED/AMBER_STRICT withheld) |
 | `ICEBERG_EMAIL_BACKEND` + `ICEBERG_SMTP_*` | `console` (dev) or `smtp`; SMTP server settings |
 | `ICEBERG_PORTAL_BASE_URL` | Base URL used in notification email links |
+| `ICEBERG_SOURCE_GRADER_PROVIDER` | `heuristic` by default; opt into `openai`, `anthropic`, or `openai_compatible` |
+| `ICEBERG_SOURCE_GRADER_MODEL` / `ICEBERG_SOURCE_GRADER_API_KEY` | Model/key for external source grading |
+| `ICEBERG_SOURCE_GRADER_BASE_URL` | Optional OpenAI-compatible or alternate provider base URL |
+| `ICEBERG_SOURCE_GRADER_FALLBACK` | `heuristic` by default; controls local fallback after fetch/provider failure |
+
+### Source reliability grading
+Notebook sources carry Admiralty/NATO-style grades: source reliability (`A-F`) plus
+information credibility (`1-6`), displayed as chips such as `B2` or `B6`. Auto-grading
+is conservative: Iceberg safely fetches public HTTP(S) source pages, extracts readable
+text, and then uses the configured grader. Without provider config, or when fetching/LLM
+grading fails, it falls back to a local heuristic. If only the source identity can be
+judged, credibility is marked `6` ("cannot be judged"); when URL fetching fails, the
+notebook page shows a compact warning after grade/regrade. External LLM grading sends
+only source metadata and extracted page text, never notebook notes, report bodies,
+attachments, or stakeholder data.
 
 ### Entra ID (OIDC)
 Set `ICEBERG_OIDC_ENABLED=true` and fill in `ICEBERG_OIDC_TENANT_ID`,

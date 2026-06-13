@@ -24,6 +24,16 @@
   <span class="tag lvl">{{ level.value }}</span>
 {% endmacro %}
 
+{% macro source_grade_chip(source) %}
+  {% if source.reliability and source.credibility %}
+    {% set grade = source_grade_label(source.reliability, source.credibility) %}
+    {% set title = source_reliability_label(source.reliability) ~ ' · ' ~ source_credibility_label(source.credibility) %}
+    <span class="source-grade source-grade--graded" title="{{ title }}">{{ grade }}</span>
+  {% else %}
+    <span class="source-grade source-grade--empty">Ungraded</span>
+  {% endif %}
+{% endmacro %}
+
 {% macro priority_badge(priority) %}
   {% set map = {
     'CRITICAL': 'tag--solid is-crit', 'HIGH': 'is-crit',

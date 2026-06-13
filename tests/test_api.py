@@ -45,6 +45,29 @@ def test_notebook_sources_notes_flow(client, login):
     assert detail["notebook"]["title"] == "APT29 tracking"
 
 
+def test_update_source(client, login):
+    login("ANALYST")
+    nb = _make_notebook(client)
+    src = client.post(
+        f"/api/notebooks/{nb['id']}/sources", json={"title": "Original source"}
+    ).json()
+
+    resp = client.patch(
+        f"/api/notebooks/{nb['id']}/sources/{src['id']}",
+        json={
+            "title": "Updated source",
+            "reference": "https://example.test/updated",
+            "summary": "kept for older records",
+        },
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["title"] == "Updated source"
+    assert body["reference"] == "https://example.test/updated"
+    assert body["summary"] == "kept for older records"
+
+
 def test_report_create_update_and_citations(client, login):
     login("ANALYST")
     nb = _make_notebook(client)
