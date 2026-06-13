@@ -5,6 +5,12 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 
+# Coverage
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
 # App data
 *.db
 /rendered/

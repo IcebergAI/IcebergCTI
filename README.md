@@ -1,5 +1,9 @@
 # Iceberg 🧊
 
+[![CI](https://github.com/TheSlopBucket/iceberg/actions/workflows/ci.yml/badge.svg)](https://github.com/TheSlopBucket/iceberg/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.14-blue.svg)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+
 A cyber threat intelligence platform for **collecting** intelligence, **authoring**
 finished intelligence products, and **disseminating** them to stakeholders.
 
@@ -196,11 +200,20 @@ but no version row — run **`alembic stamp head`** once to mark it current befo
 
 ## Tests
 ```bash
-pytest
+pytest                              # run the suite
+pytest --cov=iceberg --cov-report=term-missing   # with coverage (CI gates on a floor)
 ```
 Tests run against in-memory SQLite using the dev-login bypass; `tests/test_migrations.py`
 additionally applies the real migrations to a temp database and checks the models haven't
 drifted from them. The Typst render test skips automatically when the binary isn't present.
+
+## Continuous integration
+[CI](.github/workflows/ci.yml) runs on every push to `main` and on pull requests: a **test**
+job (`pytest` + coverage, with Typst installed so the PDF-render path is exercised; coverage is
+gated by `fail_under` in `pyproject.toml`) and a **static** job — `ruff check` (lint),
+`bandit -r src/iceberg` (security), and `vulture` (dead code; configured under `[tool.vulture]`
+with `vulture_whitelist.py` for framework false positives). Reproduce locally with
+`pip install -e ".[dev]"` then the commands above.
 
 ## Project layout
 See the structure diagram in [CLAUDE.md](CLAUDE.md).
