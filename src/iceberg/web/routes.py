@@ -21,6 +21,7 @@ from fastapi import (
 from fastapi.responses import FileResponse, RedirectResponse
 from sqlmodel import Session, col, select
 
+from .. import help_content
 from ..auth.dependencies import CurrentUser, ensure_role
 from ..db import get_session
 from ..models import (
@@ -997,6 +998,37 @@ def feed_view(request: Request, session: SessionDep, user: CurrentUser):
 def preferences_view(request: Request, session: SessionDep, user: CurrentUser):
     return templates.TemplateResponse(
         request, "preferences.html", {"user": user}
+    )
+
+
+def _coerce_role(role: str | None, *, default: Role) -> Role:
+    """Parse a ``?role=`` query value, falling back to the viewer's own role on
+    anything unrecognised (so ``/help?role=BOGUS`` never 500s)."""
+    if not role:
+        return default
+    try:
+        return Role(role.upper())
+    except ValueError:
+        return default
+
+
+@router.get("/help")
+def help_view(
+    request: Request,
+    user: CurrentUser,
+    role: Annotated[str | None, Query()] = None,
+):
+    active = _coerce_role(role, default=user.role)
+    return templates.TemplateResponse(
+        request,
+        "help.html",
+        {
+            "user": user,
+            "active_role": active,
+            "guides": help_content.ROLE_GUIDES,
+            "active_guide": help_content.guide_for(active),
+            "concepts": help_content.CONCEPTS,
+        },
     )
 
 

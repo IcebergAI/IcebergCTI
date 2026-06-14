@@ -13,6 +13,8 @@
 # - model columns (captured_at/file_size/uploaded_at/reviewer_id/grading_*): SQLModel fields
 #   populated and read via the ORM / templates.
 # - HTMLParser callbacks: invoked by the stdlib parser.
+# - help_content dataclass fields (href/tagline/.../points): read only in
+#   templates/help.html, which Vulture can't see.
 
 _.dispatch  # unused method (src/iceberg/auth/csrf.py:40)
 model_config  # unused variable (src/iceberg/config.py:14)
@@ -46,3 +48,12 @@ _.grading_origin  # unused attribute (src/iceberg/services/source_grading.py:520
 _.grading_engine  # unused attribute (src/iceberg/services/source_grading.py:521)
 _.grading_error  # unused attribute (src/iceberg/services/source_grading.py:523)
 _.graded_at  # unused attribute (src/iceberg/services/source_grading.py:524)
+href  # unused variable (src/iceberg/help_content.py:25)
+tagline  # unused variable (src/iceberg/help_content.py:33)
+workflow  # unused variable (src/iceberg/help_content.py:34)
+can  # unused variable (src/iceberg/help_content.py:35)
+cannot  # unused variable (src/iceberg/help_content.py:36)
+key_screens  # unused variable (src/iceberg/help_content.py:37)
+concepts  # unused variable (src/iceberg/help_content.py:38)
+term  # unused variable (src/iceberg/help_content.py:46)
+points  # unused variable (src/iceberg/help_content.py:49)

@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Help · {{ app_name }}{% endblock %}
+{% block page_class %}page-wide{% endblock %}
+{% block content %}
+
+<div class="mb-7">
+  <div class="eyebrow eyebrow-accent">Guidance</div>
+  <h1 class="page-title mt-2">Help &amp; orientation</h1>
+  <div class="title-rule"></div>
+  <p class="text-sm mt-3" style="color:var(--ink-soft); max-width:60ch;">
+    How Iceberg works for your role, and the intelligence concepts behind it.
+    Pick a role to read its guide &mdash; yours is selected.
+  </p>
+</div>
+
+{# Role tabs — viewer's own role is tagged "(you)". #}
+<nav class="help-tabs" aria-label="Role guides">
+  {% for g in guides %}
+    <a href="/help?role={{ g.role.value }}"
+       class="help-tab {{ 'is-active' if g.role == active_role }}">
+      {{ g.role.value | capitalize }}{% if g.role == user.role %} <span class="help-tab-you">you</span>{% endif %}
+    </a>
+  {% endfor %}
+</nav>
+
+{# Active role guide #}
+<section class="card card-pad-lg mb-8" aria-label="{{ active_guide.role.value }} guide">
+  <div class="eyebrow mb-2">{{ active_guide.role.value | capitalize }}</div>
+  <p class="help-tagline">{{ active_guide.tagline }}</p>
+
+  <h2 class="section-title mt-6 mb-2">Your workflow</h2>
+  <ol class="help-workflow">
+    {% for step in active_guide.workflow %}<li>{{ step }}</li>{% endfor %}
+  </ol>
+
+  <div class="grid md:grid-cols-2 gap-6 mt-6">
+    <div>
+      <h2 class="section-title mb-2">You can</h2>
+      <ul class="help-list help-list-can">
+        {% for item in active_guide.can %}<li>{{ item }}</li>{% endfor %}
+      </ul>
+    </div>
+    {% if active_guide.cannot %}
+    <div>
+      <h2 class="section-title mb-2">You can't</h2>
+      <ul class="help-list help-list-cannot">
+        {% for item in active_guide.cannot %}<li>{{ item }}</li>{% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if active_guide.key_screens %}
+  <h2 class="section-title mt-6 mb-2">Key screens</h2>
+  <div class="help-screens">
+    {% for link in active_guide.key_screens %}
+      <a href="{{ link.href }}" class="btn btn--ghost btn--sm">{{ link.label }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if active_guide.concepts %}
+  <h2 class="section-title mt-6 mb-2">Concepts to know</h2>
+  <div class="help-chips">
+    {% for slug in active_guide.concepts %}
+      {% set c = concepts | selectattr('slug', 'equalto', slug) | first %}
+      {% if c %}<a href="#{{ c.slug }}" class="tag">{{ c.term }}</a>{% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+
+{# Shared intelligence-concepts glossary #}
+<section aria-label="Glossary">
+  <div class="eyebrow eyebrow-accent mb-1">Reference</div>
+  <h2 class="page-title" style="font-size:1.4rem;">Intelligence concepts</h2>
+  <div class="title-rule"></div>
+
+  <div class="glossary mt-5">
+    {% for c in concepts %}
+    <article id="{{ c.slug }}" class="concept card card-pad-lg">
+      <div class="concept-head">
+        <h3 class="concept-term">{{ c.term }}</h3>
+        <span class="concept-cat">{{ c.category }}</span>
+      </div>
+      <p class="concept-body">{{ c.body }}</p>
+      {% if c.points %}
+      <ul class="concept-points">
+        {% for p in c.points %}<li>{{ p }}</li>{% endfor %}
+      </ul>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+{% endblock %}
