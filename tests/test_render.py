@@ -38,7 +38,7 @@ def test_build_data_includes_judgement_scaffolding():
         grading_engine="heuristic:v1",
         grading_rationale="Internal grading rationale should not render.",
     )
-    data = _build_data(report, "Author", [source], [], [], [])
+    data = _build_data(report, "Author", [source], [], [], [], [])
     assert data["key_judgements"] == "We assess X."
     assert data["key_assumptions"] == "Assume Y."
     assert data["intelligence_gaps"] == "Gap Z."

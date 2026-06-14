@@ -20,6 +20,7 @@ from ..db import get_session
 from ..models import (
     Attachment,
     DiamondModel,
+    Figure,
     Note,
     Notebook,
     Role,
@@ -39,6 +40,7 @@ from ..schemas import (
 )
 from ..services import attachments as attachment_service
 from ..services import diamond as diamond_service
+from ..services import figures as figure_service
 from ..services import notebooks as notebook_service
 from ..services import source_grading
 from ..services.requirements import set_notebook_requirements
@@ -77,6 +79,7 @@ def get_notebook(notebook_id: int, session: SessionDep, _w: Writer) -> dict:
         "sources": nb.sources,
         "notes": nb.notes,
         "attachments": nb.attachments,
+        "figures": nb.figures,
         "reports": nb.reports,
     }
 
@@ -105,9 +108,10 @@ def delete_notebook(notebook_id: int, session: SessionDep, user: CurrentUser):
     nb = _get_notebook(session, notebook_id)
     if nb.owner_id != user.id and user.role != Role.ADMIN:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the owner can delete")
-    # Capture attachment file paths before the DB rows cascade away, then unlink
-    # them after the delete so no files are orphaned on disk.
+    # Capture attachment + figure file paths before the DB rows cascade away,
+    # then unlink them after the delete so no files are orphaned on disk.
     paths = [attachment_service.attachment_path(a) for a in nb.attachments]
+    paths += [figure_service.figure_path(f) for f in nb.figures]
     session.delete(nb)
     session.commit()
     for path in paths:
@@ -253,6 +257,58 @@ def delete_attachment(
 ):
     att = _get_attachment(session, notebook_id, attachment_id)
     attachment_service.delete_attachment(session, att)
+
+
+# --------------------------------------------------------------------------- #
+# Figures (uploaded images embedded inline into reports via [[figure:ID]]).
+# Writer-only collection material; the published report embeds the bytes as a
+# data-URI, so report viewers never need this endpoint.
+# --------------------------------------------------------------------------- #
+@router.post("/{notebook_id}/figures", status_code=status.HTTP_201_CREATED)
+def add_figure(
+    notebook_id: int,
+    session: SessionDep,
+    _w: Writer,
+    file: Annotated[UploadFile, File()],
+    title: Annotated[str, Form()] = "",
+) -> Figure:
+    nb = _get_notebook(session, notebook_id)
+    return figure_service.save_upload(session, nb, file, title=title)
+
+
+def _get_figure(session: Session, notebook_id: int, figure_id: int) -> Figure:
+    fig = session.get(Figure, figure_id)
+    if not fig or fig.notebook_id != notebook_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Figure not found")
+    return fig
+
+
+@router.get("/{notebook_id}/figures/{figure_id}/raw")
+def figure_raw(
+    notebook_id: int, figure_id: int, session: SessionDep, _w: Writer
+):
+    """Serve a figure's bytes inline (for the notebook + editor thumbnails)."""
+    fig = _get_figure(session, notebook_id, figure_id)
+    path = figure_service.figure_path(fig)
+    if not path.exists():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Stored file missing")
+    return FileResponse(
+        path,
+        media_type=fig.content_type,
+        filename=fig.original_filename,
+        content_disposition_type="inline",
+        headers={"X-Content-Type-Options": "nosniff"},
+    )
+
+
+@router.delete(
+    "/{notebook_id}/figures/{figure_id}", status_code=status.HTTP_204_NO_CONTENT
+)
+def delete_figure(
+    notebook_id: int, figure_id: int, session: SessionDep, _w: Writer
+):
+    fig = _get_figure(session, notebook_id, figure_id)
+    figure_service.delete_figure(session, fig)
 
 
 @router.put("/{notebook_id}/requirements")

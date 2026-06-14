@@ -33,6 +33,11 @@
     <strong>{{ diamonds | length }}</strong>
     <span>Intrusion models</span>
   </a>
+  <a href="#figures" class="collection-step {{ 'is-done' if figures else '' }}">
+    <span class="step-kicker">Figures</span>
+    <strong>{{ figures | length }}</strong>
+    <span>Embeddable images</span>
+  </a>
   <a href="#products" class="collection-step {{ 'is-done' if reports else '' }}">
     <span class="step-kicker">Products</span>
     <strong>{{ reports | length }}</strong>
@@ -254,6 +259,49 @@
       <input name="title" placeholder="Label (optional — defaults to filename)" class="field">
       <input name="summary" placeholder="Short summary (optional)" class="field">
       <button class="btn btn--ghost btn--sm">Upload attachment</button>
+    </form>
+  {% endif %}
+</section>
+
+<!-- Figures -->
+<section id="figures" class="card card-pad-lg mb-6">
+  <div class="head-row mb-4">
+    <h2 class="section-title">Figures</h2>
+    <span class="eyebrow">{{ figures | length }}</span>
+  </div>
+  <p class="text-xs mb-4" style="color:var(--muted);">Images (PNG / JPEG / GIF) you can embed inline in a report by writing its <span class="mono" style="color:var(--accent-deep);">[[figure:ID]]</span> token in the body.</p>
+  {% if figures %}
+    <div class="figure-grid">
+      {% for f in figures %}
+        <div class="figure-card">
+          <img class="figure-thumb" src="/notebooks/{{ notebook.id }}/figures/{{ f.id }}/raw" alt="{{ f.title or f.original_filename }}" loading="lazy">
+          <div class="figure-card-meta">
+            <div class="row-title text-sm">{{ f.title or f.original_filename }}</div>
+            <div class="flex items-center gap-2 mt-1 flex-wrap">
+              <span class="mono text-xs" style="color:var(--accent-deep);">[[figure:{{ f.id }}]]</span>
+              <span class="mono text-xs" style="color:var(--muted);">{{ f.file_size | filesizeformat }}</span>
+            </div>
+            {% if can_write %}
+              <div class="file-row-actions mt-2">
+                <form method="post" action="/notebooks/{{ notebook.id }}/figures/{{ f.id }}/delete"
+                      onsubmit="return confirm('Delete this figure?');">
+                  <button class="link-danger" style="background:none;border:0;cursor:pointer;">Delete</button>
+                </form>
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="empty">No figures yet. Upload an image to embed it inline in a report.</p>
+  {% endif %}
+  {% if can_write %}
+    <form method="post" action="/notebooks/{{ notebook.id }}/figures" enctype="multipart/form-data"
+          class="space-y-2.5 mt-5 pt-5 border-t border-line">
+      <input type="file" name="file" accept="image/png,image/jpeg,image/gif" required class="field">
+      <input name="title" placeholder="Caption (optional — defaults to filename)" class="field">
+      <button class="btn btn--ghost btn--sm">Upload figure</button>
     </form>
   {% endif %}
 </section>
