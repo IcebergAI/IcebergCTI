@@ -1012,3 +1012,60 @@ select.field {
   border-bottom: 1px solid var(--line);
 }
 .figure-card-meta { padding: 12px 14px; }
+
+/* --- Help & onboarding ---------------------------------------------------- */
+/* A small "?" / inline pointer into the /help page. */
+.help-hint {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 12px; font-weight: 600; color: var(--accent-ink);
+}
+.help-hint:hover { color: var(--accent-deep); }
+/* When used as a bare "?" badge next to a heading. */
+h2 .help-hint, .eyebrow .help-hint {
+  justify-content: center; width: 18px; height: 18px; padding: 0;
+  border-radius: 50%; background: var(--accent-soft);
+  border: 1px solid var(--accent-line); line-height: 1;
+}
+
+.help-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 22px; }
+.help-tab {
+  font-size: 13.5px; font-weight: 600; color: var(--muted);
+  padding: 7px 14px; border-radius: var(--radius-sm);
+  border: 1px solid var(--line); background: var(--surface);
+}
+.help-tab:hover { color: var(--ink); background: var(--surface-2); }
+.help-tab.is-active {
+  color: var(--accent-deep); background: var(--accent-soft);
+  border-color: var(--accent-line);
+}
+.help-tab-you {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--accent-deep);
+  padding: 1px 5px; border-radius: 999px; background: var(--surface);
+  border: 1px solid var(--accent-line);
+}
+
+.help-tagline { font-size: 16px; color: var(--ink-soft); line-height: 1.5; }
+.help-workflow { margin: 0; padding-left: 20px; }
+.help-workflow li { margin-bottom: 7px; color: var(--ink-soft); line-height: 1.5; }
+.help-list { margin: 0; padding-left: 18px; }
+.help-list li { margin-bottom: 6px; color: var(--ink-soft); line-height: 1.5; }
+.help-list-can li::marker { content: "✓ "; color: var(--accent-ink); }
+.help-list-cannot li::marker { content: "✕ "; color: var(--muted); }
+.help-screens { display: flex; flex-wrap: wrap; gap: 8px; }
+.help-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.glossary { display: grid; gap: 14px; }
+@media (min-width: 768px) { .glossary { grid-template-columns: repeat(2, 1fr); } }
+.concept { scroll-margin-top: 90px; }
+.concept-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+}
+.concept-term { font-size: 16px; font-weight: 700; color: var(--ink); }
+.concept-cat {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--muted); white-space: nowrap;
+}
+.concept-body { margin-top: 8px; color: var(--ink-soft); font-size: 14px; line-height: 1.6; }
+.concept-points { margin: 10px 0 0; padding-left: 18px; }
+.concept-points li { margin-bottom: 5px; color: var(--ink-soft); font-size: 13.5px; line-height: 1.5; }

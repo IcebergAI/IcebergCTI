@@ -55,6 +55,7 @@
         {% if user.role == 'ADMIN' %}
           <a href="/admin/tags" class="nav-link {{ 'is-active' if path.startswith('/admin/tags') }}">Taxonomy</a>
         {% endif %}
+        <a href="/help" class="nav-link {{ 'is-active' if path.startswith('/help') }}">Help</a>
       </div>
       <div class="nav-spacer"></div>
       <span class="identity">

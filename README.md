@@ -96,6 +96,10 @@ Open <http://localhost:8000>. With `ICEBERG_DEV_AUTH=true` (the default) you'll 
 **dev login** on the sign-in page — pick a role (e.g. `ANALYST`) and continue. The schema is
 created automatically on first boot (`ICEBERG_AUTO_MIGRATE=true` runs migrations for you).
 
+**Get oriented:** open **Help** in the nav (`/help`) for a guide to your role's workflow,
+a browsable look at what the other roles do, and a glossary of the intelligence concepts
+(TLP, intel levels, source grading, the Diamond Model, ICD 203 judgements, dissemination).
+
 ### Try the authoring loop
 1. Create a **notebook** from the dashboard.
 2. Add a couple of **sources**, a **note**, and upload an **attachment** (e.g. a PDF).
