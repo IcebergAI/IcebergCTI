@@ -35,6 +35,7 @@ dev = [
     "ruff>=0.15",
     "bandit>=1.9",
     "vulture>=2.16",
+    "pip-audit>=2.7",
 ]
 
 [project.scripts]
