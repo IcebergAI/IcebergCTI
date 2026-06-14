@@ -1,7 +1,6 @@
 # Iceberg 🧊
 
 [![CI](https://github.com/TheSlopBucket/iceberg/actions/workflows/ci.yml/badge.svg)](https://github.com/TheSlopBucket/iceberg/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/TheSlopBucket/iceberg/actions/workflows/codeql.yml/badge.svg)](https://github.com/TheSlopBucket/iceberg/actions/workflows/codeql.yml)
 ![Python](https://img.shields.io/badge/python-3.14-blue.svg)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
@@ -245,8 +244,7 @@ gated by `fail_under` in `pyproject.toml`) and a **static** job — `ruff check`
 `bandit -r src/iceberg` (security), `vulture` (dead code; configured under `[tool.vulture]`
 with `vulture_whitelist.py` for framework false positives), and `pip-audit --skip-editable`
 (fails on a known CVE in any installed dependency — the version floors in `pyproject.toml`
-are not a lockfile). A separate [CodeQL](.github/workflows/codeql.yml) workflow
-adds dataflow/taint SAST (push, PR, and a weekly schedule). Third-party actions are **pinned
+are not a lockfile). Third-party actions are **pinned
 to commit SHAs** (with a tracking version comment), and [Dependabot](.github/dependabot.yml)
 keeps the Python dependencies and those action pins current. Reproduce the local gates with
 `pip install -e ".[dev]"` then the commands above.
