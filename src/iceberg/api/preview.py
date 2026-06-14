@@ -18,6 +18,7 @@ from ..schemas import (
     ReportPreviewRequest,
 )
 from ..services import diamond as diamond_service
+from ..services import product_html as product_html_service
 
 router = APIRouter(tags=["preview"])
 
@@ -32,7 +33,7 @@ def preview(
         report = session.get(Report, body.report_id)
         if report is not None:
             return PreviewResponse(
-                html=diamond_service.preview_body_html(
+                html=product_html_service.preview_body_html(
                     session, report.notebook_id, body.markdown
                 )
             )
@@ -50,7 +51,7 @@ def preview_product(
         # Unknown report — fall back to a notebook-less render (no diamond scope).
         return PreviewResponse(html=render_markdown(body.body_md))
     return PreviewResponse(
-        html=diamond_service.preview_report_product_html(
+        html=product_html_service.preview_report_product_html(
             session,
             report.notebook_id,
             body_md=body.body_md,

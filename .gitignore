@@ -15,4 +15,5 @@ htmlcov/
 *.db
 /rendered/
 /attachments/
+/figures/
 .env

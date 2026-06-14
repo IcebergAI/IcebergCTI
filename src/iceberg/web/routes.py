@@ -27,6 +27,7 @@ from ..models import (
     Attachment,
     DiamondConfidence,
     DisseminationEvent,
+    Figure,
     IntelLevel,
     Notebook,
     Priority,
@@ -51,8 +52,10 @@ from ..services import (
     attachments as attachment_service,
     diamond as diamond_service,
     dissemination,
+    figures as figure_service,
     lifecycle,
     notebooks as notebook_service,
+    product_html as product_html_service,
     requirements as req_service,
     search as search_service,
     source_grading,
@@ -221,6 +224,7 @@ def notebook_detail(
             "sources": list(nb.sources),
             "notes": list(nb.notes),
             "attachments": list(nb.attachments),
+            "figures": list(nb.figures),
             "reports": list(nb.reports),
             "diamonds": diamonds,
             "diamond_svgs": {d.id: diamond_service.render_diamond_svg(d) for d in diamonds},
@@ -409,6 +413,55 @@ def delete_attachment(
     return _redirect(f"/notebooks/{notebook_id}")
 
 
+def _get_figure(session: Session, notebook_id: int, figure_id: int):
+    fig = session.get(Figure, figure_id)
+    if not fig or fig.notebook_id != notebook_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Figure not found")
+    return fig
+
+
+@router.post("/notebooks/{notebook_id}/figures")
+def add_figure(
+    notebook_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+    file: Annotated[UploadFile, File()],
+    title: Annotated[str, Form()] = "",
+):
+    _require_writer(user)
+    nb = _get_notebook(session, notebook_id)
+    figure_service.save_upload(session, nb, file, title=title)
+    return _redirect(f"/notebooks/{notebook_id}#figures")
+
+
+@router.get("/notebooks/{notebook_id}/figures/{figure_id}/raw")
+def figure_raw(
+    notebook_id: int, figure_id: int, session: SessionDep, user: CurrentUser
+):
+    _require_writer(user)  # raw notebook material is writer-only
+    fig = _get_figure(session, notebook_id, figure_id)
+    path = figure_service.figure_path(fig)
+    if not path.exists():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Stored file missing")
+    return FileResponse(
+        path,
+        media_type=fig.content_type,
+        filename=fig.original_filename,
+        content_disposition_type="inline",
+        headers={"X-Content-Type-Options": "nosniff"},
+    )
+
+
+@router.post("/notebooks/{notebook_id}/figures/{figure_id}/delete")
+def delete_figure(
+    notebook_id: int, figure_id: int, session: SessionDep, user: CurrentUser
+):
+    _require_writer(user)
+    fig = _get_figure(session, notebook_id, figure_id)
+    figure_service.delete_figure(session, fig)
+    return _redirect(f"/notebooks/{notebook_id}#figures")
+
+
 # --------------------------------------------------------------------------- #
 # Diamond Model assessments
 # --------------------------------------------------------------------------- #
@@ -558,7 +611,9 @@ def report_view(
         {
             "user": user,
             "report": report,
-            "product_html": diamond_service.render_report_product_html(session, report),
+            "product_html": product_html_service.render_report_product_html(
+                session, report
+            ),
             "cited_sources": list(report.cited_sources),
             "cited_attachments": list(report.cited_attachments),
             "products": list(report.rendered_products),
@@ -594,12 +649,15 @@ def report_edit(
             "cited_attachment_ids": {a.id for a in report.cited_attachments},
             "products": list(report.rendered_products),
             "typst_available": typst_available(),
-            "preview_html": diamond_service.render_report_product_html(session, report),
+            "preview_html": product_html_service.render_report_product_html(
+                session, report
+            ),
             "diamonds": list(notebook.diamond_models),
             "diamond_svgs": {
                 d.id: diamond_service.render_diamond_svg(d)
                 for d in notebook.diamond_models
             },
+            "figures": list(notebook.figures),
             "all_requirements": _open_requirements(session, report.requirements),
             "linked_req_ids": {r.id for r in report.requirements},
             "all_tags": tag_service.offerable_tags(session, report.tags),

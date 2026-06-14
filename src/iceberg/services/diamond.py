@@ -21,20 +21,14 @@ from fastapi import HTTPException, status
 from sqlmodel import Session, col, select
 
 from ..models import DiamondConfidence, DiamondModel, Notebook, Report, utcnow
-from ..rendering.markdown import render_markdown
 
 # --------------------------------------------------------------------------- #
 # Token grammar (the one place that knows the `[[diamond:ID]]` syntax). The
 # Typst path re-declares an equivalent literal in rendering/typst.py to keep the
-# rendering layer free of a service import.
+# rendering layer free of a service import; the web/preview pipeline lives in
+# services/product_html.py (it injects the SVG after nh3 sanitisation).
 # --------------------------------------------------------------------------- #
 DIAMOND_TOKEN_RE = re.compile(r"\[\[diamond:(\d+)\]\]")
-
-# An alnum sentinel that survives markdown-it + nh3 unchanged, so we can inject
-# the (server-generated, trusted) SVG *after* sanitisation — nh3 would otherwise
-# strip raw <svg> from the body.
-_SENTINEL_BLOCK_RE = re.compile(r"<p>xICEBERGDIAMONDx(\d+)x</p>")
-_SENTINEL_BARE_RE = re.compile(r"xICEBERGDIAMONDx(\d+)x")
 
 
 def referenced_ids(text: str) -> list[int]:
@@ -124,117 +118,18 @@ def referenced_diamonds(session: Session, report: Report) -> list[DiamondModel]:
 
 
 # --------------------------------------------------------------------------- #
-# Web body rendering (token -> inline figure, injected post-sanitisation)
+# Token resolution: notebook-scoped svg map consumed by services/product_html.py
+# (web/preview) and built per-render for the Typst PDF.
 # --------------------------------------------------------------------------- #
-def _figure(diamond_id: int, svg_by_id: dict[int, str]) -> str:
-    svg = svg_by_id.get(diamond_id)
-    if svg is None:
-        return '<p class="diamond-missing">Diamond model unavailable.</p>'
-    return (
-        '<figure class="diamond-figure">'
-        f'<div class="diamond-svg">{svg}</div>'
-        "<figcaption>Diamond Model of Intrusion Analysis</figcaption>"
-        "</figure>"
-    )
-
-
-def _to_html(markdown_text: str, svg_by_id: dict[int, str]) -> str:
-    pre = DIAMOND_TOKEN_RE.sub(
-        lambda m: f"\n\nxICEBERGDIAMONDx{int(m.group(1))}x\n\n", markdown_text or ""
-    )
-    html = render_markdown(pre)
-    html = _SENTINEL_BLOCK_RE.sub(lambda m: _figure(int(m.group(1)), svg_by_id), html)
-    # Any token left inline (mid-paragraph) — degrade to an inline figure.
-    html = _SENTINEL_BARE_RE.sub(
-        lambda m: (
-            f'<span class="diamond-inline">{svg_by_id[int(m.group(1))]}</span>'
-            if int(m.group(1)) in svg_by_id
-            else '<span class="diamond-missing">[diamond unavailable]</span>'
-        ),
-        html,
-    )
-    return html
-
-
-def render_report_body_html(session: Session, report: Report) -> str:
-    """Render a report body to sanitized HTML with its diamond diagrams inlined."""
-    found = _scoped_by_id(session, report.notebook_id, report.body_md)
-    svg_by_id = {i: render_diamond_svg(d) for i, d in found.items()}
-    return _to_html(report.body_md, svg_by_id)
-
-
-def preview_body_html(session: Session, notebook_id: int, markdown_text: str) -> str:
-    """Live-preview variant: resolve tokens against a notebook's diamonds."""
-    found = _scoped_by_id(session, notebook_id, markdown_text)
-    svg_by_id = {i: render_diamond_svg(d) for i, d in found.items()}
-    return _to_html(markdown_text, svg_by_id)
-
-
-# --------------------------------------------------------------------------- #
-# Finished-product HTML: Key Judgements callout + body + Key Assumptions +
-# Intelligence Gaps, assembled in one place so the published report view and the
-# editor's live / read-only preview render identically (no markup drift). All
-# fragments go through render_markdown (nh3-sanitised); the body additionally has
-# its diamond diagrams inlined.
-# --------------------------------------------------------------------------- #
-def _scaffold_section(label: str, md: str) -> str:
-    if not (md or "").strip():
-        return ""
-    return (
-        f'<h2 class="section-title mt-9 mb-3">{label}</h2>'
-        f'<div class="md">{render_markdown(md)}</div>'
-    )
-
-
-def _assemble_product_html(
-    *,
-    body_html: str,
-    key_judgements: str,
-    key_assumptions: str,
-    intelligence_gaps: str,
-) -> str:
-    parts: list[str] = []
-    if (key_judgements or "").strip():
-        parts.append(
-            '<section class="kj-callout">'
-            '<div class="eyebrow eyebrow-accent mb-2">Key judgements</div>'
-            f'<div class="md">{render_markdown(key_judgements)}</div>'
-            "</section>"
-        )
-    parts.append(f'<div class="md">{body_html}</div>')
-    parts.append(_scaffold_section("Key assumptions", key_assumptions))
-    parts.append(_scaffold_section("Intelligence gaps", intelligence_gaps))
-    return "".join(parts)
-
-
-def render_report_product_html(session: Session, report: Report) -> str:
-    """A saved report rendered to finished-product HTML (Key Judgements + body
-    with inline diagrams + Key Assumptions + Intelligence Gaps)."""
-    return _assemble_product_html(
-        body_html=render_report_body_html(session, report),
-        key_judgements=report.key_judgements,
-        key_assumptions=report.key_assumptions,
-        intelligence_gaps=report.intelligence_gaps,
-    )
-
-
-def preview_report_product_html(
-    session: Session,
-    notebook_id: int,
-    *,
-    body_md: str,
-    key_judgements: str,
-    key_assumptions: str,
-    intelligence_gaps: str,
-) -> str:
-    """Live-preview variant: assemble the editor's unsaved field values (body
-    diagrams resolved against the report's notebook)."""
-    return _assemble_product_html(
-        body_html=preview_body_html(session, notebook_id, body_md),
-        key_judgements=key_judgements,
-        key_assumptions=key_assumptions,
-        intelligence_gaps=intelligence_gaps,
-    )
+def scoped_diamond_svg(
+    session: Session, notebook_id: int, text: str
+) -> dict[int, str]:
+    """Map of diamond id -> rendered SVG for the diamonds referenced by ``text``
+    and owned by ``notebook_id``."""
+    return {
+        i: render_diamond_svg(d)
+        for i, d in _scoped_by_id(session, notebook_id, text).items()
+    }
 
 
 # --------------------------------------------------------------------------- #

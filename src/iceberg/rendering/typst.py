@@ -39,6 +39,10 @@ _TEMPLATE = Path(__file__).resolve().parent.parent / "typst" / "product.typ"
 # it is rewritten to a markdown image that cmarker turns into a Typst `image()`,
 # resolving against the per-render SVG files written into the temp `--root`.
 _DIAMOND_TOKEN_RE = re.compile(r"\[\[diamond:(\d+)\]\]")
+# Mirror of services.figures.FIGURE_TOKEN_RE — same rationale as the diamond one:
+# `[[figure:ID]]` is rewritten to a markdown image that cmarker turns into a Typst
+# `image()`, resolving against the per-render image files in the temp `--root`.
+_FIGURE_TOKEN_RE = re.compile(r"\[\[figure:(\d+)\]\]")
 
 
 def _rewrite_diamond_tokens(body: str, diamonds: list[tuple[int, str, str]]) -> str:
@@ -55,6 +59,24 @@ def _rewrite_diamond_tokens(body: str, diamonds: list[tuple[int, str, str]]) -> 
         return "\n\n*[diamond model unavailable]*\n\n"
 
     return _DIAMOND_TOKEN_RE.sub(_sub, body or "")
+
+
+def _rewrite_figure_tokens(
+    body: str, figures: list[tuple[int, str, str, str]]
+) -> str:
+    captions = {fid: caption for fid, caption, _path, _ext in figures}
+    exts = {fid: ext for fid, _caption, _path, ext in figures}
+
+    def _sub(match: re.Match) -> str:
+        fid = int(match.group(1))
+        if fid in captions:
+            caption = captions[fid].replace("[", "(").replace("]", ")").replace("\n", " ")
+            # The image file is copied into the temp `--root` as figure-{id}{ext}
+            # (see render_product); product.typ's `image` override resolves it.
+            return f"\n\n![{caption}](figure-{fid}{exts[fid]})\n\n"
+        return "\n\n*[figure unavailable]*\n\n"
+
+    return _FIGURE_TOKEN_RE.sub(_sub, body or "")
 
 
 class TypstNotAvailable(RuntimeError):
@@ -76,8 +98,14 @@ def _build_data(
     attachments: list[Attachment],
     tags: list[Tag],
     diamonds: list[tuple[int, str, str]],
+    figures: list[tuple[int, str, str, str]],
 ) -> dict:
     stamp = report.published_at or report.updated_at
+    # Both inline-embed tokens are rewritten to markdown images here (disjoint
+    # token sets, so order is irrelevant); the files are written into the temp
+    # --root by render_product and resolved by product.typ's `image` override.
+    body_md = _rewrite_diamond_tokens(report.body_md or "", diamonds)
+    body_md = _rewrite_figure_tokens(body_md, figures)
     return {
         "title": report.title,
         "intel_level": report.intel_level.value,
@@ -86,7 +114,7 @@ def _build_data(
         "author": author_name,
         "date": stamp.strftime("%Y-%m-%d") if stamp else date.today().isoformat(),
         "cmarker_version": get_settings().cmarker_version,
-        "body_md": _rewrite_diamond_tokens(report.body_md or "", diamonds),
+        "body_md": body_md,
         "key_judgements": report.key_judgements or "",
         "key_assumptions": report.key_assumptions or "",
         "intelligence_gaps": report.intelligence_gaps or "",
@@ -124,6 +152,7 @@ def render_product(
     attachments: list[Attachment] | None = None,
     tags: list[Tag] | None = None,
     diamonds: list[tuple[int, str, str]] | None = None,
+    figures: list[tuple[int, str, str, str]] | None = None,
     fmt: ProductFormat,
 ) -> Path:
     settings = get_settings()
@@ -133,6 +162,7 @@ def render_product(
         )
 
     diamonds = diamonds or []
+    figures = figures or []
     out_dir = Path(settings.render_output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = (
@@ -144,7 +174,13 @@ def render_product(
         (tmp_dir / "data.json").write_text(
             json.dumps(
                 _build_data(
-                    report, author_name, sources, attachments or [], tags or [], diamonds
+                    report,
+                    author_name,
+                    sources,
+                    attachments or [],
+                    tags or [],
+                    diamonds,
+                    figures,
                 )
             ),
             encoding="utf-8",
@@ -153,6 +189,10 @@ def render_product(
         # the temp `--root` via cmarker's `image()`.
         for did, _title, svg in diamonds:
             (tmp_dir / f"diamond-{did}.svg").write_text(svg, encoding="utf-8")
+        # Figure images referenced inline by the body — copied into the same
+        # `--root` as figure-{id}{ext}.
+        for fid, _caption, src_path, ext in figures:
+            shutil.copy(src_path, tmp_dir / f"figure-{fid}{ext}")
         shutil.copy(_TEMPLATE, tmp_dir / "product.typ")
         cmd = [
             settings.typst_bin,

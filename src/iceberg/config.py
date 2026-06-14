@@ -67,6 +67,14 @@ class Settings(BaseSettings):
         "application/vnd.openxmlformats-officedocument.presentationml.presentation"
     )
 
+    # Notebook figures (uploaded images embedded inline into reports via the
+    # [[figure:ID]] token). Restricted to PNG/JPEG/GIF in services/figures.py
+    # (the browser-data-URI ∩ Typst-image() intersection); stored on disk like
+    # attachments. Smaller default cap than attachments — figure bytes are
+    # base64-inlined into the report HTML.
+    figures_dir: str = "./figures"
+    figure_max_mb: int = 10
+
     # Dissemination (Milestone 3)
     portal_base_url: str = "http://localhost:8000"
     # Auto-disseminate reports at or below this TLP; RED / AMBER_STRICT are
@@ -96,6 +104,10 @@ class Settings(BaseSettings):
     @property
     def max_attachment_bytes(self) -> int:
         return self.attachment_max_mb * 1024 * 1024
+
+    @property
+    def max_figure_bytes(self) -> int:
+        return self.figure_max_mb * 1024 * 1024
 
     @property
     def allowed_attachment_types(self) -> frozenset[str]:

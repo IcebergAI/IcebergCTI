@@ -12,7 +12,7 @@ Analysts work in topic **notebooks** — gathering sources, notes and uploaded
 Model** — and author **reports** (intelligence products) in markdown. Reports carry
 an intelligence level (Strategic / Tactical / Operational) and a TLP marking, cite
 sources and attachments, carry Admiralty/NATO-style **source reliability grading**,
-**embed Diamond Model diagrams inline**, are classified with **taxonomy tags** (threat
+**embed Diamond Model diagrams and figures (images) inline**, are classified with **taxonomy tags** (threat
 actor / campaign / malware / ATT&CK technique / sector / topic), move through a review
 workflow, and can be rendered to branded PDF products.
 Everything is **searchable** — full-text + faceted across the report library.
@@ -120,6 +120,13 @@ created automatically on first boot (`ICEBERG_AUTO_MIGRATE=true` runs migrations
 3. The diagram renders in the live preview, the published report page, and the
    Typst PDF — all from one server-generated SVG.
 
+### Embed an image (figure)
+1. In a notebook, open the **Figures** section and upload an image (PNG/JPEG/GIF).
+2. In a report editor, click **Insert at cursor** next to the figure (or type its
+   `[[figure:ID]]` token) to embed the image **inline at that point** in the body.
+3. The image renders in the live preview, the published report page (as an inline
+   `data:` URI), and the Typst PDF — all from the one upload.
+
 ### Try requirements & tasking
 1. Sign in as a `STAKEHOLDER` → **My Requirements** → submit an intelligence requirement
    (title, priority, intel level).
@@ -167,6 +174,7 @@ All settings use the `ICEBERG_` env prefix and can live in `.env` (see
 | `ICEBERG_TYPST_BIN` / `ICEBERG_RENDER_OUTPUT_DIR` | Typst binary + PDF output dir |
 | `ICEBERG_ATTACHMENTS_DIR` / `ICEBERG_ATTACHMENT_MAX_MB` | Notebook attachment storage dir + size cap (default 25 MB) |
 | `ICEBERG_ATTACHMENT_ALLOWED_TYPES` | Comma-separated MIME whitelist for uploads (override the default set) |
+| `ICEBERG_FIGURES_DIR` / `ICEBERG_FIGURE_MAX_MB` | Notebook figure (embeddable image) storage dir + size cap (default 10 MB) |
 | `ICEBERG_DISSEMINATION_MAX_TLP` | Broadcast ceiling (default `AMBER`; RED/AMBER_STRICT withheld) |
 | `ICEBERG_EMAIL_BACKEND` + `ICEBERG_SMTP_*` | `console` (dev) or `smtp`; SMTP server settings |
 | `ICEBERG_PORTAL_BASE_URL` | Base URL used in notification email links |

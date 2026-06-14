@@ -21,6 +21,7 @@ from ..models import (
 )
 from ..rendering.typst import render_product
 from . import diamond as diamond_service
+from . import figures as figure_service
 
 
 # --------------------------------------------------------------------------- #
@@ -119,6 +120,20 @@ def render_report(
         (d.id, d.title, diamond_service.render_diamond_svg(d))
         for d in diamond_service.referenced_diamonds(session, report)
     ]
+    # (id, caption, on-disk path, extension) for each embedded figure whose file
+    # is present; a missing file degrades to "[figure unavailable]" in the PDF.
+    figures: list[tuple[int, str, str, str]] = []
+    for fig in figure_service.referenced_figures(session, report):
+        fig_path = figure_service.figure_path(fig)
+        if fig_path.exists():
+            figures.append(
+                (
+                    fig.id,
+                    fig.title or fig.original_filename,
+                    str(fig_path),
+                    Path(fig.stored_filename).suffix,
+                )
+            )
     path = render_product(
         report=report,
         author_name=author_name,
@@ -126,6 +141,7 @@ def render_report(
         attachments=list(report.cited_attachments),
         tags=list(report.tags),
         diamonds=diamonds,
+        figures=figures,
         fmt=fmt,
     )
     product = RenderedProduct(report_id=report.id, format=fmt, pdf_path=str(path))

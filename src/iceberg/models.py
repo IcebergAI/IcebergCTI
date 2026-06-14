@@ -290,6 +290,9 @@ class Notebook(SQLModel, table=True):
     diamond_models: list["DiamondModel"] = Relationship(
         back_populates="notebook", cascade_delete=True
     )
+    figures: list["Figure"] = Relationship(
+        back_populates="notebook", cascade_delete=True
+    )
     reports: list["Report"] = Relationship(
         back_populates="notebook", cascade_delete=True
     )
@@ -379,6 +382,32 @@ class Attachment(SQLModel, table=True):
     reports: list["Report"] = Relationship(
         back_populates="cited_attachments", link_model=ReportAttachment
     )
+
+
+class Figure(SQLModel, table=True):
+    """An uploaded image held against a notebook and embedded inline into a
+    report by writing the ``[[figure:ID]]`` token in the report body.
+
+    Like ``DiamondModel`` (and unlike ``Attachment``), there is no citation link
+    table — the token *is* the association, resolved (notebook-scoped) at render
+    time. Restricted to PNG/JPEG/GIF (the browser-data-URI ∩ Typst-image()
+    intersection). Only ``stored_filename`` (a server-generated UUID name) builds
+    a path on disk; ``original_filename`` is display/download metadata. See
+    ``services/figures.py``.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    notebook_id: int = Field(
+        foreign_key="notebook.id", ondelete="CASCADE", index=True
+    )
+    title: str = ""  # caption / alt text; falls back to the filename in the UI
+    original_filename: str
+    stored_filename: str  # uuid4().hex + ext — the on-disk name
+    content_type: str  # image/png | image/jpeg | image/gif
+    file_size: int = 0
+    created_at: datetime = Field(default_factory=utcnow)
+
+    notebook: Notebook = Relationship(back_populates="figures")
 
 
 class Report(SQLModel, table=True):
