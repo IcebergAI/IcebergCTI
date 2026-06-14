@@ -28,7 +28,7 @@ jobs:
           cache-dependency-path: pyproject.toml
       # Lets tests/test_render.py exercise the real Typst PDF path instead of
       # skipping (it fetches the pinned cmarker package over the network once).
-      - uses: typst-community/setup-typst@f5c90506c7ae74fca20e339034af05c52e0eda92 # v3.1.0
+      - uses: typst-community/setup-typst@63ac138db421d586de61f7f5ac3bcef6a2e6c78c # v5.1.0
       - run: pip install -e ".[dev]"
       - name: Run tests with coverage
         run: pytest --cov=iceberg --cov-report=term-missing  # fail_under enforced from pyproject
