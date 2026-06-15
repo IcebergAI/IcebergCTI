@@ -8,7 +8,7 @@ core; Requirement drives stakeholder intake and the analyst tasking board.
 from datetime import datetime, timezone
 from enum import StrEnum
 
-from sqlalchemy import UniqueConstraint
+from sqlalchemy import JSON, Column, UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -524,6 +524,13 @@ class Tag(SQLModel, table=True):
     slug: str = Field(index=True)  # normalised label; unique within a kind
     external_id: str = ""  # e.g. MITRE ATT&CK technique id "T1566"
     description: str = ""
+    # Alternate names for named-threat entities (ACTOR/MALWARE/CAMPAIGN) so the
+    # APT28 / Fancy Bear / Sofacy naming problem resolves to one tag; makes search
+    # alias-aware (see services/search.py). Empty for other kinds.
+    aliases: list[str] = Field(
+        default_factory=list,
+        sa_column=Column(JSON, nullable=False, server_default="[]"),
+    )
     active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=utcnow)
 

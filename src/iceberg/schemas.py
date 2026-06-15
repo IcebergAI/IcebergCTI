@@ -192,12 +192,14 @@ class TagCreate(BaseModel):
     label: str
     external_id: str = ""
     description: str = ""
+    aliases: list[str] = []
 
 
 class TagUpdate(BaseModel):
     label: str | None = None
     external_id: str | None = None
     description: str | None = None
+    aliases: list[str] | None = None
     active: bool | None = None
 
 

@@ -1155,10 +1155,16 @@ def admin_tag_create(
     label: Annotated[str, Form()],
     external_id: Annotated[str, Form()] = "",
     description: Annotated[str, Form()] = "",
+    aliases: Annotated[str, Form()] = "",
 ):
     _require_admin(user)
     tag_service.create_tag(
-        session, kind=kind, label=label, external_id=external_id, description=description
+        session,
+        kind=kind,
+        label=label,
+        external_id=external_id,
+        description=description,
+        aliases=tag_service.parse_aliases(aliases),
     )
     return _redirect("/admin/tags")
 
@@ -1178,6 +1184,7 @@ def admin_tag_update(
     label: Annotated[str, Form()] = "",
     external_id: Annotated[str, Form()] = "",
     description: Annotated[str, Form()] = "",
+    aliases: Annotated[str, Form()] = "",
     active: Annotated[bool, Form()] = False,
 ):
     _require_admin(user)
@@ -1188,6 +1195,7 @@ def admin_tag_update(
         label=label or None,
         external_id=external_id,
         description=description,
+        aliases=tag_service.parse_aliases(aliases),
         active=active,
     )
     return _redirect("/admin/tags")

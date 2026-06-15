@@ -132,6 +132,55 @@ def test_non_author_cannot_tag(client, login):
 
 
 # --------------------------------------------------------------------------- #
+# Aliases (roadmap 2a) — named-threat entities carry alternate names
+# --------------------------------------------------------------------------- #
+def test_create_tag_with_aliases_roundtrips(client, login):
+    login("ADMIN", email="admin@example.com")
+    resp = client.post(
+        "/api/tags",
+        json={
+            "kind": "ACTOR",
+            "label": "APT28",
+            "aliases": ["Fancy Bear", "Sofacy", "fancy bear", "APT28"],
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    # deduped case-insensitively; the canonical label is dropped as an alias.
+    assert resp.json()["aliases"] == ["Fancy Bear", "Sofacy"]
+
+
+def test_aliases_default_empty(client, login):
+    tag = _create_tag(client, login, label="APT29")
+    assert tag["aliases"] == []
+
+
+def test_update_tag_aliases(client, login):
+    tag = _create_tag(client, login, kind="ACTOR", label="APT29")
+    login("ADMIN", email="admin@example.com")
+    out = client.patch(
+        f"/api/tags/{tag['id']}", json={"aliases": ["Cozy Bear", "Nobelium"]}
+    )
+    assert out.status_code == 200
+    assert out.json()["aliases"] == ["Cozy Bear", "Nobelium"]
+
+
+def test_seed_aliases_imported_and_refreshed(engine):
+    entries = [
+        {"kind": "ACTOR", "label": "APT28", "external_id": "G0007",
+         "aliases": ["Fancy Bear"]},
+    ]
+    with Session(engine) as s:
+        seed_default_taxonomy(s, entries)
+        tag = s.exec(select(Tag).where(Tag.slug == "apt28")).first()
+        assert tag.aliases == ["Fancy Bear"]
+        # update=True refreshes the alias list
+        entries[0]["aliases"] = ["Fancy Bear", "Sofacy"]
+        assert seed_default_taxonomy(s, entries, update=True) == 0
+        s.refresh(tag)
+        assert tag.aliases == ["Fancy Bear", "Sofacy"]
+
+
+# --------------------------------------------------------------------------- #
 # Starter taxonomy catalog + import step
 # --------------------------------------------------------------------------- #
 def test_starter_catalog_is_valid():

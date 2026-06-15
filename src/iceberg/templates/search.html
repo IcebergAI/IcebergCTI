@@ -10,6 +10,11 @@
       {% if active_tag %}Tagged · {{ active_tag.label }}{% else %}Search reports{% endif %}
     </h1>
     <div class="title-rule"></div>
+    {% if active_tag and active_tag.aliases %}
+      <p class="text-sm mt-3" style="color:var(--muted);">
+        <span class="eyebrow">Also known as</span> {{ active_tag.aliases | join(' · ') }}
+      </p>
+    {% endif %}
   </div>
   <span class="eyebrow">{{ items | length }} result{{ '' if items|length == 1 else 's' }}</span>
 </div>

@@ -23,9 +23,12 @@ def _publish(client, login, rid):
     client.post(f"/api/reports/{rid}/transition", json={"target": "PUBLISHED"})
 
 
-def _create_tag(client, login, kind="ACTOR", label="APT29"):
+def _create_tag(client, login, kind="ACTOR", label="APT29", aliases=None):
     login("ADMIN", email="admin@example.com")
-    return client.post("/api/tags", json={"kind": kind, "label": label}).json()
+    return client.post(
+        "/api/tags",
+        json={"kind": kind, "label": label, "aliases": aliases or []},
+    ).json()
 
 
 def _titles(resp):
@@ -98,6 +101,36 @@ def test_facet_by_intel_level(client, login):
     client.post("/api/reports", json={"notebook_id": nb["id"], "title": "Op", "intel_level": "OPERATIONAL"})
     out = client.get("/api/search", params={"intel_level": "STRATEGIC"})
     assert _titles(out) == ["Strat"]
+
+
+# --------------------------------------------------------------------------- #
+# Alias-aware search (roadmap 2a)
+# --------------------------------------------------------------------------- #
+def test_alias_query_finds_canonical_entity_reports(client, login):
+    """Searching an alias surfaces reports tagged with the canonical entity even
+    when the body never names the alias — the core 2a recall win."""
+    tag = _create_tag(client, login, label="APT28", aliases=["Fancy Bear", "Sofacy"])
+    rid = _report(client, login, "Intrusion set update", "Generic narrative body.")
+    login("ANALYST", email="author@example.com")
+    client.put(f"/api/reports/{rid}/tags", json={"tag_ids": [tag["id"]]})
+    # body has no "Fancy Bear" mention, yet the alias resolves via the tag.
+    assert _titles(client.get("/api/search", params={"q": "Fancy Bear"})) == [
+        "Intrusion set update"
+    ]
+    # an unrelated alias does not match.
+    assert client.get("/api/search", params={"q": "Cozy Bear"}).json()["count"] == 0
+
+
+def test_body_match_ranks_above_alias_only_match(client, login):
+    """Body relevance stays on top; alias-only entity matches are appended."""
+    tag = _create_tag(client, login, label="APT28", aliases=["Fancy Bear"])
+    alias_only = _report(client, login, "Tagged only", "Generic body, no keyword.")
+    _report(client, login, "Mentions fancybearkeyword", "fancybearkeyword in the body")
+    login("ANALYST", email="author@example.com")
+    client.put(f"/api/reports/{alias_only}/tags", json={"tag_ids": [tag["id"]]})
+    # "fancybearkeyword" hits the body of one report (FTS) and no alias.
+    titles = _titles(client.get("/api/search", params={"q": "fancybearkeyword"}))
+    assert titles == ["Mentions fancybearkeyword"]
 
 
 # --------------------------------------------------------------------------- #
