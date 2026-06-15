@@ -118,6 +118,9 @@ def _build_data(
         "key_judgements": report.key_judgements or "",
         "key_assumptions": report.key_assumptions or "",
         "intelligence_gaps": report.intelligence_gaps or "",
+        "analytic_confidence": (
+            report.analytic_confidence.value if report.analytic_confidence else ""
+        ),
         "sources": [
             {
                 "title": s.title,

@@ -19,6 +19,7 @@
       {{ m.status_badge(report.status) }}
       {{ m.level_badge(report.intel_level) }}
       {{ m.tlp_badge(report.tlp) }}
+      {{ m.confidence_badge(report.analytic_confidence) }}
     </div>
   </div>
   <a href="/reports/{{ report.id }}" class="btn btn--ghost btn--sm">
@@ -122,6 +123,15 @@
             </select>
           </div>
         </div>
+        <div>
+          <label class="field-label">Analytic confidence
+            <a href="/help#estimative-language" class="help-hint" target="_blank">?</a></label>
+          <select name="analytic_confidence" class="field">
+            <option value="" {% if not report.analytic_confidence %}selected{% endif %}>— Not stated —</option>
+            {% for c in AnalyticConfidence %}<option value="{{ c.value }}" {% if c == report.analytic_confidence %}selected{% endif %}>{{ c.value | capitalize }}</option>{% endfor %}
+          </select>
+          <p class="text-xs mt-1" style="color:var(--muted);">ICD 203 · your confidence in the judgements. State the <em>likelihood</em> of events in prose using the yardstick below.</p>
+        </div>
         <textarea name="body_md" rows="22" x-model="body" @input="schedule()"
                   class="field field-mono"></textarea>
 
@@ -142,6 +152,16 @@
           <p class="text-xs mb-1" style="color:var(--muted);">Markdown · what is not known, and collection still required.</p>
           <textarea name="intelligence_gaps" rows="4" x-model="gaps" @input="schedule()" class="field field-mono"></textarea>
         </div>
+
+        <details class="yardstick">
+          <summary>Probability yardstick — standardised likelihood terms (ICD 203)</summary>
+          <p class="text-xs mt-2 mb-2" style="color:var(--muted);">Phrase the likelihood of an event using these terms so "likely" always means the same thing. This is separate from your analytic confidence above.</p>
+          <ul class="yardstick-scale">
+            {% for b in probability_yardstick %}
+              <li><span class="yardstick-term">{{ b.term }}</span><span class="yardstick-range mono">{{ b.range_label }}</span></li>
+            {% endfor %}
+          </ul>
+        </details>
 
         <button class="btn btn--ink">Save draft</button>
       </form>

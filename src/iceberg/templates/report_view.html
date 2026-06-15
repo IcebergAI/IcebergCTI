@@ -11,6 +11,7 @@
   <div class="doc-marker">
     {{ m.tlp_badge(report.tlp) }}
     {{ m.level_badge(report.intel_level) }}
+    {{ m.confidence_badge(report.analytic_confidence) }}
     <span class="ml-auto eyebrow">
       {% if report.published_at %}Published {{ report.published_at.strftime('%d %b %Y') }}{% else %}Draft{% endif %}
     </span>

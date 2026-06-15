@@ -6,6 +6,7 @@ from fastapi.templating import Jinja2Templates
 
 from .config import get_settings
 from .models import (
+    AnalyticConfidence,
     IntelLevel,
     Priority,
     ProductFormat,
@@ -27,6 +28,7 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 templates.env.globals["app_name"] = get_settings().app_name
 templates.env.globals["tlp_label"] = tlp_label
 templates.env.globals["IntelLevel"] = IntelLevel
+templates.env.globals["AnalyticConfidence"] = AnalyticConfidence
 templates.env.globals["TLP"] = TLP
 templates.env.globals["ReportStatus"] = ReportStatus
 templates.env.globals["ProductFormat"] = ProductFormat

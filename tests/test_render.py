@@ -14,6 +14,7 @@ def test_build_data_includes_judgement_scaffolding():
     """The ICD 203 scaffolding fields reach the Typst template via data.json
     (no binary needed). Brief-vs-FULL omission is enforced in product.typ."""
     from iceberg.models import (
+        AnalyticConfidence,
         Report,
         Source,
         SourceCredibility,
@@ -29,6 +30,7 @@ def test_build_data_includes_judgement_scaffolding():
         key_judgements="We assess X.",
         key_assumptions="Assume Y.",
         intelligence_gaps="Gap Z.",
+        analytic_confidence=AnalyticConfidence.HIGH,
     )
     source = Source(
         notebook_id=1,
@@ -42,6 +44,10 @@ def test_build_data_includes_judgement_scaffolding():
     assert data["key_judgements"] == "We assess X."
     assert data["key_assumptions"] == "Assume Y."
     assert data["intelligence_gaps"] == "Gap Z."
+    assert data["analytic_confidence"] == "HIGH"
+    # Unset confidence carries as "" (the template shows no stamp).
+    report.analytic_confidence = None
+    assert _build_data(report, "A", [], [], [], [], [])["analytic_confidence"] == ""
     assert data["sources"][0]["grade"] == "B2"
     assert "grading_engine" not in data["sources"][0]
     assert "grading_rationale" not in data["sources"][0]
@@ -61,6 +67,7 @@ def _published_report(client, login):
             "key_judgements": "- The actor is likely escalating.",
             "key_assumptions": "Collection is representative.",
             "intelligence_gaps": "Funding source unknown.",
+            "analytic_confidence": "MODERATE",
         },
     )
     # Classify it so the PDF tag-chip rendering path is exercised.

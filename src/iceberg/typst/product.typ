@@ -317,6 +317,11 @@
       stamp(data.intel_level, fg: c-accent-deep, bg: c-accent-soft, bd: c-accent-line),
       stamp(data.status, fg: status-col, dot: status-col,
             bg: status-col.transparentize(91%), bd: status-col.transparentize(68%)),
+      // Analytic confidence (ICD 203) — calm neutral stamp, only when stated, so
+      // it never competes with the TLP/level/status markings.
+      ..if data.at("analytic_confidence", default: "") != "" {
+        (stamp(data.analytic_confidence + " confidence", fg: c-ink-soft, dot: c-muted),)
+      } else { () },
     )],
   )
 ]

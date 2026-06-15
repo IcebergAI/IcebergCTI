@@ -20,7 +20,7 @@ This roadmap **prioritises two themes** — *Analytic Tradecraft (ICD 203)* and 
 - Clean lifecycle, requirement→product traceability, FTS5 + faceted search, multi-format Typst PDFs.
 
 **Gaps that matter for a *finished-intelligence* platform:**
-- **No estimative language.** No Report-level analytic confidence, no standardised probability/likelihood lexicon. ICD 203 keeps *confidence* and *likelihood* distinct; Iceberg expresses neither (Diamond confidence is the only confidence anywhere).
+- ~~**No estimative language.**~~ **Addressed (§1b):** reports carry an optional analytic-confidence marking, and a standardised probability yardstick is shipped as an authoring aid (likelihood expressed in prose). The optional hedging lint is deferred.
 - **Limited structured analytic techniques.** Key Judgements / Key Assumptions / Intelligence Gaps are implemented, but deeper structured analytic techniques like Analysis of Competing Hypotheses (ACH) are still missing.
 - **Flat knowledge layer.** Actor/malware/campaign are flat `Tag` rows; aliases are concatenated into a description string ("Fancy Bear / Sofacy — Russia (GRU)"). No aliasing, no relationships, no entity profiles — the classic APT28/Fancy Bear/Sofacy naming problem is unmodelled.
 - **No machine-readable interop** (STIX/TAXII/Navigator) and **email/feed-only dissemination** — noted as secondary backlog below.
@@ -40,11 +40,12 @@ This roadmap **prioritises two themes** — *Analytic Tradecraft (ICD 203)* and 
 - Surfaced as a compact **"B2"-style chip** in the notebook source list, the report citation list, and the **PDF source appendix** (`typst/product.typ`). Existing rows remain ungraded until manually graded or regraded.
 - **Impact:** High / **Effort:** shipped. New enums + source columns + schema field ([schemas.py](src/iceberg/schemas.py)) + template/PDF chip.
 
-### 1b. Estimative language — analytic confidence *and* likelihood
+### 1b. Estimative language — analytic confidence *and* likelihood — ✅ **implemented** (lint deferred)
 - ICD 203 requires two *separate* expressions: **analytic confidence** in the judgement, and the **likelihood/probability** of the event.
-- Add a Report-level **`analytic_confidence`** (LOW/MODERATE/HIGH) — stamp it on the report masthead beside TLP/status (web view + `product.typ`), so every product carries a confidence marking.
-- Ship the **standardised probability yardstick** as an authoring aid: a controlled lexicon mapped to percentage bands (*almost no chance 01–05 · very unlikely 05–20 · unlikely 20–45 · roughly even chance 45–55 · likely 55–80 · very likely 80–95 · almost certain 95–99*), shown as a reference panel in the editor, with an optional **lint** that flags vague hedging ("could", "might") in `body_md` on save/preview ([rendering/markdown.py](src/iceberg/rendering/markdown.py) preview path).
-- **Impact:** High / **Effort:** Low–Medium. The confidence field is small; the lexicon panel + optional lint is the larger (but optional) part.
+- Shipped: a Report-level optional **`analytic_confidence`** (`AnalyticConfidence` LOW/MODERATE/HIGH, nullable = "not stated") — stamped as a calm neutral marking on the report masthead beside TLP/status (web view `confidence_badge` macro + `product.typ`, all formats). Optional so analysts assert it deliberately rather than implying a confidence on every draft.
+- Shipped: the **standardised probability yardstick** as an authoring aid — a controlled lexicon mapped to percentage bands (*almost no chance 01–05 · very unlikely 05–20 · unlikely 20–45 · roughly even chance 45–55 · likely 55–80 · very likely 80–95 · almost certain 95–99*), single-sourced in `help_content.py` (`PROBABILITY_YARDSTICK`) and shown as a collapsible reference panel in the editor + the `estimative-language` glossary entry. Likelihood stays prose (phrased via the yardstick), not a structured field.
+- **Deferred:** the optional **lint** flagging vague hedging ("could", "might") in `body_md` on save/preview ([rendering/markdown.py](src/iceberg/rendering/markdown.py) preview path) — a clean follow-up.
+- **Impact:** High / **Effort:** shipped (the deferred lint is the remaining optional part).
 
 ### 1c. Structured judgement scaffolding (KJ / KA / Gaps) — ✅ **implemented**
 > Shipped: `key_judgements` / `key_assumptions` / `intelligence_gaps` markdown fields on `Report`, editable in the report editor (publish-immutable), rendered as discrete sections in the web view and PDF; EXEC_BRIEF / ONE_PAGER are Key-Judgements-only. ACH is deferred. Plan: [docs/plans/1c-judgement-scaffolding.md](docs/plans/1c-judgement-scaffolding.md).
@@ -92,7 +93,7 @@ This roadmap **prioritises two themes** — *Analytic Tradecraft (ICD 203)* and 
 ## Suggested sequencing
 
 1. **Quick wins first:** A (Navigator export) → 2a (aliases). All Low-effort, High-impact, low blast-radius.
-2. **Core rigour:** 1b (estimative language). 1a and 1c are shipped.
+2. **Core rigour:** 1a, 1b and 1c are shipped (1b's hedging lint and 1c's ACH stretch remain as follow-ups).
 3. **Knowledge layer:** 2b (profiles) → 2c (relationships) → then B (STIX export) becomes a natural payoff.
 4. **Process/governance:** D (feedback loop), C (channels), F (need-to-know) as capacity allows.
 
@@ -103,3 +104,4 @@ When each item is implemented, validate in the style of the existing suite (in-m
 - **2a:** regression test that an alias query returns the canonical entity's reports (extends `services/search.py` coverage).
 - **2c:** relationship CRUD + scoping tests mirroring the Diamond Model test pattern.
 - Update **CLAUDE.md** (domain model + roadmap) and **README.md** alongside any implementation, per the repo's maintenance rule.
+

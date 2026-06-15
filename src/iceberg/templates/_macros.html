@@ -24,6 +24,16 @@
   <span class="tag lvl">{{ level.value }}</span>
 {% endmacro %}
 
+{# Analytic confidence (ICD 203) — optional; renders nothing when not stated. #}
+{% macro confidence_badge(conf) %}
+  {% if conf %}
+    {% set map = {'LOW': 'conf--low', 'MODERATE': 'conf--mod', 'HIGH': 'conf--high'} %}
+    <span class="tag conf {{ map.get(conf.value, 'conf--mod') }}" title="Analytic confidence in the judgements (ICD 203)">
+      <span class="dot"></span>{{ conf.value | capitalize }} confidence
+    </span>
+  {% endif %}
+{% endmacro %}
+
 {% macro source_grade_chip(source) %}
   {% if source.reliability and source.credibility %}
     {% set grade = source_grade_label(source.reliability, source.credibility) %}

@@ -109,7 +109,9 @@ a browsable look at what the other roles do, and a glossary of the intelligence 
    **live preview**; tick sources and attachments to cite them.
 4. Fill the **analytic scaffolding** (ICD 203) — **Key Judgements** (the BLUF),
    **Key Assumptions** and **Intelligence Gaps**. They render as discrete sections
-   on the report page.
+   on the report page. Optionally set the **analytic confidence** (LOW/MODERATE/HIGH),
+   stamped on the masthead; phrase event likelihood in prose using the editor's
+   **probability yardstick**.
 5. **Submit for review**, then sign in again as a `REVIEWER` to **Approve** and
    **Publish**.
 6. **Render** a PDF and download it: **FULL** (judgements + body + caveats +

@@ -124,6 +124,16 @@ class DiamondConfidence(StrEnum):
     HIGH = "HIGH"
 
 
+class AnalyticConfidence(StrEnum):
+    """ICD 203 analytic confidence in a report's judgements (distinct from the
+    *likelihood* of the assessed event — see the probability yardstick). Scoped
+    to the whole product, unlike the per-assessment ``DiamondConfidence``."""
+
+    LOW = "LOW"
+    MODERATE = "MODERATE"
+    HIGH = "HIGH"
+
+
 class SourceReliability(StrEnum):
     """Admiralty/NATO source reliability rating."""
 
@@ -423,6 +433,11 @@ class Report(SQLModel, table=True):
     key_judgements: str = ""
     key_assumptions: str = ""
     intelligence_gaps: str = ""
+    # ICD 203 estimative language: analytic confidence in the judgements (LOW/
+    # MODERATE/HIGH). Optional — None means "not stated"; no marking is shown.
+    # Kept distinct from the *likelihood* of the assessed event, which analysts
+    # express in prose via the probability yardstick.
+    analytic_confidence: AnalyticConfidence | None = Field(default=None)
     intel_level: IntelLevel = Field(default=IntelLevel.OPERATIONAL)
     tlp: TLP = Field(default=TLP.AMBER)
     status: ReportStatus = Field(default=ReportStatus.DRAFT)

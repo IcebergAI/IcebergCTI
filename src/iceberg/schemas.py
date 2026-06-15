@@ -3,6 +3,7 @@
 from pydantic import BaseModel, model_validator
 
 from .models import (
+    AnalyticConfidence,
     DiamondConfidence,
     IntelLevel,
     Priority,
@@ -77,6 +78,7 @@ class ReportUpdate(BaseModel):
     key_judgements: str | None = None
     key_assumptions: str | None = None
     intelligence_gaps: str | None = None
+    analytic_confidence: AnalyticConfidence | None = None
     intel_level: IntelLevel | None = None
     tlp: TLP | None = None
 

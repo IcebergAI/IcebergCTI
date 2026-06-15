@@ -261,6 +261,42 @@ def test_report_judgement_scaffolding_persists_and_renders(client, login):
     assert "Intelligence gaps" in edit.text
 
 
+def test_report_analytic_confidence_via_portal(client, login):
+    """The editor select persists analytic confidence; an empty value coerces to
+    None ("not stated"); the report view shows the chip only when set."""
+    login("ANALYST", email="author@example.com")
+    nb = client.post("/api/notebooks", json={"title": "Confidence nb"}).json()
+    rid = client.post(
+        "/api/reports", json={"notebook_id": nb["id"], "title": "Assessment"}
+    ).json()["id"]
+
+    # Setting a value persists it and renders the masthead chip.
+    saved = client.post(
+        f"/reports/{rid}",
+        data={"title": "Assessment", "analytic_confidence": "HIGH"},
+    )
+    assert saved.status_code == 200, saved.text
+    assert client.get(f"/api/reports/{rid}").json()["report"][
+        "analytic_confidence"
+    ] == "HIGH"
+    view = client.get(f"/reports/{rid}")
+    assert "High confidence" in view.text
+    # The probability yardstick reference panel + deep-link are in the editor.
+    edit = client.get(f"/reports/{rid}/edit")
+    assert "Probability yardstick" in edit.text
+    assert "Roughly even chance" in edit.text
+    assert "/help#estimative-language" in edit.text
+
+    # The "— Not stated —" option posts "", which clears the field.
+    client.post(
+        f"/reports/{rid}", data={"title": "Assessment", "analytic_confidence": ""}
+    )
+    assert client.get(f"/api/reports/{rid}").json()["report"][
+        "analytic_confidence"
+    ] is None
+    assert 'class="tag conf' not in client.get(f"/reports/{rid}").text
+
+
 def test_rendered_product_can_be_deleted_from_portal(
     client, login, engine, tmp_path
 ):

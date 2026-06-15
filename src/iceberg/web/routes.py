@@ -25,6 +25,7 @@ from .. import help_content
 from ..auth.dependencies import CurrentUser, ensure_role
 from ..db import get_session
 from ..models import (
+    AnalyticConfidence,
     Attachment,
     DiamondConfidence,
     DisseminationEvent,
@@ -663,6 +664,7 @@ def report_edit(
             "linked_req_ids": {r.id for r in report.requirements},
             "all_tags": tag_service.offerable_tags(session, report.tags),
             "linked_tag_ids": {t.id for t in report.tags},
+            "probability_yardstick": help_content.PROBABILITY_YARDSTICK,
             "updated": updated,
         },
     )
@@ -678,6 +680,8 @@ def report_save(
     key_judgements: Annotated[str, Form()] = "",
     key_assumptions: Annotated[str, Form()] = "",
     intelligence_gaps: Annotated[str, Form()] = "",
+    # Posted as "" by the "— Not stated —" option; coerced to None below.
+    analytic_confidence: Annotated[str, Form()] = "",
     intel_level: Annotated[IntelLevel, Form()] = IntelLevel.OPERATIONAL,
     tlp: Annotated[TLP, Form()] = TLP.AMBER,
 ):
@@ -688,6 +692,9 @@ def report_save(
     report.key_judgements = key_judgements
     report.key_assumptions = key_assumptions
     report.intelligence_gaps = intelligence_gaps
+    report.analytic_confidence = (
+        AnalyticConfidence(analytic_confidence) if analytic_confidence else None
+    )
     report.intel_level = intel_level
     report.tlp = tlp
     report.updated_at = utcnow()
