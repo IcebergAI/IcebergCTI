@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse, urlunparse
 
-import httpx
+import httpx2 as httpx
 from fastapi import HTTPException, status
 from sqlmodel import Session
 

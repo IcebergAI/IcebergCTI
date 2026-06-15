@@ -2,7 +2,7 @@
 
 import socket
 
-import httpx
+import httpx2 as httpx
 import pytest
 
 from iceberg.models import (
