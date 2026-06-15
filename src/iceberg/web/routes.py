@@ -1064,6 +1064,18 @@ def _tags_by_kind(tags: list[Tag]) -> dict[TagKind, list[Tag]]:
     return {k: v for k, v in grouped.items() if v}
 
 
+def _opt_enum(value: str, enum_cls, field: str):
+    """Coerce an HTML <select> value into an optional enum. The search facet form
+    always submits its filter selects (an empty ``Any`` option becomes ``?intel_level=``),
+    so treat a blank value as "no filter" rather than letting enum validation 422."""
+    if not value:
+        return None
+    try:
+        return enum_cls(value)
+    except ValueError:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Invalid {field}: {value!r}")
+
+
 @router.get("/search")
 def search_view(
     request: Request,
@@ -1072,10 +1084,13 @@ def search_view(
     q: str = "",
     kind: Annotated[list[TagKind], Query()] = [],
     tag: Annotated[list[int], Query()] = [],
-    intel_level: IntelLevel | None = None,
-    tlp: TLP | None = None,
-    status_filter: Annotated[ReportStatus | None, Query(alias="status")] = None,
+    intel_level: Annotated[str, Query()] = "",
+    tlp: Annotated[str, Query()] = "",
+    status: Annotated[str, Query()] = "",
 ):
+    intel_level = _opt_enum(intel_level, IntelLevel, "intel_level")
+    tlp = _opt_enum(tlp, TLP, "tlp")
+    status_filter = _opt_enum(status, ReportStatus, "status")
     results = search_service.search_reports(
         session,
         user=user,

@@ -94,6 +94,22 @@ def test_facet_by_tag(client, login):
     assert _titles(out) == ["Tagged report"]
 
 
+def test_web_search_page_blank_facets_render_html(client, login):
+    """Regression: the portal facet form always submits its filter selects, so an
+    unset filter arrives as an empty string (e.g. ?intel_level=&tlp=&status=).
+    The web /search route must treat blanks as "no filter" and render HTML, not
+    422 with a JSON validation error (the bug seen when clicking a tag facet)."""
+    tag = _create_tag(client, login, label="APT29")
+    login("ANALYST", email="author@example.com")
+    resp = client.get(
+        f"/search?q=&tag={tag['id']}&intel_level=&tlp=&status="
+    )
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/html")
+    # a genuinely invalid enum value is still rejected (cleanly, not a 500)
+    assert client.get("/search?intel_level=BOGUS").status_code == 400
+
+
 def test_facet_by_intel_level(client, login):
     login("ANALYST", email="author@example.com")
     nb = client.post("/api/notebooks", json={"title": "nb"}).json()
