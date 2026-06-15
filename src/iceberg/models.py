@@ -116,6 +116,18 @@ class TagKind(StrEnum):
     TOPIC = "TOPIC"
 
 
+class Motivation(StrEnum):
+    """Why a threat entity operates (attribution profile, roadmap 2b). Multi-valued
+    on a Tag — actors commonly have mixed motives (e.g. DPRK = espionage +
+    financial). Only meaningful for the named-threat kinds."""
+
+    ESPIONAGE = "ESPIONAGE"
+    FINANCIAL = "FINANCIAL"
+    HACKTIVISM = "HACKTIVISM"
+    DESTRUCTIVE = "DESTRUCTIVE"
+    INFLUENCE = "INFLUENCE"
+
+
 class DiamondConfidence(StrEnum):
     """Analytic confidence in a Diamond Model assessment."""
 
@@ -531,6 +543,19 @@ class Tag(SQLModel, table=True):
         default_factory=list,
         sa_column=Column(JSON, nullable=False, server_default="[]"),
     )
+    # Structured attribution for named-threat entities (roadmap 2b): suspected
+    # sponsor/country (free text, e.g. "Russia (GRU Unit 26165)"), motivation(s),
+    # and fuzzy first/last-seen markers (free text, e.g. "2004" … "present").
+    # Empty for non-named kinds; surfaced on the /tags/{id} entity profile.
+    suspected_attribution: str = ""
+    # Stored as plain strings (a JSON list, like ``aliases``); values are validated
+    # against ``Motivation`` on write (services/tags.normalise_motivations).
+    motivations: list[str] = Field(
+        default_factory=list,
+        sa_column=Column(JSON, nullable=False, server_default="[]"),
+    )
+    first_seen: str = ""
+    last_seen: str = ""
     active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=utcnow)
 

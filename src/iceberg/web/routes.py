@@ -31,6 +31,7 @@ from ..models import (
     DisseminationEvent,
     Figure,
     IntelLevel,
+    Motivation,
     Notebook,
     Priority,
     ProductFormat,
@@ -1113,6 +1114,14 @@ def tag_detail(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Tag not found")
     results = search_service.search_reports(session, user=user, tag_ids=[tag_id])
     items = [{"report": r, "tags": list(r.tags)} for r in results]
+    # Named-threat kinds (ACTOR/MALWARE/CAMPAIGN) get a proper entity profile page
+    # with structured attribution; other kinds keep the plain search drill-down.
+    if tag.kind in tag_service.ALIASABLE_KINDS:
+        return templates.TemplateResponse(
+            request,
+            "entity_profile.html",
+            {"user": user, "active_tag": tag, "items": items},
+        )
     return templates.TemplateResponse(
         request,
         "search.html",
@@ -1143,6 +1152,7 @@ def admin_tags_view(request: Request, session: SessionDep, user: CurrentUser):
                 tag_service.list_tags(session, include_inactive=True)
             ),
             "kinds": list(TagKind),
+            "motivations": list(Motivation),
         },
     )
 
@@ -1156,6 +1166,10 @@ def admin_tag_create(
     external_id: Annotated[str, Form()] = "",
     description: Annotated[str, Form()] = "",
     aliases: Annotated[str, Form()] = "",
+    suspected_attribution: Annotated[str, Form()] = "",
+    motivations: Annotated[list[str], Form()] = [],  # noqa: B006 (FastAPI Form list)
+    first_seen: Annotated[str, Form()] = "",
+    last_seen: Annotated[str, Form()] = "",
 ):
     _require_admin(user)
     tag_service.create_tag(
@@ -1165,6 +1179,10 @@ def admin_tag_create(
         external_id=external_id,
         description=description,
         aliases=tag_service.parse_aliases(aliases),
+        suspected_attribution=suspected_attribution,
+        motivations=motivations,
+        first_seen=first_seen,
+        last_seen=last_seen,
     )
     return _redirect("/admin/tags")
 
@@ -1185,6 +1203,10 @@ def admin_tag_update(
     external_id: Annotated[str, Form()] = "",
     description: Annotated[str, Form()] = "",
     aliases: Annotated[str, Form()] = "",
+    suspected_attribution: Annotated[str, Form()] = "",
+    motivations: Annotated[list[str], Form()] = [],  # noqa: B006 (FastAPI Form list)
+    first_seen: Annotated[str, Form()] = "",
+    last_seen: Annotated[str, Form()] = "",
     active: Annotated[bool, Form()] = False,
 ):
     _require_admin(user)
@@ -1196,6 +1218,10 @@ def admin_tag_update(
         external_id=external_id,
         description=description,
         aliases=tag_service.parse_aliases(aliases),
+        suspected_attribution=suspected_attribution,
+        motivations=motivations,
+        first_seen=first_seen,
+        last_seen=last_seen,
         active=active,
     )
     return _redirect("/admin/tags")

@@ -67,6 +67,28 @@
         </div>
       </div>
     </div>
+    <div class="add-grid-2" x-show="['ACTOR','MALWARE','CAMPAIGN'].includes(kind)" x-cloak>
+      <label class="field-wrap" style="flex:2;">
+        <span class="field-label">Suspected attribution <span class="opt">optional</span></span>
+        <input name="suspected_attribution" class="field" placeholder="e.g. Russia (GRU Unit 26165)">
+      </label>
+      <label class="field-wrap">
+        <span class="field-label">First seen <span class="opt">optional</span></span>
+        <input name="first_seen" class="field" placeholder="2004" style="font-family:var(--fs-mono);">
+      </label>
+      <label class="field-wrap">
+        <span class="field-label">Last seen <span class="opt">optional</span></span>
+        <input name="last_seen" class="field" placeholder="present" style="font-family:var(--fs-mono);">
+      </label>
+    </div>
+    <div x-show="['ACTOR','MALWARE','CAMPAIGN'].includes(kind)" x-cloak>
+      <span class="field-label">Motivation <span class="opt">optional</span></span>
+      <div class="flex gap-3 flex-wrap mt-1">
+        {% for mo in motivations %}
+          <label class="chip-check"><input type="checkbox" name="motivations" value="{{ mo.value }}"> {{ mo.value.title() }}</label>
+        {% endfor %}
+      </div>
+    </div>
     <div><button class="btn btn--primary btn--sm" type="submit" :disabled="!label.trim()">Add term</button></div>
   </form>
 </section>
@@ -104,7 +126,7 @@
         {% for t in tags %}
           <div class="tax-row"
                data-kind="{{ t.kind.value }}" data-active="{{ 'true' if t.active else 'false' }}"
-               data-search="{{ t.label }} {{ t.external_id }} {{ t.description }} {{ t.aliases | join(' ') }}"
+               data-search="{{ t.label }} {{ t.external_id }} {{ t.description }} {{ t.aliases | join(' ') }} {{ t.suspected_attribution }}"
                x-show="matches($el)">
             <div class="tax-row-chip">{{ m.tag_chip(t, link=False) }}</div>
             <form method="post" action="/admin/tags/{{ t.id }}" class="tax-edit">
@@ -113,6 +135,14 @@
               <input name="description" value="{{ t.description }}" placeholder="description" class="field" style="flex:2;min-width:160px;">
               {% if t.kind.value in ('ACTOR', 'MALWARE', 'CAMPAIGN') %}
               <input name="aliases" value="{{ t.aliases | join(', ') }}" placeholder="aliases" class="field" style="flex:2;min-width:160px;" title="Comma-separated alternate names">
+              <input name="suspected_attribution" value="{{ t.suspected_attribution }}" placeholder="attribution" class="field" style="flex:2;min-width:160px;" title="Suspected sponsor / country">
+              <input name="first_seen" value="{{ t.first_seen }}" placeholder="first" class="field" style="width:74px;font-family:var(--fs-mono);" title="First seen">
+              <input name="last_seen" value="{{ t.last_seen }}" placeholder="last" class="field" style="width:74px;font-family:var(--fs-mono);" title="Last seen">
+              <span class="flex gap-2 flex-wrap items-center" title="Motivation">
+                {% for mo in motivations %}
+                  <label class="chip-check" style="font-size:12px;"><input type="checkbox" name="motivations" value="{{ mo.value }}" {% if mo.value in t.motivations %}checked{% endif %}> {{ mo.value.title() }}</label>
+                {% endfor %}
+              </span>
               {% endif %}
               <label class="switch" title="{{ 'Active — offered to analysts' if t.active else 'Retired — hidden from new tagging' }}">
                 <input type="checkbox" name="active" value="true" {% if t.active %}checked{% endif %}

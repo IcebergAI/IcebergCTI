@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}{{ active_tag.label }} · {{ app_name }}{% endblock %}
+{% block content %}
+
+{% set t = active_tag %}
+{% set attack_path = {'ACTOR': 'groups', 'MALWARE': 'software'}.get(t.kind.value) %}
+
+<div class="head-row mb-5">
+  <div>
+    <div class="eyebrow eyebrow-accent">Entity profile · {{ t.kind.value.title() }}</div>
+    <h1 class="page-title mt-2">
+      {{ t.label }}{% if not t.active %} <span class="eyebrow" style="color:var(--muted);">· Retired</span>{% endif %}
+    </h1>
+    <div class="title-rule"></div>
+    {% if t.external_id %}
+      <p class="text-sm mt-3" style="color:var(--muted);font-family:var(--fs-mono);">
+        {% if attack_path %}<a class="btn-link" href="https://attack.mitre.org/{{ attack_path }}/{{ t.external_id }}/" target="_blank" rel="noopener">ATT&CK {{ t.external_id }} ↗</a>{% else %}{{ t.external_id }}{% endif %}
+      </p>
+    {% endif %}
+    {% if t.aliases %}
+      <p class="text-sm mt-2" style="color:var(--muted);">
+        <span class="eyebrow">Also known as</span> {{ t.aliases | join(' · ') }}
+      </p>
+    {% endif %}
+  </div>
+  <span class="eyebrow">{{ items | length }} report{{ '' if items|length == 1 else 's' }}</span>
+</div>
+
+<div class="grid gap-6" style="grid-template-columns: 280px 1fr; align-items:start;">
+  <!-- Attribution panel -->
+  <aside class="space-y-5">
+    {% if t.suspected_attribution or t.motivations or t.first_seen or t.last_seen %}
+      <div class="card card-pad space-y-4">
+        <div class="section-title">Attribution</div>
+        {% if t.suspected_attribution %}
+          <div>
+            <div class="eyebrow mb-1">Sponsor / attribution</div>
+            <div class="text-sm">{{ t.suspected_attribution }}</div>
+          </div>
+        {% endif %}
+        {% if t.motivations %}
+          <div>
+            <div class="eyebrow mb-1">Motivation</div>
+            <div class="flex gap-1 flex-wrap">
+              {% for mo in t.motivations %}<span class="tag">{{ mo.title() }}</span>{% endfor %}
+            </div>
+          </div>
+        {% endif %}
+        {% if t.first_seen or t.last_seen %}
+          <div>
+            <div class="eyebrow mb-1">Active</div>
+            <div class="text-sm" style="font-family:var(--fs-mono);">
+              {{ t.first_seen or '?' }} – {{ t.last_seen or 'present' }}
+            </div>
+          </div>
+        {% endif %}
+      </div>
+    {% endif %}
+    {% if t.description %}
+      <div class="card card-pad">
+        <div class="eyebrow mb-1">Notes</div>
+        <p class="text-sm" style="color:var(--muted);">{{ t.description }}</p>
+      </div>
+    {% endif %}
+    <a href="/search" class="btn-link" style="font-size:12px;">← All reports</a>
+  </aside>
+
+  <!-- Reports tagged with this entity -->
+  <div>
+    <div class="section-title mb-3">Reports tagged</div>
+    {% if items %}
+      <div class="rows">
+        {% for it in items %}
+          <a href="/reports/{{ it.report.id }}" class="row">
+            <span class="flex-1">
+              <span class="row-title">{{ it.report.title }}</span>
+              {% if it.tags %}
+                <span class="flex gap-1 flex-wrap mt-1.5">
+                  {% for tg in it.tags %}{{ m.tag_chip(tg, link=False) }}{% endfor %}
+                </span>
+              {% endif %}
+            </span>
+            <span class="flex gap-1.5 items-center flex-wrap">
+              {{ m.status_badge(it.report.status) }}
+              {{ m.level_badge(it.report.intel_level) }}
+              {{ m.tlp_badge(it.report.tlp) }}
+            </span>
+          </a>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="well card-pad-lg text-center">
+        <p class="empty">No reports tagged with {{ t.label }} yet.</p>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

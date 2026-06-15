@@ -22,7 +22,7 @@ This roadmap **prioritises two themes** — *Analytic Tradecraft (ICD 203)* and 
 **Gaps that matter for a *finished-intelligence* platform:**
 - ~~**No estimative language.**~~ **Addressed (§1b):** reports carry an optional analytic-confidence marking, and a standardised probability yardstick is shipped as an authoring aid (likelihood expressed in prose). The optional hedging lint is deferred.
 - **Limited structured analytic techniques.** Key Judgements / Key Assumptions / Intelligence Gaps are implemented, but deeper structured analytic techniques like Analysis of Competing Hypotheses (ACH) are still missing.
-- **Flat knowledge layer (partly addressed — 2a).** Actor/malware/campaign are still flat `Tag` rows, but they now carry a structured `aliases` list and search resolves any alias to the canonical entity (the APT28/Fancy Bear/Sofacy naming problem is modelled — see §2a). Still missing: entity relationships and attribution profiles (2b/2c).
+- **Flat knowledge layer (largely addressed — 2a + 2b).** Actor/malware/campaign `Tag` rows now carry a structured `aliases` list (search resolves any alias to the canonical entity — see §2a) **and** structured attribution (sponsor/country, motivation, first/last seen), with `/tags/{id}` promoted to a real entity profile page (§2b). Still missing: entity **relationships** — the graph (2c).
 - **No machine-readable interop** (STIX/TAXII/Navigator) and **email/feed-only dissemination** — noted as secondary backlog below.
 - **Need-to-know gap:** stakeholders consume published products, but the published report library is not yet compartmented by named sharing, tags, teams, or entitlement groups.
 
@@ -64,9 +64,10 @@ This roadmap **prioritises two themes** — *Analytic Tradecraft (ICD 203)* and 
 - Shipped: **search is alias-aware** ([services/search.py](src/iceberg/services/search.py)) — `tags.resolve_alias_report_ids` resolves a query against tag labels + aliases and appends the matching entity's reports after the bm25 body matches, so any alias matches the canonical entity even when the body never names it. Tag text is *not* denormalised into FTS (no `report_fts` DDL change); resolution is a query-time tag lookup. Aliases surface as "Also known as" on the `/tags/{id}` detail page.
 - **Impact:** High / **Effort:** shipped (Low–Medium). New JSON column + service helpers + schema/API/admin-form threading + the search union + migration `c5c560ff65be`.
 
-### 2b. Entity attribution profile
-- Enrich actor entities with structured attribution: suspected **country/sponsor**, **motivation** (espionage/financial/hacktivist), **first/last seen**. Turn `/tags/{id}` into a proper **actor profile page** rather than just a tag drill-down.
-- **Impact:** Medium / **Effort:** Medium.
+### 2b. Entity attribution profile — ✅ **implemented**
+- Shipped: the named-threat tag kinds (`tags.ALIASABLE_KINDS`) carry structured attribution on `Tag` — `suspected_attribution` (free-text sponsor/country), `motivations` (a JSON list validated against a new `Motivation` enum: ESPIONAGE/FINANCIAL/HACKTIVISM/DESTRUCTIVE/INFLUENCE, multi-valued), and fuzzy free-text `first_seen`/`last_seen`. Admin-curated in `/admin/tags` (gated to named-threat kinds, like aliases) and seeded from `data/starter_tags.json` (starter ACTORs backfilled — attribution lifted out of the description gloss).
+- Shipped: `/tags/{id}` now renders a dedicated **entity profile** (`templates/entity_profile.html`) for named-threat kinds — attribution panel + motivation chips + "Also known as" aliases + an ATT&CK link off `external_id` (G-/S-code) + the reports-tagged list. Other kinds keep the plain `search.html` drill-down. Migration `b3d9a4e21c7f`.
+- **Impact:** Medium / **Effort:** shipped (Medium). New `Motivation` enum + four `Tag` columns + `normalise_motivations` + schema/API/admin-form threading + profile template + route split.
 
 ### 2c. Entity relationships (the graph)
 - Introduce an **`EntityRelationship`** table — `(source, target, relation_type)` using STIX-aligned verbs (**uses, attributed-to, variant-of, targets, related-to**) so you can express *actor → uses → malware*, *campaign → attributed-to → actor*, *actor → targets → sector*.
@@ -94,7 +95,7 @@ This roadmap **prioritises two themes** — *Analytic Tradecraft (ICD 203)* and 
 
 1. **Quick wins first:** A (Navigator export) → ~~2a (aliases)~~ ✅ done. All Low-effort, High-impact, low blast-radius.
 2. **Core rigour:** 1a, 1b and 1c are shipped (1b's hedging lint and 1c's ACH stretch remain as follow-ups).
-3. **Knowledge layer:** 2b (profiles) → 2c (relationships) → then B (STIX export) becomes a natural payoff.
+3. **Knowledge layer:** ~~2b (profiles)~~ ✅ done → 2c (relationships) → then B (STIX export) becomes a natural payoff.
 4. **Process/governance:** D (feedback loop), C (channels), F (need-to-know) as capacity allows.
 
 ## Validation approach (when these are built)
