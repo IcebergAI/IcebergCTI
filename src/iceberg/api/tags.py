@@ -46,6 +46,7 @@ def create_tag(body: TagCreate, session: SessionDep, _a: Admin) -> Tag:
         label=body.label,
         external_id=body.external_id,
         description=body.description,
+        aliases=body.aliases,
     )
 
 
@@ -60,6 +61,7 @@ def update_tag(
         label=body.label,
         external_id=body.external_id,
         description=body.description,
+        aliases=body.aliases,
         active=body.active,
     )
 

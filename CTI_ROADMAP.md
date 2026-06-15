@@ -22,7 +22,7 @@ This roadmap **prioritises two themes** — *Analytic Tradecraft (ICD 203)* and 
 **Gaps that matter for a *finished-intelligence* platform:**
 - ~~**No estimative language.**~~ **Addressed (§1b):** reports carry an optional analytic-confidence marking, and a standardised probability yardstick is shipped as an authoring aid (likelihood expressed in prose). The optional hedging lint is deferred.
 - **Limited structured analytic techniques.** Key Judgements / Key Assumptions / Intelligence Gaps are implemented, but deeper structured analytic techniques like Analysis of Competing Hypotheses (ACH) are still missing.
-- **Flat knowledge layer.** Actor/malware/campaign are flat `Tag` rows; aliases are concatenated into a description string ("Fancy Bear / Sofacy — Russia (GRU)"). No aliasing, no relationships, no entity profiles — the classic APT28/Fancy Bear/Sofacy naming problem is unmodelled.
+- **Flat knowledge layer (partly addressed — 2a).** Actor/malware/campaign are still flat `Tag` rows, but they now carry a structured `aliases` list and search resolves any alias to the canonical entity (the APT28/Fancy Bear/Sofacy naming problem is modelled — see §2a). Still missing: entity relationships and attribution profiles (2b/2c).
 - **No machine-readable interop** (STIX/TAXII/Navigator) and **email/feed-only dissemination** — noted as secondary backlog below.
 - **Need-to-know gap:** stakeholders consume published products, but the published report library is not yet compartmented by named sharing, tags, teams, or entitlement groups.
 
@@ -59,10 +59,10 @@ This roadmap **prioritises two themes** — *Analytic Tradecraft (ICD 203)* and 
 
 *Move the actor/malware/campaign vocabulary from flat labels to a real entity layer. Sequenced so value lands early.*
 
-### 2a. Aliases (ship first — fixes the naming problem, cheap)
-- Add a structured **`aliases`** list to ACTOR/MALWARE/CAMPAIGN tags (or a small linked `TagAlias` table) so APT28 / Fancy Bear / Sofacy / STRONTIUM resolve to one entity.
-- Make **search alias-aware** ([services/search.py](src/iceberg/services/search.py)) so any alias matches the canonical entity — immediate recall win.
-- **Impact:** High / **Effort:** Low–Medium.
+### 2a. Aliases (ship first — fixes the naming problem, cheap) — ✅ **implemented**
+- Shipped: a structured **`aliases`** list (a JSON column) on ACTOR/MALWARE/CAMPAIGN tags (`tags.ALIASABLE_KINDS`) so APT28 / Fancy Bear / Sofacy / STRONTIUM resolve to one entity. Admin-curated in `/admin/tags` (comma-separated input, shown only for named-threat kinds); normalised case-insensitively with the canonical label dropped as an alias. Starter taxonomy backfilled (aliases lifted out of the description strings).
+- Shipped: **search is alias-aware** ([services/search.py](src/iceberg/services/search.py)) — `tags.resolve_alias_report_ids` resolves a query against tag labels + aliases and appends the matching entity's reports after the bm25 body matches, so any alias matches the canonical entity even when the body never names it. Tag text is *not* denormalised into FTS (no `report_fts` DDL change); resolution is a query-time tag lookup. Aliases surface as "Also known as" on the `/tags/{id}` detail page.
+- **Impact:** High / **Effort:** shipped (Low–Medium). New JSON column + service helpers + schema/API/admin-form threading + the search union + migration `c5c560ff65be`.
 
 ### 2b. Entity attribution profile
 - Enrich actor entities with structured attribution: suspected **country/sponsor**, **motivation** (espionage/financial/hacktivist), **first/last seen**. Turn `/tags/{id}` into a proper **actor profile page** rather than just a tag drill-down.
@@ -92,7 +92,7 @@ This roadmap **prioritises two themes** — *Analytic Tradecraft (ICD 203)* and 
 
 ## Suggested sequencing
 
-1. **Quick wins first:** A (Navigator export) → 2a (aliases). All Low-effort, High-impact, low blast-radius.
+1. **Quick wins first:** A (Navigator export) → ~~2a (aliases)~~ ✅ done. All Low-effort, High-impact, low blast-radius.
 2. **Core rigour:** 1a, 1b and 1c are shipped (1b's hedging lint and 1c's ACH stretch remain as follow-ups).
 3. **Knowledge layer:** 2b (profiles) → 2c (relationships) → then B (STIX export) becomes a natural payoff.
 4. **Process/governance:** D (feedback loop), C (channels), F (need-to-know) as capacity allows.

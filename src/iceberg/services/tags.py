@@ -15,13 +15,47 @@ from importlib.resources import files
 from fastapi import HTTPException, status
 from sqlmodel import Session, col, select
 
-from ..models import Report, Tag, TagKind, utcnow
+from ..models import Report, ReportTag, Tag, TagKind, utcnow
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
+
+# Kinds that name a threat entity and therefore carry alternate names. The classic
+# APT28 / Fancy Bear / Sofacy problem only applies to these; TECHNIQUE/SECTOR/TOPIC
+# stay plain controlled-vocabulary terms.
+ALIASABLE_KINDS = {TagKind.ACTOR, TagKind.MALWARE, TagKind.CAMPAIGN}
+
+_ALIAS_SPLIT_RE = re.compile(r"[,\n]+")
 
 
 def slugify(label: str) -> str:
     return _SLUG_RE.sub("-", label.strip().lower()).strip("-")
+
+
+def parse_aliases(raw: str) -> list[str]:
+    """Parse a comma/newline-separated aliases string (the admin form field) into a
+    clean list: trimmed, empties dropped, deduped case-insensitively (first casing
+    wins)."""
+    return _dedupe([a.strip() for a in _ALIAS_SPLIT_RE.split(raw or "")])
+
+
+def _dedupe(aliases: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for a in aliases:
+        a = a.strip()
+        key = a.lower()
+        if a and key not in seen:
+            seen.add(key)
+            out.append(a)
+    return out
+
+
+def normalise_aliases(label: str, aliases: list[str]) -> list[str]:
+    """Clean an aliases list for persistence: deduped, with any alias equal
+    (case-insensitively) to the canonical ``label`` dropped — the label is not its
+    own alias."""
+    label_key = label.strip().lower()
+    return [a for a in _dedupe(aliases) if a.lower() != label_key]
 
 
 # --------------------------------------------------------------------------- #
@@ -34,6 +68,7 @@ def create_tag(
     label: str,
     external_id: str = "",
     description: str = "",
+    aliases: list[str] | None = None,
 ) -> Tag:
     label = label.strip()
     if not label:
@@ -54,6 +89,7 @@ def create_tag(
         slug=slug,
         external_id=external_id.strip(),
         description=description.strip(),
+        aliases=normalise_aliases(label, aliases or []),
     )
     session.add(tag)
     session.commit()
@@ -68,6 +104,7 @@ def update_tag(
     label: str | None = None,
     external_id: str | None = None,
     description: str | None = None,
+    aliases: list[str] | None = None,
     active: bool | None = None,
 ) -> Tag:
     if label is not None and label.strip() and label.strip() != tag.label:
@@ -88,6 +125,8 @@ def update_tag(
         tag.external_id = external_id.strip()
     if description is not None:
         tag.description = description.strip()
+    if aliases is not None:
+        tag.aliases = normalise_aliases(tag.label, aliases)
     if active is not None:
         tag.active = active
     session.add(tag)
@@ -122,6 +161,36 @@ def list_tags(
         like = f"%{q.lower()}%"
         stmt = stmt.where(col(Tag.label).ilike(like))
     return list(session.exec(stmt).all())
+
+
+def resolve_alias_report_ids(session: Session, q: str) -> list[int]:
+    """Alias-aware search support: resolve a free-text query to the reports tagged
+    with any named-threat entity whose label or alias matches it.
+
+    Matches case-insensitively, both directions (query contains name, or name
+    contains query), so "fancy bear" hits the APT28 tag (and its reports) even
+    when the report body never spells the alias out. Retired tags are included so a
+    query still resolves an entity that's been retired but stays on past reports.
+    The vocabulary is small, so candidate tags are scanned in Python."""
+    needle = q.strip().lower()
+    if not needle:
+        return []
+    tags = session.exec(select(Tag).where(col(Tag.kind).in_(ALIASABLE_KINDS))).all()
+    matched = [t.id for t in tags if _tag_matches(t, needle)]
+    if not matched:
+        return []
+    rows = session.exec(
+        select(ReportTag.report_id).where(col(ReportTag.tag_id).in_(matched))
+    ).all()
+    return [r for r in rows if r is not None]
+
+
+def _tag_matches(tag: Tag, needle: str) -> bool:
+    for name in (tag.label, *tag.aliases):
+        name = name.lower()
+        if needle in name or name in needle:
+            return True
+    return False
 
 
 def offerable_tags(session: Session, already_linked: list[Tag]) -> list[Tag]:
@@ -191,6 +260,7 @@ def seed_default_taxonomy(
         slug = slugify(label)
         external_id = (entry.get("external_id") or "").strip()
         description = (entry.get("description") or "").strip()
+        aliases = normalise_aliases(label, entry.get("aliases") or [])
         existing = session.exec(
             select(Tag).where(Tag.kind == kind, Tag.slug == slug)
         ).first()
@@ -202,6 +272,7 @@ def seed_default_taxonomy(
                     slug=slug,
                     external_id=external_id,
                     description=description,
+                    aliases=aliases,
                 )
             )
             created += 1
@@ -209,9 +280,11 @@ def seed_default_taxonomy(
         elif update and (
             existing.external_id != external_id
             or existing.description != description
+            or existing.aliases != aliases
         ):
             existing.external_id = external_id
             existing.description = description
+            existing.aliases = aliases
             session.add(existing)
             changed = True
 

@@ -47,6 +47,10 @@
         <span class="field-label">Description <span class="opt">optional</span></span>
         <input name="description" class="field" placeholder="One-line gloss shown in the picker">
       </label>
+      <label class="field-wrap" style="flex:1;" x-show="['ACTOR','MALWARE','CAMPAIGN'].includes(kind)">
+        <span class="field-label">Aliases <span class="opt">comma-separated</span></span>
+        <input name="aliases" class="field" placeholder="e.g. Fancy Bear, Sofacy, STRONTIUM">
+      </label>
       <div class="add-preview">
         <span class="field-label">Preview</span>
         <div class="add-preview-chip">
@@ -100,13 +104,16 @@
         {% for t in tags %}
           <div class="tax-row"
                data-kind="{{ t.kind.value }}" data-active="{{ 'true' if t.active else 'false' }}"
-               data-search="{{ t.label }} {{ t.external_id }} {{ t.description }}"
+               data-search="{{ t.label }} {{ t.external_id }} {{ t.description }} {{ t.aliases | join(' ') }}"
                x-show="matches($el)">
             <div class="tax-row-chip">{{ m.tag_chip(t, link=False) }}</div>
             <form method="post" action="/admin/tags/{{ t.id }}" class="tax-edit">
               <input name="label" value="{{ t.label }}" class="field" style="flex:1.4;min-width:140px;">
               <input name="external_id" value="{{ t.external_id }}" placeholder="ext id" class="field" style="width:96px;font-family:var(--fs-mono);">
               <input name="description" value="{{ t.description }}" placeholder="description" class="field" style="flex:2;min-width:160px;">
+              {% if t.kind.value in ('ACTOR', 'MALWARE', 'CAMPAIGN') %}
+              <input name="aliases" value="{{ t.aliases | join(', ') }}" placeholder="aliases" class="field" style="flex:2;min-width:160px;" title="Comma-separated alternate names">
+              {% endif %}
               <label class="switch" title="{{ 'Active — offered to analysts' if t.active else 'Retired — hidden from new tagging' }}">
                 <input type="checkbox" name="active" value="true" {% if t.active %}checked{% endif %}
                        onchange="this.form.requestSubmit()">

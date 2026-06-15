@@ -28,6 +28,7 @@ from ..models import (
     TLP,
     User,
 )
+from . import tags as tag_service
 
 _FTS_TABLE = "report_fts"
 
@@ -113,20 +114,33 @@ def search_reports(
     limit: int = 50,
     offset: int = 0,
 ) -> list[Report]:
-    """Faceted report search. ``q`` runs FTS over title+body (bm25-ranked); the
-    facets are SQL filters. Stakeholders are restricted to published reports."""
+    """Faceted report search. ``q`` runs FTS over title+body (bm25-ranked) and is
+    *alias-aware* — reports tagged with a named-threat entity whose label/alias
+    matches ``q`` are appended after the body matches, so e.g. "Fancy Bear" finds
+    APT28-tagged reports even when the body never names the alias. The facets are
+    SQL filters. Stakeholders are restricted to published reports."""
     ranked_ids: list[int] | None = None
-    match = _match_query(q) if q else None
-    if match is not None:
-        rows = session.execute(
-            # nosec B608: _FTS_TABLE is a constant; the user's query is bound via :m.
-            text(
-                f"SELECT rowid FROM {_FTS_TABLE} WHERE {_FTS_TABLE} MATCH :m "  # nosec B608
-                f"ORDER BY bm25({_FTS_TABLE})"
-            ),
-            {"m": match},
-        ).all()
-        ranked_ids = [r[0] for r in rows]
+    if q:
+        match = _match_query(q)
+        fts_ids: list[int] = []
+        if match is not None:
+            rows = session.execute(
+                # nosec B608: _FTS_TABLE is a constant; the user's query is bound via :m.
+                text(
+                    f"SELECT rowid FROM {_FTS_TABLE} WHERE {_FTS_TABLE} MATCH :m "  # nosec B608
+                    f"ORDER BY bm25({_FTS_TABLE})"
+                ),
+                {"m": match},
+            ).all()
+            fts_ids = [r[0] for r in rows]
+        # Entity (alias/label) matches appended after body relevance — the recall
+        # win without disturbing bm25 ordering.
+        ranked_ids = list(fts_ids)
+        seen = set(fts_ids)
+        for rid in tag_service.resolve_alias_report_ids(session, q):
+            if rid not in seen:
+                seen.add(rid)
+                ranked_ids.append(rid)
         if not ranked_ids:
             return []
 
