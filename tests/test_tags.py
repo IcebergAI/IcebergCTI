@@ -4,8 +4,13 @@ classification (editable post-publish), retire semantics, and the seed."""
 from sqlmodel import Session, select
 
 from iceberg import seed as seed_cli
-from iceberg.models import Tag, TagKind
-from iceberg.services.tags import load_starter_tags, seed_default_taxonomy, slugify
+from iceberg.models import Motivation, Tag, TagKind
+from iceberg.services.tags import (
+    load_starter_tags,
+    normalise_motivations,
+    seed_default_taxonomy,
+    slugify,
+)
 
 
 def _make_report(client, login, title="APT29 wave", body="phishing against finance"):
@@ -251,3 +256,120 @@ def test_seed_cli_list_does_not_write(engine, capsys):
     # nothing was written
     with Session(engine) as s:
         assert s.exec(select(Tag)).first() is None
+
+
+# --------------------------------------------------------------------------- #
+# Entity attribution profile (roadmap 2b)
+# --------------------------------------------------------------------------- #
+def test_normalise_motivations_dedupes_and_drops_unknown():
+    out = normalise_motivations(
+        ["ESPIONAGE", "espionage", "bogus", "", "financial"]
+    )
+    assert out == [Motivation.ESPIONAGE, Motivation.FINANCIAL]
+    assert normalise_motivations(None) == []
+
+
+def test_create_tag_with_attribution_roundtrips(client, login):
+    login("ADMIN", email="admin@example.com")
+    resp = client.post(
+        "/api/tags",
+        json={
+            "kind": "ACTOR",
+            "label": "APT28",
+            "suspected_attribution": "Russia (GRU)",
+            "motivations": ["ESPIONAGE", "INFLUENCE"],
+            "first_seen": "2004",
+            "last_seen": "present",
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["suspected_attribution"] == "Russia (GRU)"
+    assert body["motivations"] == ["ESPIONAGE", "INFLUENCE"]
+    assert body["first_seen"] == "2004"
+    assert body["last_seen"] == "present"
+
+
+def test_attribution_defaults_empty(client, login):
+    tag = _create_tag(client, login, label="APT29")
+    assert tag["suspected_attribution"] == ""
+    assert tag["motivations"] == []
+    assert tag["first_seen"] == "" and tag["last_seen"] == ""
+
+
+def test_update_and_clear_attribution(client, login):
+    tag = _create_tag(client, login, kind="ACTOR", label="APT29")
+    login("ADMIN", email="admin@example.com")
+    out = client.patch(
+        f"/api/tags/{tag['id']}",
+        json={
+            "suspected_attribution": "Russia (SVR)",
+            "motivations": ["ESPIONAGE"],
+            "first_seen": "2008",
+        },
+    )
+    assert out.status_code == 200
+    assert out.json()["suspected_attribution"] == "Russia (SVR)"
+    assert out.json()["motivations"] == ["ESPIONAGE"]
+    # clearing: empty list / blank string wipe the fields
+    out = client.patch(
+        f"/api/tags/{tag['id']}",
+        json={"motivations": [], "suspected_attribution": ""},
+    )
+    assert out.json()["motivations"] == []
+    assert out.json()["suspected_attribution"] == ""
+
+
+def test_seed_attribution_imported_and_refreshed(engine):
+    entries = [
+        {"kind": "ACTOR", "label": "APT28", "external_id": "G0007",
+         "suspected_attribution": "Russia (GRU)", "motivations": ["ESPIONAGE"],
+         "first_seen": "2004"},
+    ]
+    with Session(engine) as s:
+        seed_default_taxonomy(s, entries)
+        tag = s.exec(select(Tag).where(Tag.slug == "apt28")).first()
+        assert tag.suspected_attribution == "Russia (GRU)"
+        assert tag.motivations == ["ESPIONAGE"]
+        assert tag.first_seen == "2004"
+        # update=True refreshes the attribution metadata (creating nothing)
+        entries[0]["motivations"] = ["ESPIONAGE", "INFLUENCE"]
+        entries[0]["last_seen"] = "present"
+        assert seed_default_taxonomy(s, entries, update=True) == 0
+        s.refresh(tag)
+        assert tag.motivations == ["ESPIONAGE", "INFLUENCE"]
+        assert tag.last_seen == "present"
+
+
+def test_named_threat_tag_renders_entity_profile(client, login):
+    login("ADMIN", email="admin@example.com")
+    tag = client.post(
+        "/api/tags",
+        json={
+            "kind": "ACTOR",
+            "label": "APT28",
+            "aliases": ["Fancy Bear"],
+            "suspected_attribution": "Russia (GRU)",
+            "motivations": ["ESPIONAGE"],
+            "first_seen": "2004",
+        },
+    )
+    assert tag.status_code == 201, tag.text
+    page = client.get(f"/tags/{tag.json()['id']}")
+    assert page.status_code == 200
+    html = page.text
+    assert "Entity profile" in html
+    assert "Attribution" in html
+    assert "Russia (GRU)" in html
+    assert "Espionage" in html  # motivation chip, Title-cased
+    assert "Fancy Bear" in html  # Also known as
+
+
+def test_plain_tag_keeps_search_drilldown(client, login):
+    tag = _create_tag(client, login, kind="SECTOR", label="Energy")
+    page = client.get(f"/tags/{tag['id']}")
+    assert page.status_code == 200
+    # SECTOR is not a named-threat kind: it uses the search results template,
+    # not the entity profile.
+    assert "Entity profile" not in page.text
+    assert "Tagged · Energy" in page.text

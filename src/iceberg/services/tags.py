@@ -15,7 +15,7 @@ from importlib.resources import files
 from fastapi import HTTPException, status
 from sqlmodel import Session, col, select
 
-from ..models import Report, ReportTag, Tag, TagKind, utcnow
+from ..models import Motivation, Report, ReportTag, Tag, TagKind, utcnow
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
@@ -58,6 +58,21 @@ def normalise_aliases(label: str, aliases: list[str]) -> list[str]:
     return [a for a in _dedupe(aliases) if a.lower() != label_key]
 
 
+def normalise_motivations(values: list[str] | None) -> list[Motivation]:
+    """Coerce raw motivation strings (the admin checkbox field, or API enum values)
+    into a clean ``Motivation`` list: unknown/empty dropped, deduped, order
+    preserved."""
+    out: list[Motivation] = []
+    for v in values or []:
+        try:
+            m = Motivation(str(v).strip().upper())
+        except ValueError:
+            continue
+        if m not in out:
+            out.append(m)
+    return out
+
+
 # --------------------------------------------------------------------------- #
 # Curation (admin)
 # --------------------------------------------------------------------------- #
@@ -69,6 +84,10 @@ def create_tag(
     external_id: str = "",
     description: str = "",
     aliases: list[str] | None = None,
+    suspected_attribution: str = "",
+    motivations: list[str] | None = None,
+    first_seen: str = "",
+    last_seen: str = "",
 ) -> Tag:
     label = label.strip()
     if not label:
@@ -90,6 +109,10 @@ def create_tag(
         external_id=external_id.strip(),
         description=description.strip(),
         aliases=normalise_aliases(label, aliases or []),
+        suspected_attribution=suspected_attribution.strip(),
+        motivations=normalise_motivations(motivations),
+        first_seen=first_seen.strip(),
+        last_seen=last_seen.strip(),
     )
     session.add(tag)
     session.commit()
@@ -105,6 +128,10 @@ def update_tag(
     external_id: str | None = None,
     description: str | None = None,
     aliases: list[str] | None = None,
+    suspected_attribution: str | None = None,
+    motivations: list[str] | None = None,
+    first_seen: str | None = None,
+    last_seen: str | None = None,
     active: bool | None = None,
 ) -> Tag:
     if label is not None and label.strip() and label.strip() != tag.label:
@@ -127,6 +154,14 @@ def update_tag(
         tag.description = description.strip()
     if aliases is not None:
         tag.aliases = normalise_aliases(tag.label, aliases)
+    if suspected_attribution is not None:
+        tag.suspected_attribution = suspected_attribution.strip()
+    if motivations is not None:
+        tag.motivations = normalise_motivations(motivations)
+    if first_seen is not None:
+        tag.first_seen = first_seen.strip()
+    if last_seen is not None:
+        tag.last_seen = last_seen.strip()
     if active is not None:
         tag.active = active
     session.add(tag)
@@ -246,9 +281,10 @@ def seed_default_taxonomy(
     """Idempotently import taxonomy ``entries`` (default: the bundled starter set).
 
     Tags are matched on ``(kind, slug)``; missing ones are inserted. With
-    ``update=True`` an existing tag's ``external_id``/``description`` are refreshed
-    from the entry (the admin-editable ``label`` is never overwritten). Returns the
-    number of tags newly created."""
+    ``update=True`` an existing tag's ``external_id``/``description``/``aliases`` and
+    attribution fields (``suspected_attribution``/``motivations``/``first_seen``/
+    ``last_seen``) are refreshed from the entry (the admin-editable ``label`` is never
+    overwritten). Returns the number of tags newly created."""
     if entries is None:
         entries = load_starter_tags()
 
@@ -261,6 +297,10 @@ def seed_default_taxonomy(
         external_id = (entry.get("external_id") or "").strip()
         description = (entry.get("description") or "").strip()
         aliases = normalise_aliases(label, entry.get("aliases") or [])
+        attribution = (entry.get("suspected_attribution") or "").strip()
+        motivations = normalise_motivations(entry.get("motivations") or [])
+        first_seen = (entry.get("first_seen") or "").strip()
+        last_seen = (entry.get("last_seen") or "").strip()
         existing = session.exec(
             select(Tag).where(Tag.kind == kind, Tag.slug == slug)
         ).first()
@@ -273,6 +313,10 @@ def seed_default_taxonomy(
                     external_id=external_id,
                     description=description,
                     aliases=aliases,
+                    suspected_attribution=attribution,
+                    motivations=motivations,
+                    first_seen=first_seen,
+                    last_seen=last_seen,
                 )
             )
             created += 1
@@ -281,10 +325,18 @@ def seed_default_taxonomy(
             existing.external_id != external_id
             or existing.description != description
             or existing.aliases != aliases
+            or existing.suspected_attribution != attribution
+            or existing.motivations != motivations
+            or existing.first_seen != first_seen
+            or existing.last_seen != last_seen
         ):
             existing.external_id = external_id
             existing.description = description
             existing.aliases = aliases
+            existing.suspected_attribution = attribution
+            existing.motivations = motivations
+            existing.first_seen = first_seen
+            existing.last_seen = last_seen
             session.add(existing)
             changed = True
 

@@ -6,6 +6,7 @@ from .models import (
     AnalyticConfidence,
     DiamondConfidence,
     IntelLevel,
+    Motivation,
     Priority,
     ProductFormat,
     ReportStatus,
@@ -193,6 +194,10 @@ class TagCreate(BaseModel):
     external_id: str = ""
     description: str = ""
     aliases: list[str] = []
+    suspected_attribution: str = ""
+    motivations: list[Motivation] = []
+    first_seen: str = ""
+    last_seen: str = ""
 
 
 class TagUpdate(BaseModel):
@@ -200,6 +205,10 @@ class TagUpdate(BaseModel):
     external_id: str | None = None
     description: str | None = None
     aliases: list[str] | None = None
+    suspected_attribution: str | None = None
+    motivations: list[Motivation] | None = None
+    first_seen: str | None = None
+    last_seen: str | None = None
     active: bool | None = None
 
 

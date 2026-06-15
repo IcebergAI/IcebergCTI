@@ -70,7 +70,9 @@ intel-level / TLP / status facets — access-scoped so stakeholders only ever ma
 ![Taxonomy](docs/images/taxonomy.png)
 *The controlled vocabulary — threat actor / campaign / malware / ATT&CK technique / sector /
 topic — that analysts classify reports against. Named-threat entities (actor / malware / campaign)
-carry structured **aliases** so APT28 / Fancy Bear / Sofacy resolve to one entity.*
+carry structured **aliases** so APT28 / Fancy Bear / Sofacy resolve to one entity, plus structured
+**attribution** (suspected sponsor/country, motivation, first/last seen) — `/tags/{id}` is a proper
+**entity profile page** for those kinds.*
 
 ## Stack
 - **Python ≥ 3.14**, **FastAPI** (single app: JSON API `/api/*` + server-rendered portal `/*`)
@@ -154,12 +156,14 @@ a browsable look at what the other roles do, and a glossary of the intelligence 
 1. Sign in as an `ADMIN` → **Taxonomy** (`/admin/tags`). A starter taxonomy (~94 tags: CISA
    sectors, intel topics, MITRE ATT&CK techniques, and example threat actors + malware) is
    seeded on first run; add or retire entries, or add a **campaign**. For actor / malware /
-   campaign terms, list **aliases** (comma-separated) so alternate names resolve to one entity.
+   campaign terms, list **aliases** (comma-separated) so alternate names resolve to one entity, and
+   record **attribution** (suspected sponsor/country, motivation, first/last seen).
 2. As an `ANALYST`, open a report editor → **Tags** panel → tick tags to classify the product.
    (Tags stay editable even after the report is published.)
 3. Use **Search** (top nav) — full-text query over title/body, narrowed by tag / kind / intel
    level / TLP / status facets. Search is **alias-aware** — querying an alias (e.g. "Fancy Bear")
-   surfaces reports tagged with the canonical entity. Click any tag chip to see everything classified with it.
+   surfaces reports tagged with the canonical entity. Click a named-threat tag chip to open its
+   **entity profile** (attribution + aliases + the reports tagged with it).
    Stakeholders' searches only ever return published reports.
 
 The starter taxonomy is bundled as data (`src/iceberg/data/starter_tags.json`) and imported
