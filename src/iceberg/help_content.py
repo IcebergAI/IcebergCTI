@@ -49,6 +49,35 @@ class Concept:
     points: list[str] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class ProbabilityBand:
+    """A rung on the ICD 203 probability yardstick: an estimative term mapped to a
+    percentage band. Analysts phrase the *likelihood* of an assessed event in
+    these standardised terms — kept distinct from analytic confidence (the
+    ``analytic_confidence`` marking)."""
+
+    term: str
+    low: int
+    high: int
+
+    @property
+    def range_label(self) -> str:
+        return f"{self.low:02d}–{self.high}%"
+
+
+# The single source of truth for the editor's probability-yardstick reference
+# panel and the estimative-language glossary entry below.
+PROBABILITY_YARDSTICK: list[ProbabilityBand] = [
+    ProbabilityBand("Almost no chance", 1, 5),
+    ProbabilityBand("Very unlikely", 5, 20),
+    ProbabilityBand("Unlikely", 20, 45),
+    ProbabilityBand("Roughly even chance", 45, 55),
+    ProbabilityBand("Likely", 55, 80),
+    ProbabilityBand("Very likely", 80, 95),
+    ProbabilityBand("Almost certain", 95, 99),
+]
+
+
 # --------------------------------------------------------------------------- #
 # Intelligence-concepts glossary (shared across every role)
 # --------------------------------------------------------------------------- #
@@ -174,6 +203,23 @@ CONCEPTS: list[Concept] = [
         ],
     ),
     Concept(
+        slug="estimative-language",
+        term="Estimative language (ICD 203)",
+        category="Tradecraft",
+        body=(
+            "ICD 203 keeps two expressions deliberately separate. Analytic "
+            "confidence is how much faith you place in a judgement, given the "
+            "sourcing and reasoning behind it — set it as the report's optional "
+            "LOW / MODERATE / HIGH confidence marking, shown beside the TLP and "
+            "status. Likelihood is the probability of the assessed event itself; "
+            "express it in the report's prose using the standardised probability "
+            "yardstick so 'likely' always means the same thing."
+        ),
+        points=[
+            f"{b.term} — {b.range_label}." for b in PROBABILITY_YARDSTICK
+        ],
+    ),
+    Concept(
         slug="lifecycle",
         term="Report lifecycle",
         category="Workflow",
@@ -291,6 +337,7 @@ ROLE_GUIDES: list[RoleGuide] = [
             "diamond-model",
             "figures",
             "icd-203",
+            "estimative-language",
             "tags",
             "lifecycle",
         ],
@@ -320,7 +367,14 @@ ROLE_GUIDES: list[RoleGuide] = [
             HelpLink("Reports", "/reports"),
             HelpLink("Tasking board", "/requirements"),
         ],
-        concepts=["lifecycle", "icd-203", "source-grading", "tlp", "dissemination"],
+        concepts=[
+            "lifecycle",
+            "icd-203",
+            "estimative-language",
+            "source-grading",
+            "tlp",
+            "dissemination",
+        ],
     ),
     RoleGuide(
         role=Role.STAKEHOLDER,

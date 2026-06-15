@@ -219,6 +219,49 @@ def test_report_judgement_scaffolding(client, login):
     assert locked.status_code == 409
 
 
+def test_report_analytic_confidence(client, login):
+    """ICD 203 analytic confidence: an optional LOW/MODERATE/HIGH marking that
+    round-trips, can be cleared (set to null), and is locked once published."""
+    login("ANALYST", email="author@example.com")
+    nb = _make_notebook(client)
+    rid = client.post(
+        "/api/reports",
+        json={"notebook_id": nb["id"], "title": "R", "tlp": "GREEN"},
+    ).json()["id"]
+
+    # Defaults to "not stated".
+    assert client.get(f"/api/reports/{rid}").json()["report"][
+        "analytic_confidence"
+    ] is None
+
+    set_high = client.patch(
+        f"/api/reports/{rid}", json={"analytic_confidence": "HIGH"}
+    )
+    assert set_high.status_code == 200, set_high.text
+    assert set_high.json()["analytic_confidence"] == "HIGH"
+
+    # Explicit null clears it back to "not stated".
+    cleared = client.patch(
+        f"/api/reports/{rid}", json={"analytic_confidence": None}
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["analytic_confidence"] is None
+
+    client.patch(f"/api/reports/{rid}", json={"analytic_confidence": "MODERATE"})
+
+    # Publish, then confirm the marking is locked like the rest of the product.
+    client.post(f"/api/reports/{rid}/transition", json={"target": "IN_REVIEW"})
+    login("REVIEWER", email="rev@example.com")
+    client.post(f"/api/reports/{rid}/transition", json={"target": "APPROVED"})
+    client.post(f"/api/reports/{rid}/transition", json={"target": "PUBLISHED"})
+
+    login("ANALYST", email="author@example.com")
+    locked = client.patch(
+        f"/api/reports/{rid}", json={"analytic_confidence": "LOW"}
+    )
+    assert locked.status_code == 409
+
+
 def test_preview_sanitizes_html(client, login):
     login("ANALYST")
     resp = client.post(

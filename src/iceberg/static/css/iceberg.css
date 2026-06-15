@@ -344,6 +344,14 @@ a.row:hover, .row-hover:hover { background: var(--surface-2); }
 /* Intel level — accent register */
 .lvl { color: var(--accent-deep); background: var(--accent-soft); border-color: var(--accent-line); }
 
+/* Analytic confidence (ICD 203) — deliberately calm: neutral chip whose dot
+   carries the only colour, so it never competes with the TLP/status stamps. */
+.conf { color: var(--ink-soft); background: var(--surface); }
+.conf .dot { background: var(--c, var(--muted)); }
+.conf--low  { --c: var(--muted); }
+.conf--mod  { --c: var(--accent); }
+.conf--high { --c: var(--c-ok); }
+
 .source-grade {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 34px;
@@ -1069,3 +1077,21 @@ h2 .help-hint, .eyebrow .help-hint {
 .concept-body { margin-top: 8px; color: var(--ink-soft); font-size: 14px; line-height: 1.6; }
 .concept-points { margin: 10px 0 0; padding-left: 18px; }
 .concept-points li { margin-bottom: 5px; color: var(--ink-soft); font-size: 13.5px; line-height: 1.5; }
+
+/* Probability-yardstick reference panel in the report editor (collapsible). */
+.yardstick {
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--surface-2); padding: 10px 12px;
+}
+.yardstick > summary {
+  cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--accent-deep);
+  list-style-position: inside;
+}
+.yardstick-scale { margin: 0; padding: 0; list-style: none; }
+.yardstick-scale li {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  padding: 4px 0; border-bottom: 1px solid var(--line);
+}
+.yardstick-scale li:last-child { border-bottom: none; }
+.yardstick-term { font-size: 13px; color: var(--ink-soft); }
+.yardstick-range { font-size: 12px; color: var(--accent-deep); white-space: nowrap; }
