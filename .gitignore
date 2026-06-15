@@ -17,3 +17,4 @@ htmlcov/
 /attachments/
 /figures/
 .env
+settings.json
