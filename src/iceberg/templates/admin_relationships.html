@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Entity relationships · {{ app_name }}{% endblock %}
+{% block content %}
+
+<div class="head-row mb-7">
+  <div>
+    <div class="eyebrow eyebrow-accent">Administration</div>
+    <h1 class="page-title mt-2">Entity relationships</h1>
+    <div class="title-rule"></div>
+    <p class="text-sm mt-3" style="color:var(--muted);max-width:60ch;">The knowledge graph: STIX-shaped links between named-threat entities (actor / malware / campaign) — and sectors as <span style="font-family:var(--fs-mono);">targets</span> victims. Surfaced on each entity profile as inbound + outbound edges. <a class="btn-link" href="/admin/tags">← Taxonomy terms</a></p>
+  </div>
+  <div class="counter-stack">
+    <span class="counter-num">{{ relationships | length }}</span>
+    <span class="counter-lbl">relationships</span>
+  </div>
+</div>
+
+<!-- Add a relationship -->
+<section class="card card-pad-lg mb-5">
+  <h2 class="section-title mb-4">Add a relationship</h2>
+  <form method="post" action="/admin/relationships" class="add-form">
+    <div class="add-grid" style="align-items:flex-end;">
+      <label class="field-wrap" style="flex:2;">
+        <span class="field-label">Source <span class="opt">actor / malware / campaign</span></span>
+        <select name="source_tag_id" class="field" required>
+          <option value="" disabled selected>Select source…</option>
+          {% for t in sources %}<option value="{{ t.id }}">{{ t.kind.value.title() }} · {{ t.label }}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="field-wrap">
+        <span class="field-label">Relation</span>
+        <select name="relation_type" class="field" style="font-family:var(--fs-mono);">
+          {% for r in relation_types %}<option value="{{ r.value }}">{{ r.value }}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="field-wrap" style="flex:2;">
+        <span class="field-label">Target <span class="opt">named-threat or sector</span></span>
+        <select name="target_tag_id" class="field" required>
+          <option value="" disabled selected>Select target…</option>
+          {% for t in targets %}<option value="{{ t.id }}">{{ t.kind.value.title() }} · {{ t.label }}</option>{% endfor %}
+        </select>
+      </label>
+      <div><button class="btn btn--primary btn--sm" type="submit">Add</button></div>
+    </div>
+  </form>
+</section>
+
+<!-- Existing relationships -->
+<section class="card card-pad-lg">
+  <h2 class="section-title mb-4">Graph</h2>
+  {% if relationships %}
+    <div class="rows">
+      {% for rel, src, tgt in relationships %}
+        <div class="row" style="cursor:default;">
+          <span class="flex-1 flex items-center gap-2 flex-wrap">
+            {{ m.tag_chip(src) }}
+            <span style="font-family:var(--fs-mono);font-size:11px;font-weight:700;color:var(--accent-ink,#2c6c8c);">— {{ rel.relation_type.value }} →</span>
+            {{ m.tag_chip(tgt) }}
+          </span>
+          <form method="post" action="/admin/relationships/{{ rel.id }}/delete"
+                onsubmit="return confirm('Remove this relationship?');">
+            <button class="icon-action icon-action--danger" type="submit" aria-label="Delete relationship" title="Delete relationship"></button>
+          </form>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="well card-pad-lg text-center">
+      <p class="empty">No relationships yet. Add one above to start building the graph.</p>
+    </div>
+  {% endif %}
+</section>
+{% endblock %}

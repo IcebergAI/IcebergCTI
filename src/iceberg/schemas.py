@@ -9,6 +9,7 @@ from .models import (
     Motivation,
     Priority,
     ProductFormat,
+    RelationType,
     ReportStatus,
     RequirementStatus,
     SourceCredibility,
@@ -216,3 +217,11 @@ class TagLinks(BaseModel):
     """Set the taxonomy tags a report is classified with."""
 
     tag_ids: list[int]
+
+
+class RelationshipCreate(BaseModel):
+    """A STIX-shaped relationship between two named-threat entities (roadmap 2c)."""
+
+    source_tag_id: int
+    target_tag_id: int
+    relation_type: RelationType

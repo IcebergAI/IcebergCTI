@@ -35,6 +35,7 @@ from ..models import (
     Notebook,
     Priority,
     ProductFormat,
+    RelationType,
     RenderedProduct,
     Report,
     ReportStatus,
@@ -59,6 +60,7 @@ from ..services import (
     lifecycle,
     notebooks as notebook_service,
     product_html as product_html_service,
+    relationships as rel_service,
     requirements as req_service,
     search as search_service,
     source_grading,
@@ -1132,10 +1134,20 @@ def tag_detail(
     # Named-threat kinds (ACTOR/MALWARE/CAMPAIGN) get a proper entity profile page
     # with structured attribution; other kinds keep the plain search drill-down.
     if tag.kind in tag_service.ALIASABLE_KINDS:
+        outbound, inbound = rel_service.relationships_for(session, tag_id)
         return templates.TemplateResponse(
             request,
             "entity_profile.html",
-            {"user": user, "active_tag": tag, "items": items},
+            {
+                "user": user,
+                "active_tag": tag,
+                "items": items,
+                "outbound": outbound,
+                "inbound": inbound,
+                "graph_svg": rel_service.render_relationship_graph_svg(
+                    tag, outbound, inbound
+                ),
+            },
         )
     return templates.TemplateResponse(
         request,
@@ -1248,3 +1260,55 @@ def admin_tag_delete(tag_id: int, session: SessionDep, user: CurrentUser):
     tag = _get_tag(session, tag_id)
     tag_service.delete_tag(session, tag)
     return _redirect("/admin/tags")
+
+
+# --------------------------------------------------------------------------- #
+# Entity relationships (knowledge graph, roadmap 2c) — admin-curated
+# --------------------------------------------------------------------------- #
+@router.get("/admin/relationships")
+def admin_relationships_view(
+    request: Request, session: SessionDep, user: CurrentUser
+):
+    _require_admin(user)
+    all_tags = tag_service.list_tags(session)
+    sources = [t for t in all_tags if t.kind in rel_service.SOURCE_KINDS]
+    targets = [t for t in all_tags if t.kind in rel_service.TARGETABLE_KINDS]
+    return templates.TemplateResponse(
+        request,
+        "admin_relationships.html",
+        {
+            "user": user,
+            "relationships": rel_service.list_relationships(session),
+            "sources": sources,
+            "targets": targets,
+            "relation_types": list(RelationType),
+        },
+    )
+
+
+@router.post("/admin/relationships")
+def admin_relationship_create(
+    session: SessionDep,
+    user: CurrentUser,
+    source_tag_id: Annotated[int, Form()],
+    target_tag_id: Annotated[int, Form()],
+    relation_type: Annotated[RelationType, Form()],
+):
+    _require_admin(user)
+    rel_service.create_relationship(
+        session,
+        source_tag_id=source_tag_id,
+        target_tag_id=target_tag_id,
+        relation_type=relation_type,
+    )
+    return _redirect("/admin/relationships")
+
+
+@router.post("/admin/relationships/{rel_id}/delete")
+def admin_relationship_delete(
+    rel_id: int, session: SessionDep, user: CurrentUser
+):
+    _require_admin(user)
+    rel = rel_service.get_relationship(session, rel_id)
+    rel_service.delete_relationship(session, rel)
+    return _redirect("/admin/relationships")
