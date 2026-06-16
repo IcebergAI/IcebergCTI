@@ -148,6 +148,23 @@ class DiamondConfidence(StrEnum):
     HIGH = "HIGH"
 
 
+class ACHCellRating(StrEnum):
+    """Consistency of one evidence item with one hypothesis (Heuer ACH).
+
+    The diagnostic signal is *inconsistency*: a hypothesis is weakened — never
+    confirmed — by evidence it cannot explain, so the inconsistency weights
+    (``INCONSISTENT`` 1, ``STRONGLY_INCONSISTENT`` 2; all others 0) drive the
+    per-hypothesis score. ``NEUTRAL`` is also the default for an unrated cell.
+    """
+
+    STRONGLY_CONSISTENT = "STRONGLY_CONSISTENT"  # ++
+    CONSISTENT = "CONSISTENT"  # +
+    NEUTRAL = "NEUTRAL"  # N
+    INCONSISTENT = "INCONSISTENT"  # −
+    STRONGLY_INCONSISTENT = "STRONGLY_INCONSISTENT"  # −−
+    NOT_APPLICABLE = "NOT_APPLICABLE"  # N/A
+
+
 class AnalyticConfidence(StrEnum):
     """ICD 203 analytic confidence in a report's judgements (distinct from the
     *likelihood* of the assessed event — see the probability yardstick). Scoped
@@ -351,6 +368,9 @@ class Notebook(SQLModel, table=True):
     diamond_models: list["DiamondModel"] = Relationship(
         back_populates="notebook", cascade_delete=True
     )
+    ach_models: list["ACHModel"] = Relationship(
+        back_populates="notebook", cascade_delete=True
+    )
     figures: list["Figure"] = Relationship(
         back_populates="notebook", cascade_delete=True
     )
@@ -418,6 +438,47 @@ class DiamondModel(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utcnow)
 
     notebook: Notebook = Relationship(back_populates="diamond_models")
+
+
+class ACHModel(SQLModel, table=True):
+    """An Analysis of Competing Hypotheses (Heuer) matrix held against a notebook.
+
+    Adjudicates a key intelligence ``question`` by scoring a matrix of
+    ``hypotheses`` × ``evidence``: each cell of ``ratings`` records how
+    consistent one evidence item is with one hypothesis. The hypotheses /
+    evidence carry **stable string ids** (``h1`` / ``e1`` …) — not positional
+    indices — and ``ratings`` is keyed ``"{hid}:{eid}"`` so removing a row never
+    silently re-keys the matrix. The analytic payload is the per-hypothesis
+    *inconsistency* score (the least-inconsistent hypothesis is the most
+    tenable). Rendered to an SVG matrix and embedded inline in a report via the
+    ``[[ach:ID]]`` token — like the Diamond Model there is no citation link
+    table, the token is the association, resolved (notebook-scoped) at render
+    time. See ``services/ach.py``.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    notebook_id: int = Field(
+        foreign_key="notebook.id", ondelete="CASCADE", index=True
+    )
+    title: str
+    question: str = ""  # the key intelligence question being adjudicated
+    hypotheses: list[dict] = Field(  # [{"id": "h1", "text": "..."}]
+        default_factory=list,
+        sa_column=Column(JSON, nullable=False, server_default="[]"),
+    )
+    evidence: list[dict] = Field(  # [{"id": "e1", "text": "..."}]
+        default_factory=list,
+        sa_column=Column(JSON, nullable=False, server_default="[]"),
+    )
+    ratings: dict[str, str] = Field(  # {"h1:e1": "INCONSISTENT", ...}
+        default_factory=dict,
+        sa_column=Column(JSON, nullable=False, server_default="{}"),
+    )
+    notes: str = ""
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+    notebook: Notebook = Relationship(back_populates="ach_models")
 
 
 class Attachment(SQLModel, table=True):

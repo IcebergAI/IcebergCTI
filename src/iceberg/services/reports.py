@@ -20,6 +20,7 @@ from ..models import (
     User,
 )
 from ..rendering.typst import render_product
+from . import ach as ach_service
 from . import diamond as diamond_service
 from . import figures as figure_service
 
@@ -134,6 +135,10 @@ def render_report(
                     Path(fig.stored_filename).suffix,
                 )
             )
+    ach = [
+        (a.id, a.question or a.title, ach_service.render_ach_svg(a))
+        for a in ach_service.referenced_ach(session, report)
+    ]
     path = render_product(
         report=report,
         author_name=author_name,
@@ -142,6 +147,7 @@ def render_report(
         tags=list(report.tags),
         diamonds=diamonds,
         figures=figures,
+        ach=ach,
         fmt=fmt,
     )
     product = RenderedProduct(report_id=report.id, format=fmt, pdf_path=str(path))

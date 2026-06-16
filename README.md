@@ -8,11 +8,12 @@ A cyber threat intelligence platform for **collecting** intelligence, **authorin
 finished intelligence products, and **disseminating** them to stakeholders.
 
 Analysts work in topic **notebooks** — gathering sources, notes and uploaded
-**attachments** (reference files), and modelling intrusions with the **Diamond
-Model** — and author **reports** (intelligence products) in markdown. Reports carry
+**attachments** (reference files), and applying structured analytic techniques (the
+**Diamond Model** of Intrusion Analysis and **Analysis of Competing Hypotheses (ACH)**) —
+and author **reports** (intelligence products) in markdown. Reports carry
 an intelligence level (Strategic / Tactical / Operational) and a TLP marking, cite
 sources and attachments, carry Admiralty/NATO-style **source reliability grading**,
-**embed Diamond Model diagrams and figures (images) inline**, are classified with **taxonomy tags** (threat
+**embed Diamond Model diagrams, ACH matrices and figures (images) inline**, are classified with **taxonomy tags** (threat
 actor / campaign / malware / ATT&CK technique / sector / topic), move through a review
 workflow, and can be rendered to branded PDF products.
 Everything is **searchable** — full-text + faceted across the report library.
@@ -104,7 +105,7 @@ created automatically on first boot (`ICEBERG_AUTO_MIGRATE=true` runs migrations
 
 **Get oriented:** open **Help** in the nav (`/help`) for a guide to your role's workflow,
 a browsable look at what the other roles do, and a glossary of the intelligence concepts
-(TLP, intel levels, source grading, the Diamond Model, ICD 203 judgements, dissemination).
+(TLP, intel levels, source grading, the Diamond Model, ACH, ICD 203 judgements, dissemination).
 
 ### Try the authoring loop
 1. Create a **notebook** from the dashboard.
@@ -131,6 +132,17 @@ a browsable look at what the other roles do, and a glossary of the intelligence 
    `[[diamond:ID]]` token) to embed the diagram **inline at that point** in the body.
 3. The diagram renders in the live preview, the published report page, and the
    Typst PDF — all from one server-generated SVG.
+
+### Weigh competing hypotheses (ACH)
+1. In a notebook, open the **ACH analyses** section and add one. On the **Edit** page,
+   pose the key intelligence question, add the competing **hypotheses** (columns) and
+   the **evidence** (rows), and rate each cell for consistency. A live SVG preview of
+   the matrix — with the **least-inconsistent (most tenable)** hypothesis flagged —
+   updates as you go.
+2. In a report editor, click **Insert at cursor** next to the analysis (or type its
+   `[[ach:ID]]` token) to embed the matrix **inline at that point** in the body.
+3. The matrix renders in the live preview, the published report page, and the Typst
+   PDF — all from one server-generated SVG.
 
 ### Embed an image (figure)
 1. In a notebook, open the **Figures** section and upload an image (PNG/JPEG/GIF).

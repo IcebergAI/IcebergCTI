@@ -2,6 +2,7 @@
 render Jinja2 templates. Write actions are blocked for read-only stakeholders.
 """
 
+import json
 from pathlib import Path
 from typing import Annotated
 
@@ -25,6 +26,7 @@ from .. import help_content
 from ..auth.dependencies import CurrentUser, ensure_role
 from ..db import get_session
 from ..models import (
+    ACHCellRating,
     AnalyticConfidence,
     Attachment,
     DiamondConfidence,
@@ -53,6 +55,7 @@ from ..models import (
 )
 from ..rendering.typst import TypstNotAvailable, TypstRenderError, typst_available
 from ..services import (
+    ach as ach_service,
     attachments as attachment_service,
     diamond as diamond_service,
     dissemination,
@@ -220,6 +223,7 @@ def notebook_detail(
     _require_writer(user)  # raw collection material is writer-only
     nb = _get_notebook(session, notebook_id)
     diamonds = list(nb.diamond_models)
+    ach_models = list(nb.ach_models)
     return templates.TemplateResponse(
         request,
         "notebook_detail.html",
@@ -233,6 +237,8 @@ def notebook_detail(
             "reports": list(nb.reports),
             "diamonds": diamonds,
             "diamond_svgs": {d.id: diamond_service.render_diamond_svg(d) for d in diamonds},
+            "ach_models": ach_models,
+            "ach_svgs": {a.id: ach_service.render_ach_svg(a) for a in ach_models},
             "confidences": list(DiamondConfidence),
             "source_reliabilities": list(SourceReliability),
             "source_credibilities": list(SourceCredibility),
@@ -563,6 +569,102 @@ def diamond_delete(
     return _redirect(f"/notebooks/{notebook_id}#diamonds")
 
 
+# --------------------------------------------------------------------------- #
+# ACH (Analysis of Competing Hypotheses) matrices
+# --------------------------------------------------------------------------- #
+def _parse_ach_matrix(matrix: str) -> tuple[list, list, dict]:
+    """Decode the editor's hidden ``matrix`` JSON field into the trio the
+    service normalises. Bad/empty JSON degrades to an empty matrix."""
+    try:
+        data = json.loads(matrix or "{}")
+    except (ValueError, TypeError):
+        return [], [], {}
+    if not isinstance(data, dict):
+        return [], [], {}
+    hyps = data.get("hypotheses") or []
+    evs = data.get("evidence") or []
+    ratings = data.get("ratings") or {}
+    return (
+        hyps if isinstance(hyps, list) else [],
+        evs if isinstance(evs, list) else [],
+        ratings if isinstance(ratings, dict) else {},
+    )
+
+
+@router.post("/notebooks/{notebook_id}/ach")
+def add_ach(
+    notebook_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+    title: Annotated[str, Form()],
+):
+    _require_writer(user)
+    nb = _get_notebook(session, notebook_id)
+    ach = ach_service.create_ach(session, nb, title=title)
+    return _redirect(f"/notebooks/{notebook_id}/ach/{ach.id}/edit")
+
+
+@router.get("/notebooks/{notebook_id}/ach/{ach_id}/edit")
+def ach_edit(
+    notebook_id: int,
+    ach_id: int,
+    request: Request,
+    session: SessionDep,
+    user: CurrentUser,
+):
+    _require_writer(user)
+    nb = _get_notebook(session, notebook_id)
+    ach = ach_service.get_scoped(session, notebook_id, ach_id)
+    return templates.TemplateResponse(
+        request,
+        "ach_edit.html",
+        {
+            "user": user,
+            "notebook": nb,
+            "ach": ach,
+            "ratings": list(ACHCellRating),
+            "preview_svg": ach_service.render_ach_svg(ach),
+        },
+    )
+
+
+@router.post("/notebooks/{notebook_id}/ach/{ach_id}")
+def ach_save(
+    notebook_id: int,
+    ach_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+    title: Annotated[str, Form()],
+    question: Annotated[str, Form()] = "",
+    matrix: Annotated[str, Form()] = "",
+    notes: Annotated[str, Form()] = "",
+):
+    _require_writer(user)
+    ach = ach_service.get_scoped(session, notebook_id, ach_id)
+    hyps, evs, ratings = _parse_ach_matrix(matrix)
+    ach_service.update_ach(
+        session,
+        ach,
+        title=title,
+        question=question,
+        hypotheses=hyps,
+        evidence=evs,
+        ratings=ratings,
+        notes=notes,
+    )
+    return _redirect(f"/notebooks/{notebook_id}/ach/{ach_id}/edit")
+
+
+@router.post("/notebooks/{notebook_id}/ach/{ach_id}/delete")
+def ach_delete(
+    notebook_id: int, ach_id: int, session: SessionDep, user: CurrentUser
+):
+    _require_writer(user)
+    ach = ach_service.get_scoped(session, notebook_id, ach_id)
+    ach_service.delete_ach(session, ach)
+    return _redirect(f"/notebooks/{notebook_id}#ach")
+
+
 @router.post("/notebooks/{notebook_id}/reports")
 def create_report(
     notebook_id: int,
@@ -661,6 +763,10 @@ def report_edit(
             "diamond_svgs": {
                 d.id: diamond_service.render_diamond_svg(d)
                 for d in notebook.diamond_models
+            },
+            "ach_models": list(notebook.ach_models),
+            "ach_svgs": {
+                a.id: ach_service.render_ach_svg(a) for a in notebook.ach_models
             },
             "figures": list(notebook.figures),
             "all_requirements": _open_requirements(session, report.requirements),

@@ -155,6 +155,46 @@ class DiamondPreviewResponse(BaseModel):
     svg: str
 
 
+class ACHRow(BaseModel):
+    """One hypothesis or evidence row. ``id`` is the stable per-row id the editor
+    manages; it is allocated server-side (``h1``/``e1`` …) when absent."""
+
+    id: str | None = None
+    text: str = ""
+
+
+class ACHCreate(BaseModel):
+    title: str
+    question: str = ""
+    hypotheses: list[ACHRow] = []
+    evidence: list[ACHRow] = []
+    ratings: dict[str, str] = {}  # {"h1:e1": "INCONSISTENT", ...}
+    notes: str = ""
+
+
+class ACHUpdate(BaseModel):
+    title: str | None = None
+    question: str | None = None
+    hypotheses: list[ACHRow] | None = None
+    evidence: list[ACHRow] | None = None
+    ratings: dict[str, str] | None = None
+    notes: str | None = None
+
+
+class ACHPreviewRequest(BaseModel):
+    """Render an unsaved ACH matrix to SVG (the notebook edit-page preview)."""
+
+    title: str = ""
+    question: str = ""
+    hypotheses: list[ACHRow] = []
+    evidence: list[ACHRow] = []
+    ratings: dict[str, str] = {}
+
+
+class ACHPreviewResponse(BaseModel):
+    svg: str
+
+
 class RequirementCreate(BaseModel):
     title: str
     description: str = ""

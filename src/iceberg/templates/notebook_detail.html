@@ -33,6 +33,11 @@
     <strong>{{ diamonds | length }}</strong>
     <span>Intrusion models</span>
   </a>
+  <a href="#ach" class="collection-step {{ 'is-done' if ach_models else '' }}">
+    <span class="step-kicker">ACH</span>
+    <strong>{{ ach_models | length }}</strong>
+    <span>Hypothesis matrices</span>
+  </a>
   <a href="#figures" class="collection-step {{ 'is-done' if figures else '' }}">
     <span class="step-kicker">Figures</span>
     <strong>{{ figures | length }}</strong>
@@ -362,6 +367,53 @@
       </div>
       <div><label class="field-label">Notes <span class="opt">optional</span></label><textarea name="notes" rows="2" placeholder="Analytic notes" class="field"></textarea></div>
       <button class="btn btn--ink">Create Diamond Model</button>
+    </form>
+  {% endif %}
+</section>
+
+<!-- ACH analyses -->
+<section id="ach" class="card card-pad-lg mb-6">
+  <div class="head-row mb-4">
+    <h2 class="section-title">ACH analyses
+      <a class="help-hint" href="/help?role={{ user.role.value }}#ach-model" title="What is Analysis of Competing Hypotheses?">?</a>
+    </h2>
+    <span class="eyebrow">{{ ach_models | length }}</span>
+  </div>
+  <p class="text-xs mb-4" style="color:var(--muted);">Analysis of Competing Hypotheses matrices — score hypotheses against evidence; the least-inconsistent is most tenable. Embed one in a report by writing its <span class="mono" style="color:var(--accent-deep);">[[ach:ID]]</span> token in the body.</p>
+  {% if ach_models %}
+    <div class="diamond-grid">
+      {% for a in ach_models %}
+        <div class="diamond-card">
+          <div class="diamond-thumb">{{ ach_svgs[a.id] | safe }}</div>
+          <div class="diamond-card-meta">
+            <div class="row-title text-sm">{{ a.title or 'Untitled analysis' }}</div>
+            <div class="flex items-center gap-2 mt-1 flex-wrap">
+              <span class="mono text-xs" style="color:var(--accent-deep);">[[ach:{{ a.id }}]]</span>
+            </div>
+            {% if can_write %}
+              <div class="file-row-actions mt-2">
+                <a class="btn btn--ghost btn--sm" href="/notebooks/{{ notebook.id }}/ach/{{ a.id }}/edit">Edit</a>
+                <form method="post" action="/notebooks/{{ notebook.id }}/ach/{{ a.id }}/delete"
+                      onsubmit="return confirm('Delete this ACH analysis?');">
+                  <button class="link-danger" style="background:none;border:0;cursor:pointer;">Delete</button>
+                </form>
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="empty">No ACH matrices yet. List the competing hypotheses, gather your evidence, and rate each cell for consistency.</p>
+  {% endif %}
+  {% if can_write %}
+    <form method="post" action="/notebooks/{{ notebook.id }}/ach" class="well card-pad mt-4 space-y-3">
+      <div class="eyebrow">New ACH analysis</div>
+      <div>
+        <label class="field-label">Title</label>
+        <input name="title" required placeholder="e.g. Who is behind the intrusion?" class="field">
+      </div>
+      <button class="btn btn--ink">Create ACH analysis</button>
     </form>
   {% endif %}
 </section>

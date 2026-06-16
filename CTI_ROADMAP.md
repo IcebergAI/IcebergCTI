@@ -21,7 +21,7 @@ This roadmap **prioritises two themes** — *Analytic Tradecraft (ICD 203)* and 
 
 **Gaps that matter for a *finished-intelligence* platform:**
 - ~~**No estimative language.**~~ **Addressed (§1b):** reports carry an optional analytic-confidence marking, and a standardised probability yardstick is shipped as an authoring aid (likelihood expressed in prose). The optional hedging lint is deferred.
-- **Limited structured analytic techniques.** Key Judgements / Key Assumptions / Intelligence Gaps are implemented, but deeper structured analytic techniques like Analysis of Competing Hypotheses (ACH) are still missing.
+- ~~**Limited structured analytic techniques.**~~ **Addressed (§1c stretch):** alongside Key Judgements / Key Assumptions / Intelligence Gaps, **Analysis of Competing Hypotheses (ACH)** now ships as a second analytic model beside the Diamond Model — a per-notebook hypotheses × evidence matrix scored by inconsistency, embedded into reports via a `[[ach:ID]]` token.
 - **Flat knowledge layer (addressed — 2a + 2b + 2c).** Actor/malware/campaign `Tag` rows now carry a structured `aliases` list (search resolves any alias to the canonical entity — see §2a) **and** structured attribution (sponsor/country, motivation, first/last seen), with `/tags/{id}` promoted to a real entity profile page (§2b), **and** STIX-shaped `EntityRelationship` edges between entities surfaced as profile chips + an SVG mini-graph (§2c). The knowledge layer is now a graph; **STIX export (backlog B)** is the natural next payoff.
 - **No machine-readable interop** (STIX/TAXII/Navigator) and **email/feed-only dissemination** — noted as secondary backlog below.
 - **Need-to-know gap:** stakeholders consume published products, but the published report library is not yet compartmented by named sharing, tags, teams, or entitlement groups.
@@ -50,8 +50,8 @@ This roadmap **prioritises two themes** — *Analytic Tradecraft (ICD 203)* and 
 ### 1c. Structured judgement scaffolding (KJ / KA / Gaps) — ✅ **implemented**
 > Shipped: `key_judgements` / `key_assumptions` / `intelligence_gaps` markdown fields on `Report`, editable in the report editor (publish-immutable), rendered as discrete sections in the web view and PDF; EXEC_BRIEF / ONE_PAGER are Key-Judgements-only. ACH is deferred. Plan: [docs/plans/1c-judgement-scaffolding.md](docs/plans/1c-judgement-scaffolding.md).
 - Promote **Key Judgements**, **Key Assumptions**, and **Intelligence Gaps** to first-class optional markdown fields on `Report` ([models.py:312-344](src/iceberg/models.py#L312-L344)), rendered as standard sections in the web view and PDF — and let the **EXEC_BRIEF / ONE_PAGER** formats render *just* the Key Judgements (this is what those formats are for).
-- **Stretch:** add **ACH** as a second analytic model alongside Diamond, reusing the exact `services/diamond.py` pattern (per-notebook model → server-rendered artefact → `[[ach:ID]]` inline token). This squarely advances "structured analytic techniques".
-- **Impact:** Medium–High / **Effort:** Medium (fields) + Medium-Large (ACH stretch).
+- **Stretch — ✅ implemented:** **ACH** ships as a second analytic model alongside Diamond, reusing the exact `services/diamond.py` pattern (per-notebook `ACHModel` → server-rendered SVG matrix → `[[ach:ID]]` inline token in web view, live preview and Typst PDF). Hypotheses × evidence with a 5-point + N/A consistency scale (Heuer); the analytic payload is the per-hypothesis inconsistency score (least inconsistent = most tenable). Admin-free, writer-only, notebook-scoped; edited on an Alpine grid with a live preview. Migration `b232d8f39c4b`. See `services/ach.py`.
+- **Impact:** Medium–High / **Effort:** shipped (Medium fields + Medium-Large ACH).
 
 ---
 
@@ -94,7 +94,7 @@ This roadmap **prioritises two themes** — *Analytic Tradecraft (ICD 203)* and 
 ## Suggested sequencing
 
 1. **Quick wins first:** A (Navigator export) → ~~2a (aliases)~~ ✅ done. All Low-effort, High-impact, low blast-radius.
-2. **Core rigour:** 1a, 1b and 1c are shipped (1b's hedging lint and 1c's ACH stretch remain as follow-ups).
+2. **Core rigour:** 1a, 1b and 1c are shipped (incl. 1c's **ACH** stretch; 1b's hedging lint remains as a follow-up).
 3. **Knowledge layer:** ~~2b (profiles)~~ ✅ done → ~~2c (relationships)~~ ✅ done → then B (STIX export) becomes a natural payoff (the entity graph is now in place to ride on).
 4. **Process/governance:** D (feedback loop), C (channels), F (need-to-know) as capacity allows.
 

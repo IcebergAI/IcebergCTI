@@ -43,6 +43,9 @@ _DIAMOND_TOKEN_RE = re.compile(r"\[\[diamond:(\d+)\]\]")
 # `[[figure:ID]]` is rewritten to a markdown image that cmarker turns into a Typst
 # `image()`, resolving against the per-render image files in the temp `--root`.
 _FIGURE_TOKEN_RE = re.compile(r"\[\[figure:(\d+)\]\]")
+# Mirror of services.ach.ACH_TOKEN_RE — `[[ach:ID]]` rewritten to a markdown image
+# resolving against the per-render ACH SVG files written into the temp `--root`.
+_ACH_TOKEN_RE = re.compile(r"\[\[ach:(\d+)\]\]")
 
 
 def _rewrite_diamond_tokens(body: str, diamonds: list[tuple[int, str, str]]) -> str:
@@ -79,6 +82,21 @@ def _rewrite_figure_tokens(
     return _FIGURE_TOKEN_RE.sub(_sub, body or "")
 
 
+def _rewrite_ach_tokens(body: str, ach: list[tuple[int, str, str]]) -> str:
+    titles = {aid: title for aid, title, _svg in ach}
+
+    def _sub(match: re.Match) -> str:
+        aid = int(match.group(1))
+        if aid in titles:
+            caption = titles[aid].replace("[", "(").replace("]", ")").replace("\n", " ")
+            # The SVG is written into the temp `--root` as ach-{id}.svg (see
+            # render_product); product.typ's `image` override resolves it.
+            return f"\n\n![{caption}](ach-{aid}.svg)\n\n"
+        return "\n\n*[ACH analysis unavailable]*\n\n"
+
+    return _ACH_TOKEN_RE.sub(_sub, body or "")
+
+
 class TypstNotAvailable(RuntimeError):
     """Typst binary is not installed / not on PATH."""
 
@@ -99,13 +117,15 @@ def _build_data(
     tags: list[Tag],
     diamonds: list[tuple[int, str, str]],
     figures: list[tuple[int, str, str, str]],
+    ach: list[tuple[int, str, str]],
 ) -> dict:
     stamp = report.published_at or report.updated_at
-    # Both inline-embed tokens are rewritten to markdown images here (disjoint
+    # All three inline-embed tokens are rewritten to markdown images here (disjoint
     # token sets, so order is irrelevant); the files are written into the temp
     # --root by render_product and resolved by product.typ's `image` override.
     body_md = _rewrite_diamond_tokens(report.body_md or "", diamonds)
     body_md = _rewrite_figure_tokens(body_md, figures)
+    body_md = _rewrite_ach_tokens(body_md, ach)
     return {
         "title": report.title,
         "intel_level": report.intel_level.value,
@@ -156,6 +176,7 @@ def render_product(
     tags: list[Tag] | None = None,
     diamonds: list[tuple[int, str, str]] | None = None,
     figures: list[tuple[int, str, str, str]] | None = None,
+    ach: list[tuple[int, str, str]] | None = None,
     fmt: ProductFormat,
 ) -> Path:
     settings = get_settings()
@@ -166,6 +187,7 @@ def render_product(
 
     diamonds = diamonds or []
     figures = figures or []
+    ach = ach or []
     out_dir = Path(settings.render_output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = (
@@ -184,6 +206,7 @@ def render_product(
                     tags or [],
                     diamonds,
                     figures,
+                    ach,
                 )
             ),
             encoding="utf-8",
@@ -192,6 +215,9 @@ def render_product(
         # the temp `--root` via cmarker's `image()`.
         for did, _title, svg in diamonds:
             (tmp_dir / f"diamond-{did}.svg").write_text(svg, encoding="utf-8")
+        # ACH matrices referenced inline by the body — same temp `--root` SVGs.
+        for aid, _title, svg in ach:
+            (tmp_dir / f"ach-{aid}.svg").write_text(svg, encoding="utf-8")
         # Figure images referenced inline by the body — copied into the same
         # `--root` as figure-{id}{ext}.
         for fid, _caption, src_path, ext in figures:

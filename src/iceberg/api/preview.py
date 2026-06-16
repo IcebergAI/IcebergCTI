@@ -8,15 +8,18 @@ from sqlmodel import Session
 
 from ..auth.dependencies import CurrentUser
 from ..db import get_session
-from ..models import DiamondModel, Report
+from ..models import ACHModel, DiamondModel, Report
 from ..rendering.markdown import render_markdown
 from ..schemas import (
+    ACHPreviewRequest,
+    ACHPreviewResponse,
     DiamondPreviewRequest,
     DiamondPreviewResponse,
     PreviewRequest,
     PreviewResponse,
     ReportPreviewRequest,
 )
+from ..services import ach as ach_service
 from ..services import diamond as diamond_service
 from ..services import product_html as product_html_service
 
@@ -76,3 +79,21 @@ def preview_diamond(
         confidence=body.confidence,
     )
     return DiamondPreviewResponse(svg=diamond_service.render_diamond_svg(transient))
+
+
+@router.post("/preview/ach", response_model=ACHPreviewResponse)
+def preview_ach(body: ACHPreviewRequest, _user: CurrentUser) -> ACHPreviewResponse:
+    hyps, evs, ratings = ach_service.normalise(
+        [r.model_dump() for r in body.hypotheses],
+        [r.model_dump() for r in body.evidence],
+        body.ratings,
+    )
+    transient = ACHModel(
+        notebook_id=0,
+        title=body.title,
+        question=body.question,
+        hypotheses=hyps,
+        evidence=evs,
+        ratings=ratings,
+    )
+    return ACHPreviewResponse(svg=ach_service.render_ach_svg(transient))
