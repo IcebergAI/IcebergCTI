@@ -238,6 +238,36 @@
   {% endif %}
 </section>
 
+<!-- ACH analyses -->
+<section id="ach-embed" class="card card-pad-lg mt-6">
+  <h2 class="section-title mb-1">ACH analyses <a href="/help#ach-model" class="help-hint" target="_blank">?</a></h2>
+  <p class="text-xs mb-4" style="color:var(--muted);">Insert an Analysis of Competing Hypotheses matrix with its token — it renders inline in the preview, the published report and the PDF.</p>
+  {% if ach_models %}
+    <div class="space-y-2">
+      {% for a in ach_models %}
+        <div class="file-row" style="align-items:flex-start;gap:14px;">
+          {% if ach_svgs and ach_svgs[a.id] %}
+            <div class="ach-svg" style="flex:none;width:160px;border:1px solid var(--line);border-radius:var(--radius-sm);overflow:hidden;background:var(--surface-2);">{{ ach_svgs[a.id] | safe }}</div>
+          {% endif %}
+          <div class="flex-1" style="min-width:0;">
+            <div class="file-fmt">{{ a.title or 'Untitled analysis' }}</div>
+            <span class="mono text-xs" style="color:var(--accent-deep);">[[ach:{{ a.id }}]]</span>
+            <div class="file-row-actions mt-2" style="margin-left:0;">
+              {% if can_edit %}
+                <button type="button" class="btn btn--ghost btn--sm" onclick="insertAch({{ a.id }})">Insert at cursor</button>
+              {% endif %}
+              <a class="btn-link" href="/notebooks/{{ notebook.id }}/ach/{{ a.id }}/edit">Edit</a>
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="empty">No ACH analyses in this notebook yet.
+      <a href="/notebooks/{{ notebook.id }}#ach" class="btn-link">Build one in the notebook</a>, then insert it here.</p>
+  {% endif %}
+</section>
+
 <!-- Citations -->
 <section id="citations" class="card card-pad-lg mt-6">
   <h2 class="section-title mb-1">Cited sources</h2>
@@ -505,5 +535,6 @@
   }
   function insertDiamond(id) { insertToken('[[diamond:' + id + ']]'); }
   function insertFigure(id) { insertToken('[[figure:' + id + ']]'); }
+  function insertAch(id) { insertToken('[[ach:' + id + ']]'); }
 </script>
 {% endblock %}

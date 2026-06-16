@@ -974,6 +974,44 @@ select.field {
 .diamond-card-meta { padding: 12px 14px; }
 
 /* ========================================================================== *
+ *  ACH — Analysis of Competing Hypotheses matrix (embed + editor grid)
+ * ========================================================================== */
+.ach-svg svg,
+.ach-figure svg,
+.ach-inline svg { max-width: 100%; height: auto; }
+.ach-inline { display: inline-block; vertical-align: middle; max-width: 360px; }
+.ach-missing {
+  font-family: var(--fs-mono);
+  font-size: 12px;
+  color: var(--c-warn);
+}
+
+.field--sm { padding: 6px 8px; font-size: 12px; }
+
+.ach-matrix { border-collapse: collapse; width: 100%; }
+.ach-matrix th, .ach-matrix td {
+  border: 1px solid var(--line);
+  padding: 7px 8px;
+  vertical-align: top;
+}
+.ach-matrix .ach-corner {
+  font-size: 8.5px;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  background: var(--surface-2);
+  text-align: left;
+  min-width: 150px;
+}
+.ach-matrix .ach-hyp { min-width: 150px; background: var(--surface-2); position: relative; }
+.ach-matrix .ach-ev { min-width: 170px; position: relative; }
+.ach-matrix .ach-cell { text-align: center; }
+.ach-matrix .ach-add { border: 0; background: transparent; vertical-align: bottom; }
+.ach-matrix .ach-x {
+  position: absolute; top: 4px; right: 4px;
+  background: none; border: 0; cursor: pointer; font-size: 13px; line-height: 1;
+}
+
+/* ========================================================================== *
  *  Figures — image embedded inline in a report, plus the notebook gallery
  * ========================================================================== */
 .report-figure {

@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% set can_edit = user.role != 'STAKEHOLDER' %}
+{% set RATING_LABELS = {
+  'STRONGLY_CONSISTENT': '++  strongly consistent',
+  'CONSISTENT': '+  consistent',
+  'NEUTRAL': '·  neutral',
+  'INCONSISTENT': '−  inconsistent',
+  'STRONGLY_INCONSISTENT': '−−  strongly inconsistent',
+  'NOT_APPLICABLE': 'n/a'
+} %}
+{% block title %}ACH · {{ ach.title or 'Untitled' }}{% endblock %}
+{% block content %}
+
+<div class="head-row mb-5">
+  <div>
+    <a href="/notebooks/{{ notebook.id }}#ach" class="backlink">← {{ notebook.title }}</a>
+    <div class="eyebrow eyebrow-accent mt-3">Analysis of Competing Hypotheses
+      <a class="help-hint" href="/help?role={{ user.role.value }}#ach-model" title="What is ACH?">?</a>
+    </div>
+    <h1 class="page-title mt-2">{{ ach.title or 'Untitled analysis' }}</h1>
+    <div class="mt-3 flex gap-2 items-center flex-wrap"
+         x-data="{ copied: false, copy() { navigator.clipboard.writeText('[[ach:{{ ach.id }}]]').then(() => { this.copied = true; setTimeout(() => this.copied = false, 1600); }); } }">
+      <span class="mono text-xs" style="color:var(--accent-deep);background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:5px;padding:3px 7px;">[[ach:{{ ach.id }}]]</span>
+      <button type="button" class="btn btn--ghost btn--sm" @click="copy()">
+        <span x-text="copied ? '✓ Copied' : '⧉ Copy token'"></span>
+      </button>
+      <span class="text-xs" style="color:var(--muted);">Paste into a report body to embed the matrix.</span>
+    </div>
+  </div>
+</div>
+
+<div class="editor-grid"
+     x-data='{
+       title: {{ ach.title | tojson }},
+       question: {{ ach.question | tojson }},
+       hypotheses: {{ ach.hypotheses | tojson }},
+       evidence: {{ ach.evidence | tojson }},
+       ratings: {{ ach.ratings | tojson }},
+       previewSvg: {{ preview_svg | tojson }},
+       timer: null,
+       nextId(prefix, rows) {
+         let max = 0;
+         rows.forEach(r => {
+           if (typeof r.id === "string" && r.id[0] === prefix) {
+             const n = parseInt(r.id.slice(1), 10);
+             if (!isNaN(n)) max = Math.max(max, n);
+           }
+         });
+         return prefix + (max + 1);
+       },
+       addHypothesis() { this.hypotheses.push({ id: this.nextId("h", this.hypotheses), text: "" }); this.schedule(); },
+       addEvidence() { this.evidence.push({ id: this.nextId("e", this.evidence), text: "" }); this.schedule(); },
+       removeHypothesis(j) {
+         const hid = this.hypotheses[j].id;
+         this.hypotheses.splice(j, 1);
+         Object.keys(this.ratings).forEach(k => { if (k.split(":")[0] === hid) delete this.ratings[k]; });
+         this.schedule();
+       },
+       removeEvidence(i) {
+         const eid = this.evidence[i].id;
+         this.evidence.splice(i, 1);
+         Object.keys(this.ratings).forEach(k => { if (k.split(":")[1] === eid) delete this.ratings[k]; });
+         this.schedule();
+       },
+       rating(hid, eid) { return this.ratings[hid + ":" + eid] || "NEUTRAL"; },
+       setRating(hid, eid, value) {
+         if (value === "NEUTRAL") { delete this.ratings[hid + ":" + eid]; }
+         else { this.ratings[hid + ":" + eid] = value; }
+         this.schedule();
+       },
+       serialize() {
+         this.$refs.matrix.value = JSON.stringify({ hypotheses: this.hypotheses, evidence: this.evidence, ratings: this.ratings });
+       },
+       schedule() { clearTimeout(this.timer); this.timer = setTimeout(() => this.refresh(), 300); },
+       async refresh() {
+         const res = await fetch("/api/preview/ach", {
+           method: "POST",
+           headers: {"Content-Type": "application/json"},
+           body: JSON.stringify({ title: this.title, question: this.question, hypotheses: this.hypotheses, evidence: this.evidence, ratings: this.ratings })
+         });
+         if (res.ok) { this.previewSvg = (await res.json()).svg; }
+       }
+     }'>
+
+  <!-- Editor -->
+  <section class="card card-pad-lg">
+    <div class="pane-label"><span class="pip"></span> Matrix</div>
+    {% if can_edit %}
+      <form method="post" action="/notebooks/{{ notebook.id }}/ach/{{ ach.id }}" class="space-y-3" @submit="serialize()">
+        <input type="hidden" name="matrix" x-ref="matrix">
+        <div>
+          <label class="field-label">Title</label>
+          <input name="title" x-model="title" @input="schedule()" required class="field" style="font-weight:600;">
+        </div>
+        <div>
+          <label class="field-label">Key intelligence question <span class="opt">shown as the matrix heading</span></label>
+          <input name="question" x-model="question" @input="schedule()" class="field" placeholder="e.g. Who is responsible for the intrusion?">
+        </div>
+
+        <div class="field-label mt-1" style="margin-bottom:2px;">Hypotheses × evidence
+          <span class="opt" style="text-transform:none;letter-spacing:0;">· rate how consistent each evidence item is with each hypothesis</span></div>
+
+        <div style="overflow-x:auto;">
+          <table class="ach-matrix">
+            <thead>
+              <tr>
+                <th class="ach-corner mono">EVIDENCE ↓ / HYPOTHESES →</th>
+                <template x-for="(h, j) in hypotheses" :key="h.id">
+                  <th class="ach-hyp">
+                    <div class="mono text-xs" style="color:var(--accent-deep);">H<span x-text="j + 1"></span></div>
+                    <input class="field field--sm" x-model="h.text" @input="schedule()" placeholder="Hypothesis">
+                    <button type="button" class="link-danger ach-x" @click="removeHypothesis(j)" title="Remove hypothesis">×</button>
+                  </th>
+                </template>
+                <th class="ach-add">
+                  <button type="button" class="btn btn--ghost btn--sm" @click="addHypothesis()">+ Hypothesis</button>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="(e, i) in evidence" :key="e.id">
+                <tr>
+                  <td class="ach-ev">
+                    <div class="mono text-xs" style="color:var(--muted);">E<span x-text="i + 1"></span></div>
+                    <input class="field field--sm" x-model="e.text" @input="schedule()" placeholder="Evidence / observation">
+                    <button type="button" class="link-danger ach-x" @click="removeEvidence(i)" title="Remove evidence">×</button>
+                  </td>
+                  <template x-for="(h, j) in hypotheses" :key="h.id">
+                    <td class="ach-cell">
+                      <select class="field field--sm" :value="rating(h.id, e.id)"
+                              @change="setRating(h.id, e.id, $event.target.value)">
+                        {% for r in ratings %}<option value="{{ r.value }}">{{ RATING_LABELS[r.value] }}</option>{% endfor %}
+                      </select>
+                    </td>
+                  </template>
+                  <td></td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+        <button type="button" class="btn btn--ghost btn--sm" @click="addEvidence()">+ Evidence</button>
+
+        <div class="mt-3">
+          <label class="field-label">Notes <span class="opt">optional · not shown on the matrix</span></label>
+          <textarea name="notes" rows="2" class="field" placeholder="Analytic notes">{{ ach.notes }}</textarea>
+        </div>
+        <button class="btn btn--ink">Save ACH analysis</button>
+      </form>
+    {% else %}
+      <p class="empty">Read-only — your role cannot edit analyses.</p>
+    {% endif %}
+  </section>
+
+  <!-- Live preview -->
+  <section class="card card-pad-lg" style="background:var(--surface-2);">
+    <div class="pane-label"><span class="pip"></span> Matrix preview</div>
+    <div class="ach-svg mt-2" style="overflow-x:auto;" x-html="previewSvg"></div>
+  </section>
+</div>
+
+{% if can_edit %}
+  <div class="flex items-center mt-5">
+    <form method="post" action="/notebooks/{{ notebook.id }}/ach/{{ ach.id }}/delete"
+          class="ml-auto" onsubmit="return confirm('Delete this ACH analysis? Any report embedding it will show an “unavailable” notice.');">
+      <button class="btn btn--ghost btn--sm link-danger">Delete analysis</button>
+    </form>
+  </div>
+{% endif %}
+{% endblock %}

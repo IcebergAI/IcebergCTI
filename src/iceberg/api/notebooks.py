@@ -18,6 +18,7 @@ from sqlmodel import Session, select
 from ..auth.dependencies import CurrentUser, require_role
 from ..db import get_session
 from ..models import (
+    ACHModel,
     Attachment,
     DiamondModel,
     Figure,
@@ -28,6 +29,8 @@ from ..models import (
     utcnow,
 )
 from ..schemas import (
+    ACHCreate,
+    ACHUpdate,
     DiamondCreate,
     DiamondUpdate,
     NoteCreate,
@@ -38,6 +41,7 @@ from ..schemas import (
     SourceGradeUpdate,
     SourceUpdate,
 )
+from ..services import ach as ach_service
 from ..services import attachments as attachment_service
 from ..services import diamond as diamond_service
 from ..services import figures as figure_service
@@ -393,3 +397,54 @@ def delete_diamond(
 ):
     diamond = diamond_service.get_scoped(session, notebook_id, diamond_id)
     diamond_service.delete_diamond(session, diamond)
+
+
+# --------------------------------------------------------------------------- #
+# ACH (Analysis of Competing Hypotheses) matrices
+# --------------------------------------------------------------------------- #
+@router.post("/{notebook_id}/ach", status_code=status.HTTP_201_CREATED)
+def add_ach(
+    notebook_id: int, body: ACHCreate, session: SessionDep, _w: Writer
+) -> ACHModel:
+    nb = _get_notebook(session, notebook_id)
+    return ach_service.create_ach(
+        session,
+        nb,
+        title=body.title,
+        question=body.question,
+        hypotheses=[r.model_dump() for r in body.hypotheses],
+        evidence=[r.model_dump() for r in body.evidence],
+        ratings=body.ratings,
+        notes=body.notes,
+    )
+
+
+@router.patch("/{notebook_id}/ach/{ach_id}")
+def update_ach(
+    notebook_id: int,
+    ach_id: int,
+    body: ACHUpdate,
+    session: SessionDep,
+    _w: Writer,
+) -> ACHModel:
+    ach = ach_service.get_scoped(session, notebook_id, ach_id)
+    return ach_service.update_ach(
+        session, ach, **body.model_dump(exclude_unset=True)
+    )
+
+
+@router.get("/{notebook_id}/ach/{ach_id}/matrix.svg")
+def ach_matrix(notebook_id: int, ach_id: int, session: SessionDep, _w: Writer):
+    ach = ach_service.get_scoped(session, notebook_id, ach_id)
+    return Response(
+        content=ach_service.render_ach_svg(ach),
+        media_type="image/svg+xml",
+    )
+
+
+@router.delete(
+    "/{notebook_id}/ach/{ach_id}", status_code=status.HTTP_204_NO_CONTENT
+)
+def delete_ach(notebook_id: int, ach_id: int, session: SessionDep, _w: Writer):
+    ach = ach_service.get_scoped(session, notebook_id, ach_id)
+    ach_service.delete_ach(session, ach)

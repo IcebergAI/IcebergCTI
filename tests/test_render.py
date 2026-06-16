@@ -40,14 +40,14 @@ def test_build_data_includes_judgement_scaffolding():
         grading_engine="heuristic:v1",
         grading_rationale="Internal grading rationale should not render.",
     )
-    data = _build_data(report, "Author", [source], [], [], [], [])
+    data = _build_data(report, "Author", [source], [], [], [], [], [])
     assert data["key_judgements"] == "We assess X."
     assert data["key_assumptions"] == "Assume Y."
     assert data["intelligence_gaps"] == "Gap Z."
     assert data["analytic_confidence"] == "HIGH"
     # Unset confidence carries as "" (the template shows no stamp).
     report.analytic_confidence = None
-    assert _build_data(report, "A", [], [], [], [], [])["analytic_confidence"] == ""
+    assert _build_data(report, "A", [], [], [], [], [], [])["analytic_confidence"] == ""
     assert data["sources"][0]["grade"] == "B2"
     assert "grading_engine" not in data["sources"][0]
     assert "grading_rationale" not in data["sources"][0]

@@ -2,13 +2,14 @@
 and the editor's live / read-only preview both render through, so the two can
 never drift (no markup drift between draft preview and published product).
 
-The report body can mix two inline-embed tokens — ``[[diamond:ID]]`` and
-``[[figure:ID]]`` — both of which must be substituted in the *same* post-nh3
-pass: each token is first swapped for an alnum sentinel that survives markdown-it
-+ nh3 unchanged, the markdown is sanitised, then each sentinel is replaced with
-its (server-generated, trusted) fragment — the diamond SVG figure or the
-data-URI image figure. Injecting after sanitisation is what lets the SVG / image
-through; nh3 would otherwise strip a raw ``<svg>`` or a ``data:`` URI.
+The report body can mix three inline-embed tokens — ``[[diamond:ID]]``,
+``[[figure:ID]]`` and ``[[ach:ID]]`` — all of which must be substituted in the
+*same* post-nh3 pass: each token is first swapped for an alnum sentinel that
+survives markdown-it + nh3 unchanged, the markdown is sanitised, then each
+sentinel is replaced with its (server-generated, trusted) fragment — the diamond
+or ACH SVG figure, or the data-URI image figure. Injecting after sanitisation is
+what lets the SVG / image through; nh3 would otherwise strip a raw ``<svg>`` or a
+``data:`` URI.
 """
 
 import re
@@ -17,6 +18,7 @@ from sqlmodel import Session
 
 from ..models import Report
 from ..rendering.markdown import render_markdown
+from . import ach as ach_service
 from . import diamond as diamond_service
 from . import figures as figures_service
 
@@ -26,6 +28,8 @@ _DIAMOND_BLOCK_RE = re.compile(r"<p>xICEBERGDIAMONDx(\d+)x</p>")
 _DIAMOND_BARE_RE = re.compile(r"xICEBERGDIAMONDx(\d+)x")
 _FIGURE_BLOCK_RE = re.compile(r"<p>xICEBERGFIGUREx(\d+)x</p>")
 _FIGURE_BARE_RE = re.compile(r"xICEBERGFIGUREx(\d+)x")
+_ACH_BLOCK_RE = re.compile(r"<p>xICEBERGACHx(\d+)x</p>")
+_ACH_BARE_RE = re.compile(r"xICEBERGACHx(\d+)x")
 
 
 def _diamond_figure(diamond_id: int, svg_by_id: dict[int, str]) -> str:
@@ -40,19 +44,35 @@ def _diamond_figure(diamond_id: int, svg_by_id: dict[int, str]) -> str:
     )
 
 
+def _ach_figure(ach_id: int, svg_by_id: dict[int, str]) -> str:
+    svg = svg_by_id.get(ach_id)
+    if svg is None:
+        return '<p class="ach-missing">ACH analysis unavailable.</p>'
+    return (
+        '<figure class="ach-figure">'
+        f'<div class="ach-svg">{svg}</div>'
+        "<figcaption>Analysis of Competing Hypotheses</figcaption>"
+        "</figure>"
+    )
+
+
 def _to_html(
     markdown_text: str,
     *,
     diamond_svgs: dict[int, str],
     figure_html: dict[int, str],
+    ach_svgs: dict[int, str],
 ) -> str:
-    """Render a report body to sanitised HTML with diamond diagrams and figures
-    inlined (resolved fragments injected after nh3)."""
+    """Render a report body to sanitised HTML with diamond diagrams, figures and
+    ACH matrices inlined (resolved fragments injected after nh3)."""
     pre = diamond_service.DIAMOND_TOKEN_RE.sub(
         lambda m: f"\n\nxICEBERGDIAMONDx{int(m.group(1))}x\n\n", markdown_text or ""
     )
     pre = figures_service.FIGURE_TOKEN_RE.sub(
         lambda m: f"\n\nxICEBERGFIGUREx{int(m.group(1))}x\n\n", pre
+    )
+    pre = ach_service.ACH_TOKEN_RE.sub(
+        lambda m: f"\n\nxICEBERGACHx{int(m.group(1))}x\n\n", pre
     )
     html = render_markdown(pre)
 
@@ -80,11 +100,23 @@ def _to_html(
         ),
         html,
     )
+
+    html = _ACH_BLOCK_RE.sub(
+        lambda m: _ach_figure(int(m.group(1)), ach_svgs), html
+    )
+    html = _ACH_BARE_RE.sub(
+        lambda m: (
+            f'<span class="ach-inline">{ach_svgs[int(m.group(1))]}</span>'
+            if int(m.group(1)) in ach_svgs
+            else '<span class="ach-missing">[ACH unavailable]</span>'
+        ),
+        html,
+    )
     return html
 
 
 def render_report_body_html(session: Session, report: Report) -> str:
-    """A saved report's body as sanitised HTML, diagrams + figures inlined."""
+    """A saved report's body as sanitised HTML, diagrams + figures + ACH inlined."""
     return _to_html(
         report.body_md,
         diamond_svgs=diamond_service.scoped_diamond_svg(
@@ -93,11 +125,14 @@ def render_report_body_html(session: Session, report: Report) -> str:
         figure_html=figures_service.scoped_figure_html(
             session, report.notebook_id, report.body_md
         ),
+        ach_svgs=ach_service.scoped_ach_svg(
+            session, report.notebook_id, report.body_md
+        ),
     )
 
 
 def preview_body_html(session: Session, notebook_id: int, markdown_text: str) -> str:
-    """Live-preview variant: resolve tokens against a notebook's diamonds/figures."""
+    """Live-preview variant: resolve tokens against a notebook's diamonds/figures/ACH."""
     return _to_html(
         markdown_text,
         diamond_svgs=diamond_service.scoped_diamond_svg(
@@ -106,6 +141,7 @@ def preview_body_html(session: Session, notebook_id: int, markdown_text: str) ->
         figure_html=figures_service.scoped_figure_html(
             session, notebook_id, markdown_text
         ),
+        ach_svgs=ach_service.scoped_ach_svg(session, notebook_id, markdown_text),
     )
 
 

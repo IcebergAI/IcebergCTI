@@ -174,6 +174,27 @@ CONCEPTS: list[Concept] = [
         ],
     ),
     Concept(
+        slug="ach-model",
+        term="Analysis of Competing Hypotheses (ACH)",
+        category="Analytic models",
+        body=(
+            "ACH (Heuer) adjudicates a key intelligence question by scoring a matrix of "
+            "competing hypotheses against the available evidence. You rate how consistent "
+            "each piece of evidence is with each hypothesis; the diagnostic signal is "
+            "*inconsistency* — evidence never confirms a hypothesis, it only weakens the "
+            "ones it contradicts — so the hypothesis carrying the fewest weighted "
+            "inconsistencies is the most tenable. Held against a notebook and embedded "
+            "inline in a report with an [[ach:ID]] token (notebook-scoped, like the "
+            "Diamond Model), rendered as a matrix in the web view, live preview, and PDF."
+        ),
+        points=[
+            "List the competing hypotheses across the top, the evidence down the side.",
+            "Rate each cell: consistent (+/++), neutral, inconsistent (−/−−), or N/A.",
+            "Least inconsistent = most tenable — the leading column is flagged.",
+            "Disconfirm, don't confirm: focus on the evidence that rules hypotheses out.",
+        ],
+    ),
+    Concept(
         slug="figures",
         term="Figures (embedded images)",
         category="Collection",
@@ -310,8 +331,8 @@ ROLE_GUIDES: list[RoleGuide] = [
             "Gather sources (graded for reliability), notes, attachments, figures and "
             "Diamond Model assessments inside it.",
             "Author a report from that material: write the body, lead with your Key "
-            "Judgements, cite sources, and embed diagrams and figures with [[diamond:ID]] "
-            "and [[figure:ID]] tokens.",
+            "Judgements, cite sources, and embed diagrams, figures and ACH matrices with "
+            "[[diamond:ID]], [[figure:ID]] and [[ach:ID]] tokens.",
             "Classify the report with tags and tick the requirements it satisfies.",
             "Submit your draft for review.",
         ],
