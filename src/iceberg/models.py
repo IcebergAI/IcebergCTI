@@ -128,6 +128,18 @@ class Motivation(StrEnum):
     INFLUENCE = "INFLUENCE"
 
 
+class RelationType(StrEnum):
+    """STIX 2.1-aligned relationship verbs between named-threat entities
+    (knowledge graph, roadmap 2c). Values are the STIX spelling (lowercase,
+    hyphenated) so the table doubles as the foundation for STIX export."""
+
+    USES = "uses"
+    ATTRIBUTED_TO = "attributed-to"
+    VARIANT_OF = "variant-of"
+    TARGETS = "targets"
+    RELATED_TO = "related-to"
+
+
 class DiamondConfidence(StrEnum):
     """Analytic confidence in a Diamond Model assessment."""
 
@@ -277,6 +289,33 @@ class ReportTag(SQLModel, table=True):
     tag_id: int | None = Field(
         default=None, foreign_key="tag.id", ondelete="CASCADE", primary_key=True
     )
+
+
+class EntityRelationship(SQLModel, table=True):
+    """A STIX-shaped directed relationship between two taxonomy entities
+    (knowledge graph, roadmap 2c): ``source --relation_type--> target``. The
+    source is a named-threat kind (``tags.ALIASABLE_KINDS``); the target is a
+    named-threat kind or SECTOR (a ``targets`` victim). Admin-curated; surfaced
+    on the ``/tags/{id}`` entity profile as inbound + outbound edges."""
+
+    __table_args__ = (
+        UniqueConstraint(
+            "source_tag_id",
+            "target_tag_id",
+            "relation_type",
+            name="uq_entity_relationship",
+        ),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    source_tag_id: int = Field(
+        foreign_key="tag.id", ondelete="CASCADE", index=True
+    )
+    target_tag_id: int = Field(
+        foreign_key="tag.id", ondelete="CASCADE", index=True
+    )
+    relation_type: RelationType
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 # --------------------------------------------------------------------------- #

@@ -22,7 +22,7 @@ This roadmap **prioritises two themes** — *Analytic Tradecraft (ICD 203)* and 
 **Gaps that matter for a *finished-intelligence* platform:**
 - ~~**No estimative language.**~~ **Addressed (§1b):** reports carry an optional analytic-confidence marking, and a standardised probability yardstick is shipped as an authoring aid (likelihood expressed in prose). The optional hedging lint is deferred.
 - **Limited structured analytic techniques.** Key Judgements / Key Assumptions / Intelligence Gaps are implemented, but deeper structured analytic techniques like Analysis of Competing Hypotheses (ACH) are still missing.
-- **Flat knowledge layer (largely addressed — 2a + 2b).** Actor/malware/campaign `Tag` rows now carry a structured `aliases` list (search resolves any alias to the canonical entity — see §2a) **and** structured attribution (sponsor/country, motivation, first/last seen), with `/tags/{id}` promoted to a real entity profile page (§2b). Still missing: entity **relationships** — the graph (2c).
+- **Flat knowledge layer (addressed — 2a + 2b + 2c).** Actor/malware/campaign `Tag` rows now carry a structured `aliases` list (search resolves any alias to the canonical entity — see §2a) **and** structured attribution (sponsor/country, motivation, first/last seen), with `/tags/{id}` promoted to a real entity profile page (§2b), **and** STIX-shaped `EntityRelationship` edges between entities surfaced as profile chips + an SVG mini-graph (§2c). The knowledge layer is now a graph; **STIX export (backlog B)** is the natural next payoff.
 - **No machine-readable interop** (STIX/TAXII/Navigator) and **email/feed-only dissemination** — noted as secondary backlog below.
 - **Need-to-know gap:** stakeholders consume published products, but the published report library is not yet compartmented by named sharing, tags, teams, or entitlement groups.
 
@@ -69,10 +69,10 @@ This roadmap **prioritises two themes** — *Analytic Tradecraft (ICD 203)* and 
 - Shipped: `/tags/{id}` now renders a dedicated **entity profile** (`templates/entity_profile.html`) for named-threat kinds — attribution panel + motivation chips + "Also known as" aliases + an ATT&CK link off `external_id` (G-/S-code) + the reports-tagged list. Other kinds keep the plain `search.html` drill-down. Migration `b3d9a4e21c7f`.
 - **Impact:** Medium / **Effort:** shipped (Medium). New `Motivation` enum + four `Tag` columns + `normalise_motivations` + schema/API/admin-form threading + profile template + route split.
 
-### 2c. Entity relationships (the graph)
-- Introduce an **`EntityRelationship`** table — `(source, target, relation_type)` using STIX-aligned verbs (**uses, attributed-to, variant-of, targets, related-to**) so you can express *actor → uses → malware*, *campaign → attributed-to → actor*, *actor → targets → sector*.
-- Surface as relationship chips on the profile page and a simple related-entities list/mini-graph. Deliberately STIX-shaped so it doubles as the foundation for STIX export (backlog item B).
-- **Impact:** Medium-High / **Effort:** Medium-Large.
+### 2c. Entity relationships (the graph) — ✅ **implemented**
+- Shipped: an **`EntityRelationship`** table — `(source_tag, target_tag, relation_type)` using STIX-aligned verbs (**uses, attributed-to, variant-of, targets, related-to**, `models.RelationType`) so you can express *actor → uses → malware*, *campaign → attributed-to → actor*, *actor → targets → sector*. Admin-curated; *loose* scoping — source is a named-threat kind (`tags.ALIASABLE_KINDS`), target is a named-threat kind or SECTOR (`relationships.TARGETABLE_KINDS`) — no per-verb kind matrix.
+- Shipped: relationships surface on the `/tags/{id}` entity profile as **inbound + outbound chips grouped by verb** plus a hand-rendered **SVG mini-graph** (`services/relationships.render_relationship_graph_svg`, same XML-escaping discipline as the Diamond Model SVG). Curated on a dedicated **`/admin/relationships`** admin page. Deliberately STIX-shaped so it doubles as the foundation for STIX export (backlog item B). Migration `8db5b15e1537`.
+- **Impact:** Medium-High / **Effort:** shipped (Medium-Large). New `RelationType` enum + `EntityRelationship` table + `services/relationships.py` + `api/relationships.py` + admin page + profile chips/mini-graph.
 
 > **Design note:** prefer *extending* the existing `Tag` model incrementally (aliases → attribution → relationships) over a disruptive new `Entity` model. TECHNIQUE/SECTOR/TOPIC stay as plain tags; only the "named-threat" kinds graduate to entities. This keeps the report editor's tag-selection UX intact.
 
@@ -95,7 +95,7 @@ This roadmap **prioritises two themes** — *Analytic Tradecraft (ICD 203)* and 
 
 1. **Quick wins first:** A (Navigator export) → ~~2a (aliases)~~ ✅ done. All Low-effort, High-impact, low blast-radius.
 2. **Core rigour:** 1a, 1b and 1c are shipped (1b's hedging lint and 1c's ACH stretch remain as follow-ups).
-3. **Knowledge layer:** ~~2b (profiles)~~ ✅ done → 2c (relationships) → then B (STIX export) becomes a natural payoff.
+3. **Knowledge layer:** ~~2b (profiles)~~ ✅ done → ~~2c (relationships)~~ ✅ done → then B (STIX export) becomes a natural payoff (the entity graph is now in place to ride on).
 4. **Process/governance:** D (feedback loop), C (channels), F (need-to-know) as capacity allows.
 
 ## Validation approach (when these are built)
