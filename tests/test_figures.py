@@ -230,6 +230,30 @@ def test_preview_product_resolves_figure(client, login):
     assert "report-figure" in html and "data:image/png;base64," in html
 
 
+def test_preview_endpoints_are_writer_only(client, login):
+    """A read-only stakeholder must not be able to use the editor preview
+    endpoints to resolve [[figure:]]/[[diamond:]]/[[ach:]] tokens against another
+    analyst's notebook and exfiltrate writer-only collection material."""
+    login("ANALYST", email="author@example.com")
+    nb = _notebook(client)
+    fid = _upload(client, nb["id"]).json()["id"]
+    rid = _report_with_body(client, nb["id"], "")
+
+    login("STAKEHOLDER", email="reader@example.com")
+    leak = client.post(
+        "/api/preview/product",
+        json={"report_id": rid, "body_md": f"[[figure:{fid}]]"},
+    )
+    assert leak.status_code == 403
+    assert "base64," not in leak.text
+    for path, payload in (
+        ("/api/preview", {"report_id": rid, "markdown": f"[[figure:{fid}]]"}),
+        ("/api/preview/diamond", {"title": "x"}),
+        ("/api/preview/ach", {"title": "x"}),
+    ):
+        assert client.post(path, json=payload).status_code == 403
+
+
 # --------------------------------------------------------------------------- #
 # Portal + editor UI
 # --------------------------------------------------------------------------- #

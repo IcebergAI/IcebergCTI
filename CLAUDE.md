@@ -135,6 +135,8 @@ src/iceberg/
   templating.py    # shared Jinja2Templates instance
   auth/            # OIDC (Entra) + dev login, JWT, role dependencies, same-origin CSRF mw
   api/             # JSON routers: notebooks, reports, requirements, feed, account, preview, tags, relationships, search
+                   #   (/api/preview/* are an authoring aid and are WRITER-ONLY: they resolve notebook-scoped
+                   #    [[diamond]]/[[figure]]/[[ach]] tokens, so a read-only stakeholder must not reach them)
   web/             # portal routes (Jinja2)
   services/        # users, notebooks, lifecycle, citations/rendering (reports), requirements, attachments, figures, diamond, ach, product_html (shared report-HTML assembler), dissemination, email, tags, relationships, search
   rendering/       # markdown->HTML, report->PDF
