@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% import "_attack_matrix.html" as am %}
+{% block title %}ATT&CK Matrix · {{ app_name }}{% endblock %}
+{% block content %}
+
+<div class="head-row mb-5">
+  <div>
+    <div class="eyebrow eyebrow-accent">Analytics</div>
+    <h1 class="page-title mt-2">ATT&CK technique coverage</h1>
+    <div class="title-rule"></div>
+    <p class="text-sm mt-3" style="color:var(--muted);">
+      MITRE ATT&CK techniques tagged across {{ report_count }} report{{ '' if report_count == 1 else 's' }},
+      grouped by tactic and shaded by how many reports exhibit each technique.
+    </p>
+  </div>
+  {% if matrix.total %}
+    <span class="eyebrow">{{ matrix.total }} technique{{ '' if matrix.total == 1 else 's' }}</span>
+  {% endif %}
+</div>
+
+{{ am.attack_matrix(matrix) }}
+
+{% endblock %}

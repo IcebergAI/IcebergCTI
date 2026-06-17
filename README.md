@@ -16,7 +16,9 @@ sources and attachments, carry Admiralty/NATO-style **source reliability grading
 **embed Diamond Model diagrams, ACH matrices and figures (images) inline**, are classified with **taxonomy tags** (threat
 actor / campaign / malware / ATT&CK technique / sector / topic), move through a review
 workflow, and can be rendered to branded PDF products.
-Everything is **searchable** — full-text + faceted across the report library.
+Everything is **searchable** — full-text + faceted across the report library — and the
+ATT&CK techniques tagged across reports drive a **coverage heatmap** and downloadable
+**ATT&CK Navigator layers** (per report and per actor/malware/campaign entity).
 
 > **Status:** Milestones 1–4 are implemented — the full vision plus a knowledge layer:
 > the analyst authoring loop, stakeholder requirement intake + tasking board + traceability,
@@ -182,6 +184,16 @@ a browsable look at what the other roles do, and a glossary of the intelligence 
    **entity profile** (attribution + aliases + inbound/outbound relationship chips + an SVG
    mini-graph + the reports tagged with it).
    Stakeholders' searches only ever return published reports.
+
+### See ATT&CK coverage & export a Navigator layer
+1. Tag reports with **TECHNIQUE** taxonomy terms (they carry MITRE ATT&CK T-codes).
+2. Open **Matrix** (top nav, `/matrix`) for a technique-coverage heatmap across all visible
+   reports, grouped by ATT&CK tactic and shaded by how many reports exhibit each technique.
+   An entity profile shows the same heatmap scoped to that actor/malware/campaign.
+3. Download an **ATT&CK Navigator layer** (`.json`) — per report (from the report's *Downloads*)
+   or aggregated per entity (from the entity profile) — and open it in
+   [ATT&CK Navigator](https://mitre-attack.github.io/attack-navigator/). Stakeholders' coverage
+   and exports only ever count published reports.
 
 The starter taxonomy is bundled as data (`src/iceberg/data/starter_tags.json`) and imported
 automatically on first boot. To (re-)import explicitly — e.g. after enriching the catalog or

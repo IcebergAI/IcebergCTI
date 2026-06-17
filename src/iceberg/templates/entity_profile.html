@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m %}
+{% import "_attack_matrix.html" as am %}
 {% block title %}{{ active_tag.label }} · {{ app_name }}{% endblock %}
 {% block content %}
 
@@ -105,6 +106,15 @@
       <div class="card card-pad mb-5">
         <div class="section-title mb-3">Relationship graph</div>
         <div style="overflow-x:auto;">{{ graph_svg | safe }}</div>
+      </div>
+    {% endif %}
+    {% if matrix and matrix.total %}
+      <div class="card card-pad mb-5">
+        <div class="head-row mb-3">
+          <div class="section-title">ATT&CK coverage</div>
+          <a class="btn-link" href="/api/attack/tags/{{ t.id }}/layer">Navigator layer ↓</a>
+        </div>
+        {{ am.attack_matrix(matrix) }}
       </div>
     {% endif %}
     <div class="section-title mb-3">Reports tagged</div>

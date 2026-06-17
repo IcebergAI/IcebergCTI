@@ -70,9 +70,17 @@
       </ul>
     {% endif %}
 
-    {% if products %}
+    {% set tech_tags = tags | selectattr('kind.value', 'equalto', 'TECHNIQUE') | selectattr('external_id') | list %}
+    {% if products or tech_tags %}
       <h2 class="section-title mt-9 mb-3">Downloads</h2>
       <div class="space-y-2">
+        {% if tech_tags %}
+          <a class="file-row" href="/api/attack/reports/{{ report.id }}/layer" style="text-decoration:none; color:inherit;">
+            <span class="file-fmt">ATT&CK Navigator layer</span>
+            <span class="mono text-xs" style="color:var(--muted);">JSON · {{ tech_tags | length }} technique{{ '' if tech_tags | length == 1 else 's' }}</span>
+            <span class="btn-link ml-auto">Download ↓</span>
+          </a>
+        {% endif %}
         {% for p in products %}
           <a class="file-row" href="/reports/{{ report.id }}/products/{{ p.id }}/download" style="text-decoration:none; color:inherit;">
             <span class="file-fmt">{{ p.format.value.replace('_',' ') }}</span>
