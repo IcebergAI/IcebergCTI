@@ -1,0 +1,31 @@
+{# ATT&CK technique-coverage heatmap. Expects `matrix` =
+   {tactics: [{tactic, techniques: [{code, label, count}]}], max_count, total}.
+   Shared by matrix.html (global) and entity_profile.html (per-entity). #}
+{% macro attack_matrix(matrix) %}
+  {% if matrix.tactics %}
+    <div class="attack-matrix">
+      {% for col in matrix.tactics %}
+        <div class="attack-col">
+          <div class="attack-col-head">
+            <span class="attack-tactic">{{ col.tactic }}</span>
+            <span class="attack-col-n">{{ col.techniques | length }}</span>
+          </div>
+          {% for tech in col.techniques %}
+            {% set lvl = (5 * tech.count / matrix.max_count) | round(0, 'ceil') | int if matrix.max_count else 1 %}
+            <div class="attack-cell heat-{{ lvl }}" title="{{ tech.label }} ({{ tech.code }}) — {{ tech.count }} report{{ '' if tech.count == 1 else 's' }}">
+              <span class="attack-tech-label">{{ tech.label }}</span>
+              <span class="attack-tech-meta">
+                <span class="mono">{{ tech.code }}</span>
+                <span class="attack-count">{{ tech.count }}</span>
+              </span>
+            </div>
+          {% endfor %}
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="well card-pad-lg text-center">
+      <p class="empty">No ATT&CK techniques tagged yet. Tag reports with TECHNIQUE taxonomy terms to build coverage.</p>
+    </div>
+  {% endif %}
+{% endmacro %}

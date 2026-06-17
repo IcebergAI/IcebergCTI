@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from .account import router as account_router
+from .attack import router as attack_router
 from .feed import router as feed_router
 from .notebooks import router as notebooks_router
 from .preview import router as preview_router
@@ -22,3 +23,4 @@ api_router.include_router(preview_router)
 api_router.include_router(tags_router)
 api_router.include_router(relationships_router)
 api_router.include_router(search_router)
+api_router.include_router(attack_router)

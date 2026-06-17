@@ -23,7 +23,7 @@ This roadmap **prioritises two themes** — *Analytic Tradecraft (ICD 203)* and 
 - ~~**No estimative language.**~~ **Addressed (§1b):** reports carry an optional analytic-confidence marking, and a standardised probability yardstick is shipped as an authoring aid (likelihood expressed in prose). The optional hedging lint is deferred.
 - ~~**Limited structured analytic techniques.**~~ **Addressed (§1c stretch):** alongside Key Judgements / Key Assumptions / Intelligence Gaps, **Analysis of Competing Hypotheses (ACH)** now ships as a second analytic model beside the Diamond Model — a per-notebook hypotheses × evidence matrix scored by inconsistency, embedded into reports via a `[[ach:ID]]` token.
 - **Flat knowledge layer (addressed — 2a + 2b + 2c).** Actor/malware/campaign `Tag` rows now carry a structured `aliases` list (search resolves any alias to the canonical entity — see §2a) **and** structured attribution (sponsor/country, motivation, first/last seen), with `/tags/{id}` promoted to a real entity profile page (§2b), **and** STIX-shaped `EntityRelationship` edges between entities surfaced as profile chips + an SVG mini-graph (§2c). The knowledge layer is now a graph; **STIX export (backlog B)** is the natural next payoff.
-- **No machine-readable interop** (STIX/TAXII/Navigator) and **email/feed-only dissemination** — noted as secondary backlog below.
+- **Machine-readable interop** — **ATT&CK Navigator layer export is now shipped** (backlog A: per-report + per-entity `.json` + a coverage heatmap); STIX/TAXII (backlog B) remains. **Email/feed-only dissemination** is noted as secondary backlog below.
 - **Need-to-know gap:** stakeholders consume published products, but the published report library is not yet compartmented by named sharing, tags, teams, or entitlement groups.
 
 ---
@@ -82,7 +82,7 @@ This roadmap **prioritises two themes** — *Analytic Tradecraft (ICD 203)* and 
 
 | # | Opportunity | Why it matters | Impact / Effort |
 |---|---|---|---|
-| A | **ATT&CK Navigator layer export + matrix view** | You already store T-codes; emit a Navigator `.json` per report/actor + a heatmap. Pairs Kill Chain with ATT&CK (the Diamond paper's own pairing). | High / **Low** — strong quick win |
+| A | **ATT&CK Navigator layer export + matrix view** — ✅ **implemented** | Emits a schema-conformant Navigator `.json` layer per report (techniques scored 1) and per named-threat entity (aggregated across its reports, scored by occurrence), plus a `/matrix` technique-coverage heatmap (global + per-entity) grouped by ATT&CK tactic. A **pure derivation** over existing `TECHNIQUE` tags (`Tag.external_id` for the T-code, `Tag.description` for the tactic) — no new model, no migration. Access-scoped like search (stakeholders → published only). See `services/attack.py`. | High / **Low** — shipped |
 | B | **STIX 2.1 / TAXII interop** | Export the finished product as a STIX `report` SDO referencing actor/malware/attack-pattern SDOs + relationships **derived from the Priority-2 entity layer**. Makes products downstream-consumable without becoming an IOC store. | High / Medium-Large (rides on Priority 2) |
 | C | **Dissemination channels + subscription matching** | Slack/Teams/webhook alongside email; match stakeholders on shared **tags/entities**, not just intel_level (already a CLAUDE.md fast-follow). | Medium / Medium |
 | D | **Intelligence-cycle feedback loop** | Stakeholder feedback / RFI-satisfaction signal on disseminated products — closes the cycle and measures effectiveness. Builds on existing requirement traceability. | Medium / Medium |
@@ -93,7 +93,7 @@ This roadmap **prioritises two themes** — *Analytic Tradecraft (ICD 203)* and 
 
 ## Suggested sequencing
 
-1. **Quick wins first:** A (Navigator export) → ~~2a (aliases)~~ ✅ done. All Low-effort, High-impact, low blast-radius.
+1. **Quick wins first:** ~~A (Navigator export)~~ ✅ done → ~~2a (aliases)~~ ✅ done. All Low-effort, High-impact, low blast-radius.
 2. **Core rigour:** 1a, 1b and 1c are shipped (incl. 1c's **ACH** stretch; 1b's hedging lint remains as a follow-up).
 3. **Knowledge layer:** ~~2b (profiles)~~ ✅ done → ~~2c (relationships)~~ ✅ done → then B (STIX export) becomes a natural payoff (the entity graph is now in place to ride on).
 4. **Process/governance:** D (feedback loop), C (channels), F (need-to-know) as capacity allows.

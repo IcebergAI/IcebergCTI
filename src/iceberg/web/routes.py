@@ -56,6 +56,7 @@ from ..models import (
 from ..rendering.typst import TypstNotAvailable, TypstRenderError, typst_available
 from ..services import (
     ach as ach_service,
+    attack as attack_service,
     attachments as attachment_service,
     diamond as diamond_service,
     dissemination,
@@ -1228,6 +1229,23 @@ def search_view(
     )
 
 
+@router.get("/matrix")
+def matrix_view(request: Request, session: SessionDep, user: CurrentUser):
+    """ATT&CK technique-coverage heatmap aggregated across all *visible* reports
+    (published-only for stakeholders, via ``search_reports``). Grouped into ATT&CK
+    tactic columns; empty state handled in the template."""
+    reports = search_service.search_reports(session, user=user, limit=10_000)
+    return templates.TemplateResponse(
+        request,
+        "matrix.html",
+        {
+            "user": user,
+            "matrix": attack_service.coverage_matrix(reports),
+            "report_count": len(reports),
+        },
+    )
+
+
 @router.get("/tags/{tag_id}")
 def tag_detail(
     tag_id: int, request: Request, session: SessionDep, user: CurrentUser
@@ -1253,6 +1271,7 @@ def tag_detail(
                 "graph_svg": rel_service.render_relationship_graph_svg(
                     tag, outbound, inbound
                 ),
+                "matrix": attack_service.coverage_matrix(results),
             },
         )
     return templates.TemplateResponse(
