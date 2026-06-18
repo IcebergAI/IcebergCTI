@@ -10,6 +10,8 @@ The guiding principle is **respect that identity**. The highest-leverage moves a
 
 This roadmap **prioritises two themes** — *Analytic Tradecraft (ICD 203)* and *Knowledge Graph / Actor Profiles* — and summarises the remaining opportunities as a secondary backlog.
 
+> **Status (2026-06-18).** Both prioritised themes are now **fully shipped** — Priority 1 (1a source grading, 1b estimative language, 1c judgement scaffolding **incl. the ACH stretch**) and Priority 2 (2a aliases, 2b attribution profiles, 2c entity relationships). From the secondary backlog, **A (ATT&CK Navigator export + matrix)** has also shipped. What remains is the secondary backlog **B–F** plus two scoped follow-ups, all tracked as GitHub FRs (referenced inline below). The roadmap's centre of gravity has moved from *analytic rigour / knowledge graph* to **interop (STIX), dissemination/process, and need-to-know governance**.
+
 ## Current-state assessment (grounded in the code)
 
 **Strengths — keep and build on:**
@@ -28,9 +30,9 @@ This roadmap **prioritises two themes** — *Analytic Tradecraft (ICD 203)* and 
 
 ---
 
-## Priority 1 — Analytic tradecraft rigour (ICD 203 / Analytic Standards)
+## Priority 1 — Analytic tradecraft rigour (ICD 203 / Analytic Standards) — ✅ **complete**
 
-*The single biggest uplift for a finished-intelligence platform. Three sub-initiatives, each independently shippable.*
+*The single biggest uplift for a finished-intelligence platform. Three sub-initiatives, each independently shippable — all now shipped (only 1b's optional hedging lint, [#25](../../issues/25), remains deferred).*
 
 ### 1a. Source reliability grading (Admiralty / NATO System) — ✅ **implemented**
 - Shipped: `Source` carries reliability (`A-F`), credibility (`1-6`), grading origin, engine, rationale, warning, and timestamp. Auto grading safely fetches public source URLs, uses configured OpenAI/Anthropic/OpenAI-compatible grading when available, falls back to `heuristic:v1`, and leaves credibility as `6` when source content cannot be assessed. Analysts can manually override, clear, and regrade. Chips render in notebook sources, report citations, report source lists, and the FULL PDF source appendix.
@@ -55,9 +57,9 @@ This roadmap **prioritises two themes** — *Analytic Tradecraft (ICD 203)* and 
 
 ---
 
-## Priority 2 — Knowledge graph / actor profiles
+## Priority 2 — Knowledge graph / actor profiles — ✅ **complete**
 
-*Move the actor/malware/campaign vocabulary from flat labels to a real entity layer. Sequenced so value lands early.*
+*Move the actor/malware/campaign vocabulary from flat labels to a real entity layer. Sequenced so value lands early — all three sub-initiatives shipped; **STIX export (backlog B, [#29](../../issues/29))** is the natural next payoff.*
 
 ### 2a. Aliases (ship first — fixes the naming problem, cheap) — ✅ **implemented**
 - Shipped: a structured **`aliases`** list (a JSON column) on ACTOR/MALWARE/CAMPAIGN tags (`tags.ALIASABLE_KINDS`) so APT28 / Fancy Bear / Sofacy / STRONTIUM resolve to one entity. Admin-curated in `/admin/tags` (comma-separated input, shown only for named-threat kinds); normalised case-insensitively with the canonical label dropped as an alias. Starter taxonomy backfilled (aliases lifted out of the description strings).
@@ -80,23 +82,28 @@ This roadmap **prioritises two themes** — *Analytic Tradecraft (ICD 203)* and 
 
 ## Secondary backlog (not prioritised now — listed for completeness)
 
-| # | Opportunity | Why it matters | Impact / Effort |
-|---|---|---|---|
-| A | **ATT&CK Navigator layer export + matrix view** — ✅ **implemented** | Emits a schema-conformant Navigator `.json` layer per report (techniques scored 1) and per named-threat entity (aggregated across its reports, scored by occurrence), plus a `/matrix` technique-coverage heatmap (global + per-entity) grouped by ATT&CK tactic. A **pure derivation** over existing `TECHNIQUE` tags (`Tag.external_id` for the T-code, `Tag.description` for the tactic) — no new model, no migration. Access-scoped like search (stakeholders → published only). See `services/attack.py`. | High / **Low** — shipped |
-| B | **STIX 2.1 / TAXII interop** | Export the finished product as a STIX `report` SDO referencing actor/malware/attack-pattern SDOs + relationships **derived from the Priority-2 entity layer**. Makes products downstream-consumable without becoming an IOC store. | High / Medium-Large (rides on Priority 2) |
-| C | **Dissemination channels + subscription matching** | Slack/Teams/webhook alongside email; match stakeholders on shared **tags/entities**, not just intel_level (already a CLAUDE.md fast-follow). | Medium / Medium |
-| D | **Intelligence-cycle feedback loop** | Stakeholder feedback / RFI-satisfaction signal on disseminated products — closes the cycle and measures effectiveness. Builds on existing requirement traceability. | Medium / Medium |
-| E | **PAP (Permissible Actions Protocol)** beside TLP | Governs *actions* on intel, complementing TLP's *sharing* marking. | Low / Low |
-| F | **Need-to-know / compartmentation fix** | Stakeholders can currently read all raw notebook material — a handling-discipline gap. | High (security) / Medium |
+| # | FR | Opportunity | Why it matters | Impact / Effort |
+|---|---|---|---|---|
+| A | [#28](../../issues/28) ✅ | **ATT&CK Navigator layer export + matrix view** — ✅ **implemented** | Emits a schema-conformant Navigator `.json` layer per report (techniques scored 1) and per named-threat entity (aggregated across its reports, scored by occurrence), plus a `/matrix` technique-coverage heatmap (global + per-entity) grouped by ATT&CK tactic. A **pure derivation** over existing `TECHNIQUE` tags (`Tag.external_id` for the T-code, `Tag.description` for the tactic) — no new model, no migration. Access-scoped like search (stakeholders → published only). See `services/attack.py`. *Open follow-up: an inline `[[attack]]` report embed ([#41](../../issues/41)).* | High / **Low** — shipped |
+| B | [#29](../../issues/29) | **STIX 2.1 / TAXII interop** | Export the finished product as a STIX `report` SDO referencing actor/malware/attack-pattern SDOs + relationships **derived from the Priority-2 entity layer**. Makes products downstream-consumable without becoming an IOC store. **The Priority-2 graph is now in place, so this is the most natural next build.** | High / Medium-Large (rides on Priority 2) |
+| C | [#30](../../issues/30) | **Dissemination channels + subscription matching** | Slack/Teams/webhook alongside email; match stakeholders on shared **tags/entities**, not just intel_level (already a CLAUDE.md fast-follow). | Medium / Medium |
+| D | [#31](../../issues/31) | **Intelligence-cycle feedback loop** | Stakeholder feedback / RFI-satisfaction signal on disseminated products — closes the cycle and measures effectiveness. Builds on existing requirement traceability **and on the requirement-kinds groundwork (G)**. | Medium / Medium |
+| E | [#32](../../issues/32) | **PAP (Permissible Actions Protocol)** beside TLP | Governs *actions* on intel, complementing TLP's *sharing* marking. | Low / Low |
+| F | [#33](../../issues/33) | **Need-to-know / compartmentation fix** | Stakeholders can currently read all raw notebook material — a handling-discipline gap. | High (security) / Medium |
+| G | [#42](../../issues/42) | **Intelligence-requirement kinds (PIR / GIR / RFI) + PIR coverage** | Splits the single undifferentiated `Requirement` into doctrine kinds — **PIR** (decision-tied, time-bound), **GIR** (standing baseline), **RFI** (ad-hoc) — so intake is classified, PIRs outrank on the tasking board, and a PIR **collection-coverage/gap** view surfaces requirements nothing yet addresses. Additive model extension; no dissemination change. Natural groundwork for D. | Medium / Medium |
 
 ---
 
 ## Suggested sequencing
 
-1. **Quick wins first:** ~~A (Navigator export)~~ ✅ done → ~~2a (aliases)~~ ✅ done. All Low-effort, High-impact, low blast-radius.
-2. **Core rigour:** 1a, 1b and 1c are shipped (incl. 1c's **ACH** stretch; 1b's hedging lint remains as a follow-up).
-3. **Knowledge layer:** ~~2b (profiles)~~ ✅ done → ~~2c (relationships)~~ ✅ done → then B (STIX export) becomes a natural payoff (the entity graph is now in place to ride on).
-4. **Process/governance:** D (feedback loop), C (channels), F (need-to-know) as capacity allows.
+**Done:** ~~A (Navigator export)~~, ~~Priority 1 (1a/1b/1c incl. ACH)~~, ~~Priority 2 (2a/2b/2c)~~ — all ✅.
+
+**What's next, in recommended order:**
+1. **B — STIX 2.1 / TAXII export ([#29](../../issues/29)).** The highest-leverage remaining build: the Priority-2 entity graph (aliases + attribution + STIX-shaped relationships) and backlog A's ATT&CK derivation are exactly the SDO/relationship substrate a STIX `report` export rides on. Turns the finished product into a downstream-consumable artefact without becoming an IOC store.
+2. **Process / intelligence-cycle: G → D.** G — requirement kinds (PIR/GIR/RFI) + PIR coverage ([#42](../../issues/42)) — is additive and lays the groundwork for D — the feedback loop / RFI-satisfaction signal ([#31](../../issues/31)). Pair with C — dissemination channels + tag/entity subscription matching ([#30](../../issues/30)).
+3. **Governance: F (need-to-know / compartmentation, [#33](../../issues/33))** when multi-team / entitlement handling becomes a real requirement; **E (PAP marking, [#32](../../issues/32))** is a low-effort marking addition whenever convenient.
+
+**Loose follow-ups:** 1b's hedging lint ([#25](../../issues/25)) and the inline `[[attack]]` report embed ([#41](../../issues/41)) — both small, pick up opportunistically.
 
 ## Validation approach (when these are built)
 
@@ -104,5 +111,7 @@ When each item is implemented, validate in the style of the existing suite (in-m
 - **1a/1b/1c:** model/enum round-trip + schema validation tests; assert the grading chip / confidence marking / KJ sections appear in both the web view and a Typst **render smoke test** (skips when the binary is absent, like the current one).
 - **2a:** regression test that an alias query returns the canonical entity's reports (extends `services/search.py` coverage).
 - **2c:** relationship CRUD + scoping tests mirroring the Diamond Model test pattern.
+- **B (STIX export):** schema-conformant SDO/relationship output for a report + its tagged entities (validate against a STIX 2.1 validator or the library's own checks); access-scoped like search.
+- **G (requirement kinds):** kind round-trip (API + portal), PIR-first tasking-board ordering, and the PIR coverage/gap aggregation (uncovered + overdue + empty state), with unchanged ownership/role rules.
 - Update **CLAUDE.md** (domain model + roadmap) and **README.md** alongside any implementation, per the repo's maintenance rule.
 
