@@ -155,6 +155,16 @@ a browsable look at what the other roles do, and a glossary of the intelligence 
 3. The image renders in the live preview, the published report page (as an inline
    `data:` URI), and the Typst PDF — all from the one upload.
 
+### Embed the report's ATT&CK coverage matrix
+1. Tag the report with **ATT&CK technique** taxonomy terms (the report's coverage is
+   derived from its own tags).
+2. In a report editor, open **Insert ▾ → ATT&CK coverage matrix** (or type the bare
+   `[[attack]]` token) to embed the technique-coverage heatmap **inline at that point**
+   in the body. Unlike the diamond/figure/ach tokens it takes no ID.
+3. The matrix renders as a server-generated SVG in the live preview, the published
+   report page, and the Typst PDF; a report with no technique tags shows an
+   "unavailable" notice.
+
 ### Try requirements & tasking
 1. Sign in as a `STAKEHOLDER` → **My Requirements** → submit an intelligence requirement
    (title, priority, intel level).
@@ -196,6 +206,9 @@ a browsable look at what the other roles do, and a glossary of the intelligence 
    or aggregated per entity (from the entity profile) — and open it in
    [ATT&CK Navigator](https://mitre-attack.github.io/attack-navigator/). Stakeholders' coverage
    and exports only ever count published reports.
+4. Embed a report's *own* coverage matrix inline with the bare `[[attack]]` token (see
+   *Embed the report's ATT&CK coverage matrix* above) so the heatmap appears in the finished
+   product itself.
 
 The starter taxonomy is bundled as data (`src/iceberg/data/starter_tags.json`) and imported
 automatically on first boot. To (re-)import explicitly — e.g. after enriching the catalog or

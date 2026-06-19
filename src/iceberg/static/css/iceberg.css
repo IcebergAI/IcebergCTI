@@ -1311,6 +1311,34 @@ select.field {
   color: var(--c-warn);
 }
 
+/* ATT&CK coverage matrix — inline `[[attack]]` embed */
+.attack-figure {
+  margin: 1.6em 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  text-align: center;
+  overflow-x: auto;
+}
+.attack-figure figcaption {
+  margin-top: 8px;
+  font-family: var(--fs-mono);
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+.attack-svg svg,
+.attack-figure svg,
+.attack-inline svg { max-width: 100%; height: auto; }
+.attack-inline { display: inline-block; vertical-align: middle; max-width: 420px; }
+.attack-missing {
+  font-family: var(--fs-mono);
+  font-size: 12px;
+  color: var(--c-warn);
+}
+
 .field--sm { padding: 6px 8px; font-size: 12px; }
 
 .ach-matrix { border-collapse: collapse; width: 100%; }

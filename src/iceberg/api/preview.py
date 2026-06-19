@@ -43,7 +43,7 @@ def preview(
         if report is not None:
             return PreviewResponse(
                 html=product_html_service.preview_body_html(
-                    session, report.notebook_id, body.markdown
+                    session, report.notebook_id, body.markdown, report
                 )
             )
     return PreviewResponse(html=render_markdown(body.markdown))
@@ -67,6 +67,7 @@ def preview_product(
             key_judgements=body.key_judgements,
             key_assumptions=body.key_assumptions,
             intelligence_gaps=body.intelligence_gaps,
+            report=report,
         )
     )
 

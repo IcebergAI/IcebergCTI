@@ -21,6 +21,7 @@ from ..models import (
 )
 from ..rendering.typst import render_product
 from . import ach as ach_service
+from . import attack as attack_service
 from . import diamond as diamond_service
 from . import figures as figure_service
 
@@ -139,6 +140,13 @@ def render_report(
         (a.id, a.question or a.title, ach_service.render_ach_svg(a))
         for a in ach_service.referenced_ach(session, report)
     ]
+    # The report's own technique-coverage matrix (bare `[[attack]]` token);
+    # None when the body has no token or the report carries no technique tags.
+    attack_svg = (
+        attack_service.report_attack_svg(report)
+        if attack_service.has_attack_token(report.body_md)
+        else None
+    )
     path = render_product(
         report=report,
         author_name=author_name,
@@ -148,6 +156,7 @@ def render_report(
         diamonds=diamonds,
         figures=figures,
         ach=ach,
+        attack_svg=attack_svg,
         fmt=fmt,
     )
     product = RenderedProduct(report_id=report.id, format=fmt, pdf_path=str(path))

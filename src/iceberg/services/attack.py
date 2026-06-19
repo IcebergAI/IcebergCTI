@@ -19,6 +19,10 @@ hardening (noted in the roadmap), out of scope for this quick win.
 
 from __future__ import annotations
 
+import math
+import re
+from xml.sax.saxutils import escape  # nosec B406 — escapes text for SVG output, never parses XML
+
 from ..models import Report, Tag, TagKind
 
 # Enterprise ATT&CK tactics, in kill-chain order — the matrix column order.
@@ -167,3 +171,212 @@ def coverage_matrix(reports: list[Report]) -> dict:
         "max_count": max((e["count"] for e in counts.values()), default=0),
         "total": len(counts),
     }
+
+
+# --------------------------------------------------------------------------- #
+# Inline embed: the `[[attack]]` token renders a report's *own* technique
+# coverage as a self-contained SVG matrix, inline at the token's position (web
+# view, live preview, Typst PDF). Unlike the notebook-scoped diamond/figure/ach
+# tokens the techniques come from the report's own tags, so the token is bare
+# (no ID). The Typst path re-declares an equivalent literal in
+# rendering/typst.py to keep the rendering layer free of a service import; the
+# web/preview pipeline lives in services/product_html.py (it injects the SVG
+# after nh3 sanitisation, like the diamond/ach SVGs).
+# --------------------------------------------------------------------------- #
+ATTACK_TOKEN_RE = re.compile(r"\[\[attack\]\]")
+
+
+def has_attack_token(text: str) -> bool:
+    """Whether a report body embeds the `[[attack]]` coverage matrix."""
+    return bool(ATTACK_TOKEN_RE.search(text or ""))
+
+
+def report_attack_svg(report: Report) -> str | None:
+    """SVG of a report's own technique-coverage matrix, or ``None`` when the
+    report carries no ATT&CK technique tags — the caller then degrades to an
+    "unavailable" notice, like the other unresolved inline tokens."""
+    if not technique_tags(list(report.tags)):
+        return None
+    return render_attack_svg(coverage_matrix([report]))
+
+
+# --------------------------------------------------------------------------- #
+# SVG matrix — hand-built string templating (same spirit + XML-escaping
+# discipline as render_diamond_svg / render_ach_svg; dynamically sized from the
+# tactic-column × technique-row counts, like the ACH matrix).
+# --------------------------------------------------------------------------- #
+_SANS = "Archivo, 'Helvetica Neue', Arial, sans-serif"
+_MONO = "'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace"
+
+# White → Iceberg accent, five steps; both the shade AND the printed count encode
+# frequency (never colour alone) — same accessibility discipline as the ACH
+# glyphs / diamond pip-meter.
+_HEAT_FILL = {
+    1: "#eef5fa",
+    2: "#d3e9f4",
+    3: "#aed6ec",
+    4: "#84c0e0",
+    5: "#5aabd5",
+}
+_HEAT_INK = "#143241"
+
+# Layout geometry (px). Width/height derive from the matrix dimensions.
+_A_MARGIN = 24
+_A_TOP = 78  # eyebrow / title band
+_A_COL_W = 158  # one tactic column
+_A_TACTIC_H = 44  # tactic header row
+_A_CELL_H = 58  # one technique cell
+_A_FOOTER = 28
+
+
+def _heat_level(count: int, max_count: int) -> int:
+    """Bucket a technique's report-count into 1..5 (matches _attack_matrix.html)."""
+    if max_count <= 0:
+        return 1
+    return max(1, min(5, math.ceil(5 * count / max_count)))
+
+
+def _attack_wrap(text: str, *, max_chars: int = 20, max_lines: int = 2) -> list[str]:
+    """Greedy word-wrap with hard-truncation + ellipsis when overflowing."""
+    raw = " ".join((text or "").split())
+    if not raw:
+        return []
+    words = raw.split(" ")
+    lines: list[str] = []
+    cur = ""
+    i = 0
+    while i < len(words) and len(lines) < max_lines:
+        word = words[i]
+        if len(word) > max_chars:
+            word = word[: max_chars - 1] + "…"
+        candidate = (cur + " " + word).strip()
+        if len(candidate) <= max_chars or cur == "":
+            cur = candidate
+            i += 1
+        else:
+            lines.append(cur)
+            cur = ""
+    if cur and len(lines) < max_lines:
+        lines.append(cur)
+    if i < len(words) and lines and not lines[-1].endswith("…"):
+        lines[-1] = lines[-1][: max_chars - 2].rstrip() + " …"
+    return lines
+
+
+def _attack_placard(message: str) -> str:
+    """An empty-matrix SVG — used when no technique tags resolve to a column."""
+    return (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 180" '
+        'width="600" height="180" role="img" aria-label="Empty ATT&amp;CK matrix">'
+        '<rect x="1" y="1" width="598" height="178" rx="14" ry="14" '
+        'fill="#fbfdfe" stroke="#e3e9ef" stroke-width="1.5"/>'
+        f'<text x="30" y="36" font-family="{_MONO}" font-size="10.5" '
+        'font-weight="700" letter-spacing="1.6" fill="#1f6f93">'
+        "ATT&amp;CK TECHNIQUE COVERAGE</text>"
+        f'<text x="300" y="104" text-anchor="middle" font-family="{_SANS}" '
+        f'font-size="14" font-style="italic" fill="#a6aeb8">{escape(message)}</text>'
+        "</svg>"
+    )
+
+
+def render_attack_svg(matrix: dict) -> str:
+    """Render a coverage matrix (from :func:`coverage_matrix`) to a self-contained
+    SVG: tactic columns in kill-chain order, each stacking its techniques as
+    frequency-shaded cells (label · T-code · report-count). All dynamic text is
+    XML-escaped, so a technique label / tactic name can never inject markup.
+    """
+    tactics = matrix.get("tactics") or []
+    if not tactics:
+        return _attack_placard("No ATT&CK techniques tagged on this report.")
+
+    max_count = matrix.get("max_count") or 0
+    total = matrix.get("total") or 0
+    n_cols = len(tactics)
+    max_rows = max((len(c["techniques"]) for c in tactics), default=0)
+
+    width = _A_MARGIN * 2 + n_cols * _A_COL_W
+    height = (
+        _A_TOP + _A_TACTIC_H + max_rows * _A_CELL_H + _A_FOOTER + _A_MARGIN
+    )
+    gx = _A_MARGIN
+    grid_y = _A_TOP
+
+    subtitle = (
+        f"{total} technique{'' if total == 1 else 's'} across "
+        f"{n_cols} tactic{'' if n_cols == 1 else 's'}"
+    )
+    # accessible description: tactic → its techniques
+    desc = "; ".join(
+        f"{c['tactic']}: " + ", ".join(t["label"] for t in c["techniques"])
+        for c in tactics
+    )
+
+    parts = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" '
+        f'width="{width}" height="{height}" role="img" '
+        'aria-labelledby="attack-t attack-d">',
+        '<title id="attack-t">ATT&amp;CK technique coverage</title>',
+        f'<desc id="attack-d">{escape(desc)}.</desc>',
+        f'<rect x="1" y="1" width="{width - 2}" height="{height - 2}" rx="14" '
+        'ry="14" fill="#fbfdfe" stroke="#e3e9ef" stroke-width="1.5"/>',
+        f'<text x="{gx}" y="38" font-family="{_MONO}" font-size="10.5" '
+        'font-weight="700" letter-spacing="1.6" fill="#1f6f93">'
+        "ATT&amp;CK TECHNIQUE COVERAGE</text>",
+        f'<text x="{gx}" y="62" font-family="{_SANS}" font-size="14" '
+        f'font-weight="700" fill="#5a6672">{escape(subtitle)}</text>',
+    ]
+
+    for j, col in enumerate(tactics):
+        cx = gx + j * _A_COL_W
+        # tactic header
+        parts.append(
+            f'<rect x="{cx + 4}" y="{grid_y}" width="{_A_COL_W - 8}" '
+            f'height="{_A_TACTIC_H - 6}" rx="7" ry="7" fill="#eef2f6"/>'
+        )
+        head_lines = _attack_wrap(col["tactic"], max_chars=20, max_lines=2)
+        ty = grid_y + (24 if len(head_lines) == 1 else 17)
+        for line in head_lines:
+            parts.append(
+                f'<text x="{cx + _A_COL_W / 2:.0f}" y="{ty}" text-anchor="middle" '
+                f'font-family="{_MONO}" font-size="9.5" font-weight="700" '
+                f'letter-spacing="0.4" fill="#42505c">{escape(line.upper())}</text>'
+            )
+            ty += 12
+        # technique cells
+        for i, tech in enumerate(col["techniques"]):
+            ry = grid_y + _A_TACTIC_H + i * _A_CELL_H
+            level = _heat_level(tech["count"], max_count)
+            fill = _HEAT_FILL[level]
+            parts.append(
+                f'<rect x="{cx + 4}" y="{ry + 3}" width="{_A_COL_W - 8}" '
+                f'height="{_A_CELL_H - 6}" rx="7" ry="7" fill="{fill}" '
+                'stroke="#dde6ed" stroke-width="1"/>'
+            )
+            ly = ry + 20
+            for line in _attack_wrap(tech["label"], max_chars=22, max_lines=2):
+                parts.append(
+                    f'<text x="{cx + 12}" y="{ly}" font-family="{_SANS}" '
+                    f'font-size="11" font-weight="600" fill="{_HEAT_INK}">'
+                    f"{escape(line)}</text>"
+                )
+                ly += 13
+            parts.append(
+                f'<text x="{cx + 12}" y="{ry + _A_CELL_H - 11}" '
+                f'font-family="{_MONO}" font-size="9" fill="#4a5a66">'
+                f"{escape(tech['code'])}</text>"
+            )
+            parts.append(
+                f'<text x="{cx + _A_COL_W - 12}" y="{ry + _A_CELL_H - 11}" '
+                f'text-anchor="end" font-family="{_MONO}" font-size="11" '
+                f'font-weight="800" fill="{_HEAT_INK}">'
+                f"{tech['count']}</text>"
+            )
+
+    fy = height - _A_MARGIN
+    parts.append(
+        f'<text x="{gx}" y="{fy}" font-family="{_MONO}" font-size="9" '
+        'letter-spacing="0.4" fill="#9aa3ad">SHADE = REPORT FREQUENCY · '
+        "MITRE ATT&amp;CK ENTERPRISE</text>"
+    )
+    parts.append("</svg>")
+    return "".join(parts)
