@@ -58,7 +58,11 @@ taxonomy stamp carried through. [Download the full sample »](docs/sample-report
 
 ### Requirements → analyst tasking
 ![Tasking board](docs/images/tasking-board.png)
-*Stakeholder requirements aggregated into a priority-ordered tasking board, grouped by status.*
+*Stakeholder requirements — typed as **PIR** (priority, decision-tied, time-bound), **GIR** (standing)
+or **RFI** (ad-hoc) — aggregated into a tasking board grouped by status. Ordering blends urgency and
+kind: a PIR is floored to at least High priority so it leads standing/ad-hoc work, but a genuine
+Critical item still tops its column. A PIR coverage panel flags PIRs with no linked report/notebook
+(collection gaps) or past their review-by date (overdue).*
 
 ### Dissemination to a stakeholder feed
 ![Intelligence feed](docs/images/feed.png)
@@ -167,11 +171,15 @@ a browsable look at what the other roles do, and a glossary of the intelligence 
 
 ### Try requirements & tasking
 1. Sign in as a `STAKEHOLDER` → **My Requirements** → submit an intelligence requirement
-   (title, priority, intel level).
-2. Sign in as an `ANALYST` → **Tasking** to see the aggregated board; open a requirement
-   and move its status (OPEN → IN_PROGRESS → SATISFIED).
+   (title, **kind** — PIR / GIR / RFI, priority, intel level). Choosing **PIR** reveals a
+   decision-context note and a review-by date.
+2. Sign in as an `ANALYST` → **Tasking** to see the aggregated board; PIRs lead standing/ad-hoc
+   work (but a Critical item of any kind still tops its column), and the **PIR coverage panel**
+   flags uncovered or overdue PIRs. Open a requirement and move its status
+   (OPEN → IN_PROGRESS → SATISFIED).
 3. In a report editor, tick the **Requirements satisfied**; the link shows up on the
-   requirement's detail page (traceability). Notebooks can be linked the same way.
+   requirement's detail page (traceability) and clears the PIR's collection gap. Notebooks can be
+   linked the same way.
 
 ### Try dissemination
 1. As a `STAKEHOLDER`, set your **Preferences** (preferred intel level, or "All levels").

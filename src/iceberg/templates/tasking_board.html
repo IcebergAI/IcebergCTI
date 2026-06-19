@@ -13,6 +13,47 @@
   <span class="eyebrow">Aggregated stakeholder requirements</span>
 </div>
 
+{% if coverage %}
+  <div class="card card-pad-lg mb-7">
+    <div class="head-row mb-3">
+      <div class="eyebrow eyebrow-accent">PIR collection coverage</div>
+      <span class="eyebrow">{{ coverage.total_active }} active PIR{{ '' if coverage.total_active == 1 else 's' }}</span>
+    </div>
+    <div class="grid sm:grid-cols-2 gap-5">
+      <div>
+        <h3 class="section-title mb-2">Collection gaps <span class="muted" style="font-weight:500;text-transform:none;letter-spacing:0;">· no report or notebook linked</span></h3>
+        {% if coverage.gaps %}
+          <ul class="space-y-2">
+            {% for r in coverage.gaps %}
+              <li class="flex items-center gap-2">
+                <a href="/requirements/{{ r.id }}" class="btn-link flex-1">↳ {{ r.title }}</a>
+                {{ m.priority_badge(r.priority) }}
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="empty">All active PIRs have collection coverage.</p>
+        {% endif %}
+      </div>
+      <div>
+        <h3 class="section-title mb-2">Overdue <span class="muted" style="font-weight:500;text-transform:none;letter-spacing:0;">· past review-by date</span></h3>
+        {% if coverage.overdue %}
+          <ul class="space-y-2">
+            {% for r in coverage.overdue %}
+              <li class="flex items-center gap-2">
+                <a href="/requirements/{{ r.id }}" class="btn-link flex-1">↳ {{ r.title }}</a>
+                <span class="mono text-xs" style="color:var(--muted);">{{ r.review_by.strftime('%d %b %Y') }}</span>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="empty">No overdue PIRs.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+{% endif %}
+
 {% set col_class = {'OPEN':'col--open','IN_PROGRESS':'col--prog','SATISFIED':'col--done','CLOSED':'col--closed'} %}
 <div class="board">
   {% for s in statuses %}
@@ -26,6 +67,7 @@
           <a href="/requirements/{{ r.id }}" class="req-card">
             <div class="req-card-title">{{ r.title }}</div>
             <div class="mt-2 flex gap-1.5 flex-wrap items-center">
+              {{ m.req_kind_badge(r.kind) }}
               {{ m.priority_badge(r.priority) }}
               {{ m.level_badge(r.intel_level) }}
             </div>

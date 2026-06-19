@@ -1,5 +1,7 @@
 """Requirement linking and status helpers (traceability + analyst tasking)."""
 
+from datetime import date
+
 from sqlmodel import Session, col, select
 
 from ..models import (
@@ -8,6 +10,7 @@ from ..models import (
     Priority,
     Report,
     Requirement,
+    RequirementKind,
     RequirementStatus,
     utcnow,
 )
@@ -21,14 +24,27 @@ def create_requirement(
     description: str = "",
     intel_level: IntelLevel = IntelLevel.STRATEGIC,
     priority: Priority = Priority.MEDIUM,
+    kind: RequirementKind = RequirementKind.RFI,
+    decision_context: str = "",
+    review_by: date | None = None,
 ) -> Requirement:
-    """Create a stakeholder requirement. Shared by the JSON API and the portal."""
+    """Create a stakeholder requirement. Shared by the JSON API and the portal.
+
+    The PIR-only time-bound fields (``decision_context`` / ``review_by``) are
+    blanked for GIR/RFI so non-PIR rows never carry stray collection-planning
+    data.
+    """
+    if RequirementKind(kind) is not RequirementKind.PIR:
+        decision_context, review_by = "", None
     req = Requirement(
         stakeholder_id=stakeholder_id,
         title=title,
         description=description,
         intel_level=intel_level,
         priority=priority,
+        kind=kind,
+        decision_context=decision_context,
+        review_by=review_by,
     )
     session.add(req)
     session.commit()
@@ -79,3 +95,27 @@ def set_status(
     session.commit()
     session.refresh(requirement)
     return requirement
+
+
+def pir_coverage(session: Session) -> dict:
+    """PIR collection-coverage/gap aggregation for the tasking board.
+
+    Considers only **active** (OPEN / IN_PROGRESS) PIRs — a SATISFIED PIR's gap
+    is moot and a CLOSED one is no longer collected against, so surfacing either
+    would be false "act now" noise. Returns the uncovered PIRs (no linked report
+    *and* no linked notebook — a real collection gap, via the existing
+    traceability relationships) and the overdue PIRs (past ``review_by``).
+    """
+    active = {RequirementStatus.OPEN, RequirementStatus.IN_PROGRESS}
+    pirs = list(
+        session.exec(
+            select(Requirement).where(
+                Requirement.kind == RequirementKind.PIR,
+                col(Requirement.status).in_(active),
+            )
+        ).all()
+    )
+    today = date.today()
+    gaps = [r for r in pirs if not r.reports and not r.notebooks]
+    overdue = [r for r in pirs if r.review_by and r.review_by < today]
+    return {"gaps": gaps, "overdue": overdue, "total_active": len(pirs)}

@@ -3,7 +3,7 @@ render Jinja2 templates. Write actions are blocked for read-only stakeholders.
 """
 
 import json
-from datetime import timedelta
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Annotated
 
@@ -43,6 +43,7 @@ from ..models import (
     Report,
     ReportStatus,
     Requirement,
+    RequirementKind,
     RequirementStatus,
     Role,
     SourceCredibility,
@@ -51,7 +52,8 @@ from ..models import (
     TagKind,
     TLP,
     User,
-    priority_rank,
+    board_rank,
+    kind_rank,
     utcnow,
 )
 from ..rendering.typst import TypstNotAvailable, TypstRenderError, typst_available
@@ -140,7 +142,7 @@ def _open_requirements(
         merged[r.id] = r
     return sorted(
         merged.values(),
-        key=lambda r: (-priority_rank(r.priority), r.created_at),
+        key=lambda r: (-board_rank(r), -kind_rank(r.kind), r.created_at),
     )
 
 
@@ -1019,15 +1021,37 @@ def requirements_view(request: Request, session: SessionDep, user: CurrentUser):
         )
 
     # Analyst/reviewer/admin: aggregated tasking board grouped by status.
+    # Ordering blends urgency and kind: a PIR is floored to at least HIGH so it
+    # leads standing/ad-hoc work, but a true CRITICAL item still tops the column;
+    # kind breaks ties within equal effective priority (FR #42).
     rows = list(session.exec(select(Requirement)).all())
     board = {s: [] for s in RequirementStatus}
-    for r in sorted(rows, key=lambda r: (-priority_rank(r.priority), r.created_at)):
+    for r in sorted(
+        rows, key=lambda r: (-board_rank(r), -kind_rank(r.kind), r.created_at)
+    ):
         board[RequirementStatus(r.status)].append(r)
     return templates.TemplateResponse(
         request,
         "tasking_board.html",
-        {"user": user, "board": board, "statuses": list(RequirementStatus)},
+        {
+            "user": user,
+            "board": board,
+            "statuses": list(RequirementStatus),
+            "coverage": req_service.pir_coverage(session),
+        },
     )
+
+
+def _parse_review_by(raw: str) -> date | None:
+    """Coerce an ``<input type="date">`` value to a date. The input posts ``""``
+    when empty (not absent), which a typed ``date`` Form param would reject."""
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        return None
 
 
 @router.post("/requirements")
@@ -1038,6 +1062,9 @@ def requirement_create(
     description: Annotated[str, Form()] = "",
     intel_level: Annotated[IntelLevel, Form()] = IntelLevel.STRATEGIC,
     priority: Annotated[Priority, Form()] = Priority.MEDIUM,
+    kind: Annotated[RequirementKind, Form()] = RequirementKind.RFI,
+    decision_context: Annotated[str, Form()] = "",
+    review_by: Annotated[str, Form()] = "",
 ):
     _require_submitter(user)
     req = req_service.create_requirement(
@@ -1047,6 +1074,9 @@ def requirement_create(
         description=description,
         intel_level=intel_level,
         priority=priority,
+        kind=kind,
+        decision_context=decision_context,
+        review_by=_parse_review_by(review_by),
     )
     return _redirect(f"/requirements/{req.id}")
 
@@ -1069,6 +1099,7 @@ def requirement_detail(
             "notebooks": list(req.notebooks),
             "can_edit": user.role == Role.ADMIN or req.stakeholder_id == user.id,
             "can_triage": user.role in (Role.ANALYST, Role.REVIEWER, Role.ADMIN),
+            "today": date.today(),
         },
     )
 
@@ -1082,6 +1113,9 @@ def requirement_update(
     description: Annotated[str, Form()] = "",
     intel_level: Annotated[IntelLevel, Form()] = IntelLevel.STRATEGIC,
     priority: Annotated[Priority, Form()] = Priority.MEDIUM,
+    kind: Annotated[RequirementKind, Form()] = RequirementKind.RFI,
+    decision_context: Annotated[str, Form()] = "",
+    review_by: Annotated[str, Form()] = "",
 ):
     req = _get_requirement(session, requirement_id)
     if user.role != Role.ADMIN and req.stakeholder_id != user.id:
@@ -1090,6 +1124,14 @@ def requirement_update(
     req.description = description
     req.intel_level = intel_level
     req.priority = priority
+    req.kind = kind
+    # PIR-only fields: store them for a PIR, blank them otherwise (FR #42).
+    if kind is RequirementKind.PIR:
+        req.decision_context = decision_context
+        req.review_by = _parse_review_by(review_by)
+    else:
+        req.decision_context = ""
+        req.review_by = None
     req.updated_at = utcnow()
     session.add(req)
     session.commit()

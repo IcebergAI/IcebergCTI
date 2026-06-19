@@ -66,6 +66,18 @@
   </span>
 {% endmacro %}
 
+{% macro req_kind_badge(kind) %}
+  {% set map = {'PIR': 'tag--solid is-crit', 'GIR': 'is-info', 'RFI': 'is-neutral'} %}
+  {% set titles = {
+    'PIR': 'Priority Intelligence Requirement — leadership-designated, time-bound',
+    'GIR': 'General Intelligence Requirement — standing baseline coverage',
+    'RFI': 'Request For Information — ad-hoc, one-off question'
+  } %}
+  <span class="tag tag--c {{ map.get(kind.value, 'is-neutral') }}" title="{{ titles.get(kind.value, '') }}">
+    {{ kind.value }}
+  </span>
+{% endmacro %}
+
 {# Controlled-taxonomy tag chip — kind-tinted "catalog stamp".
    Structure mirrors the redesign CSS: .tagk > .tagk-kind + .tagk-body(.tagk-ext .tagk-label).
    Retired tags stay on historical reports struck-through; pass link=False for

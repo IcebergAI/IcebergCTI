@@ -5,7 +5,7 @@ imports. User/Notebook/Source/Note/Report (+ link tables) form the authoring
 core; Requirement drives stakeholder intake and the analyst tasking board.
 """
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from enum import StrEnum
 
 from sqlalchemy import JSON, Column, UniqueConstraint
@@ -101,6 +101,14 @@ class RequirementStatus(StrEnum):
     IN_PROGRESS = "IN_PROGRESS"
     SATISFIED = "SATISFIED"
     CLOSED = "CLOSED"
+
+
+class RequirementKind(StrEnum):
+    """CTI requirement type — drives collection differently per kind."""
+
+    PIR = "PIR"  # Priority Intelligence Requirement: leadership-designated, time-bound
+    GIR = "GIR"  # General Intelligence Requirement: standing baseline coverage
+    RFI = "RFI"  # Request For Information: ad-hoc, one-off question
 
 
 class TagKind(StrEnum):
@@ -597,6 +605,10 @@ class Requirement(SQLModel, table=True):
     description: str = ""
     intel_level: IntelLevel = Field(default=IntelLevel.STRATEGIC)
     priority: Priority = Field(default=Priority.MEDIUM)
+    kind: RequirementKind = Field(default=RequirementKind.RFI, index=True)
+    # PIR-only time-bound scaffolding (blank/ignored for GIR/RFI).
+    decision_context: str = ""
+    review_by: date | None = Field(default=None)
     status: RequirementStatus = Field(default=RequirementStatus.OPEN)
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
@@ -621,6 +633,32 @@ _PRIORITY_RANK = {
 def priority_rank(priority: Priority) -> int:
     """Sort key (higher = more urgent) for ordering the tasking board."""
     return _PRIORITY_RANK[Priority(priority)]
+
+
+_KIND_RANK = {
+    RequirementKind.PIR: 2,
+    RequirementKind.GIR: 1,
+    RequirementKind.RFI: 0,
+}
+
+
+def kind_rank(kind: RequirementKind) -> int:
+    """Tiebreak rank (higher = more strategically prioritised)."""
+    return _KIND_RANK[RequirementKind(kind)]
+
+
+# A PIR is treated as at least HIGH priority on the board, so it always leads
+# standing/ad-hoc work — but a true CRITICAL item of any kind still tops the
+# column (urgency is never buried). See FR #42 "urgency vs kind".
+_PIR_PRIORITY_FLOOR = _PRIORITY_RANK[Priority.HIGH]
+
+
+def board_rank(req: "Requirement") -> int:
+    """Effective board priority: a PIR is floored at HIGH; others rank as-is."""
+    base = priority_rank(req.priority)
+    if RequirementKind(req.kind) is RequirementKind.PIR:
+        return max(base, _PIR_PRIORITY_FLOOR)
+    return base
 
 
 class Tag(SQLModel, table=True):
