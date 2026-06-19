@@ -231,7 +231,7 @@ def test_board_orders_pir_floor_without_burying_critical(client, login):
 
 def test_pir_coverage_panel_lists_gaps_and_excludes_covered(client, login):
     login("STAKEHOLDER", email="stake@example.com")
-    uncovered = _mk(client, "Uncovered PIR", kind="PIR")
+    _mk(client, "Uncovered PIR", kind="PIR")
     covered = _mk(client, "Covered PIR", kind="PIR")
     done = _mk(client, "Done PIR", kind="PIR")
 
