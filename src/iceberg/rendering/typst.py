@@ -46,6 +46,9 @@ _FIGURE_TOKEN_RE = re.compile(r"\[\[figure:(\d+)\]\]")
 # Mirror of services.ach.ACH_TOKEN_RE — `[[ach:ID]]` rewritten to a markdown image
 # resolving against the per-render ACH SVG files written into the temp `--root`.
 _ACH_TOKEN_RE = re.compile(r"\[\[ach:(\d+)\]\]")
+# Mirror of services.attack.ATTACK_TOKEN_RE — the bare `[[attack]]` token rewritten
+# to a markdown image resolving against the per-render attack.svg in the temp root.
+_ATTACK_TOKEN_RE = re.compile(r"\[\[attack\]\]")
 
 
 def _rewrite_diamond_tokens(body: str, diamonds: list[tuple[int, str, str]]) -> str:
@@ -97,6 +100,16 @@ def _rewrite_ach_tokens(body: str, ach: list[tuple[int, str, str]]) -> str:
     return _ACH_TOKEN_RE.sub(_sub, body or "")
 
 
+def _rewrite_attack_token(body: str, attack_svg: str | None) -> str:
+    if attack_svg:
+        # attack.svg is written into the temp `--root` (see render_product);
+        # product.typ's `image` override resolves it.
+        replacement = "\n\n![ATT&CK technique coverage](attack.svg)\n\n"
+    else:
+        replacement = "\n\n*[ATT&CK coverage unavailable]*\n\n"
+    return _ATTACK_TOKEN_RE.sub(replacement, body or "")
+
+
 class TypstNotAvailable(RuntimeError):
     """Typst binary is not installed / not on PATH."""
 
@@ -118,14 +131,16 @@ def _build_data(
     diamonds: list[tuple[int, str, str]],
     figures: list[tuple[int, str, str, str]],
     ach: list[tuple[int, str, str]],
+    attack_svg: str | None,
 ) -> dict:
     stamp = report.published_at or report.updated_at
-    # All three inline-embed tokens are rewritten to markdown images here (disjoint
+    # All inline-embed tokens are rewritten to markdown images here (disjoint
     # token sets, so order is irrelevant); the files are written into the temp
     # --root by render_product and resolved by product.typ's `image` override.
     body_md = _rewrite_diamond_tokens(report.body_md or "", diamonds)
     body_md = _rewrite_figure_tokens(body_md, figures)
     body_md = _rewrite_ach_tokens(body_md, ach)
+    body_md = _rewrite_attack_token(body_md, attack_svg)
     return {
         "title": report.title,
         "intel_level": report.intel_level.value,
@@ -177,6 +192,7 @@ def render_product(
     diamonds: list[tuple[int, str, str]] | None = None,
     figures: list[tuple[int, str, str, str]] | None = None,
     ach: list[tuple[int, str, str]] | None = None,
+    attack_svg: str | None = None,
     fmt: ProductFormat,
 ) -> Path:
     settings = get_settings()
@@ -207,6 +223,7 @@ def render_product(
                     diamonds,
                     figures,
                     ach,
+                    attack_svg,
                 )
             ),
             encoding="utf-8",
@@ -222,6 +239,10 @@ def render_product(
         # `--root` as figure-{id}{ext}.
         for fid, _caption, src_path, ext in figures:
             shutil.copy(src_path, tmp_dir / f"figure-{fid}{ext}")
+        # The report's ATT&CK coverage matrix (bare `[[attack]]` token) — one
+        # per report, written into the same `--root` as attack.svg.
+        if attack_svg:
+            (tmp_dir / "attack.svg").write_text(attack_svg, encoding="utf-8")
         shutil.copy(_TEMPLATE, tmp_dir / "product.typ")
         cmd = [
             settings.typst_bin,

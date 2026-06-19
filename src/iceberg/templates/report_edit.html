@@ -121,10 +121,15 @@
       <div class="editor-pane-head">
         <span class="pane-label" style="margin:0;"><span class="pip"></span> {% if can_edit %}Markdown{% else %}Read-only{% if report.status.value == 'PUBLISHED' %} · published{% endif %}{% endif %}</span>
         {% if can_edit %}<a href="/help#diamond-model" class="help-hint" target="_blank" title="Embedding analytic models &amp; figures">?</a>{% endif %}
-        {% if can_edit and has_embeds %}
+        {% if can_edit %}
           <div class="insert-menu ml-auto" @click.outside="insertOpen = false">
             <button type="button" class="btn btn--ghost btn--sm" @click="insertOpen = !insertOpen">+ Insert ▾</button>
             <div class="insert-menu-pop" x-show="insertOpen" x-cloak>
+              <div class="insert-group-label">Analytics</div>
+              <button type="button" class="insert-opt" @click="insertOpen=false" onclick="insertAttack()">
+                <span class="flex-1 truncate">ATT&amp;CK coverage matrix</span>
+                <span class="mono">[[attack]]</span>
+              </button>
               {% if diamonds %}
                 <div class="insert-group-label">Diamond models</div>
                 {% for d in diamonds %}
@@ -498,5 +503,6 @@
   function insertDiamond(id) { insertToken('[[diamond:' + id + ']]'); }
   function insertFigure(id) { insertToken('[[figure:' + id + ']]'); }
   function insertAch(id) { insertToken('[[ach:' + id + ']]'); }
+  function insertAttack() { insertToken('[[attack]]'); }
 </script>
 {% endblock %}
