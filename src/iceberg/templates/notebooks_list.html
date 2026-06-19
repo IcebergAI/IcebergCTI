@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Notebooks · {{ app_name }}{% endblock %}
+{% block crumb %}Notebooks{% endblock %}
+{% block content %}
+<div class="head-row mb-7">
+  <div>
+    <div class="eyebrow eyebrow-accent">Workspace</div>
+    <h1 class="page-title mt-1">Notebooks</h1>
+  </div>
+  <span class="eyebrow">{{ notebooks | length }} in collection</span>
+</div>
+
+{% if notebooks %}
+  <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+    {% for nb in notebooks %}
+      <a href="/notebooks/{{ nb.id }}" class="tile">
+        <div class="flex items-start gap-2">
+          <span class="tile-title flex-1">{{ nb.title }}</span>
+          <span class="eyebrow" style="opacity:0.55;">→</span>
+        </div>
+        <div class="tile-meta">{{ nb.topic or "No topic set" }}</div>
+      </a>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="well card-pad text-center">
+    <p class="empty">No notebooks yet. Create one below to start collecting sources, notes and products.</p>
+  </div>
+{% endif %}
+
+<form method="post" action="/notebooks" class="card card-pad mt-5" style="max-width:640px;">
+  <div class="eyebrow mb-3">New notebook</div>
+  <div class="grid sm:grid-cols-2 gap-3">
+    <div>
+      <label class="field-label">Title</label>
+      <input name="title" required placeholder="e.g. APT29 tracking" class="field">
+    </div>
+    <div>
+      <label class="field-label">Topic</label>
+      <input name="topic" placeholder="Focus area" class="field">
+    </div>
+  </div>
+  <button class="btn btn--ink mt-4">Create notebook</button>
+</form>
+{% endblock %}

@@ -1,21 +1,45 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m %}
 {% block title %}Reports · {{ app_name }}{% endblock %}
+{% block crumb %}Reports{% endblock %}
 {% block content %}
 
-<div class="head-row mb-7">
+<div class="head-row mb-5">
   <div>
     <div class="eyebrow eyebrow-accent">{% if user.role == 'STAKEHOLDER' %}Disseminated{% else %}Library{% endif %}</div>
-    <h1 class="page-title mt-2">{% if user.role == 'STAKEHOLDER' %}Published intelligence{% else %}All reports{% endif %}</h1>
-    <div class="title-rule"></div>
+    <h1 class="page-title mt-1">{% if user.role == 'STAKEHOLDER' %}Published intelligence{% else %}All reports{% endif %}</h1>
   </div>
-  <span class="eyebrow">{{ reports | length }} report{{ '' if reports|length == 1 else 's' }}</span>
+  {% if user.role != 'STAKEHOLDER' %}
+    <a href="/notebooks" class="btn btn--primary btn--sm">+ New report</a>
+  {% endif %}
 </div>
 
 {% if reports %}
+<div x-data="{
+       q: '', status: '', level: '',
+       ok(r) {
+         return (!this.q || r.t.includes(this.q.toLowerCase()))
+             && (!this.status || r.s === this.status)
+             && (!this.level || r.l === this.level);
+       }
+     }">
+  <div class="filter-bar mb-4">
+    <input type="search" class="field filter-search" placeholder="Filter by title…" x-model="q">
+    <div class="filter-pills">
+      {% if user.role != 'STAKEHOLDER' %}
+        <button type="button" class="tax-pill" :class="status==='' ? 'is-on' : ''" @click="status=''">All status</button>
+        {% for s in ReportStatus %}
+          <button type="button" class="tax-pill" :class="status==='{{ s.value }}' ? 'is-on' : ''" @click="status='{{ s.value }}'">{{ s.value.replace('_',' ') }}</button>
+        {% endfor %}
+      {% endif %}
+    </div>
+    <span class="eyebrow ml-auto">{{ reports | length }} report{{ '' if reports|length == 1 else 's' }}</span>
+  </div>
+
   <div class="rows">
     {% for r in reports %}
-      <a href="/reports/{{ r.id }}" class="row">
+      <a href="/reports/{{ r.id }}" class="row"
+         x-show="ok({ t: {{ r.title|lower|tojson }}, s: {{ r.status.value|tojson }}, l: {{ r.intel_level.value|tojson }} })">
         <span class="flex-1">
           <span class="row-title">{{ r.title }}</span>
           {% if r.tags %}
@@ -32,6 +56,7 @@
       </a>
     {% endfor %}
   </div>
+</div>
 {% else %}
   <div class="well card-pad-lg text-center"><p class="empty">No reports to show.</p></div>
 {% endif %}

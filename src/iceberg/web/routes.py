@@ -3,6 +3,7 @@ render Jinja2 templates. Write actions are blocked for read-only stakeholders.
 """
 
 import json
+from datetime import timedelta
 from pathlib import Path
 from typing import Annotated
 
@@ -183,6 +184,28 @@ def dashboard(request: Request, session: SessionDep, user: CurrentUser):
                 )
             ).all()
         )
+    # KPI strip counts (writers only) — derived cheaply for the dashboard stats.
+    open_tasking = 0
+    published_30d = 0
+    if not is_stakeholder:
+        open_tasking = len(
+            session.exec(
+                select(Requirement).where(
+                    col(Requirement.status).in_(
+                        [RequirementStatus.OPEN, RequirementStatus.IN_PROGRESS]
+                    )
+                )
+            ).all()
+        )
+        cutoff = utcnow() - timedelta(days=30)
+        published_30d = len(
+            session.exec(
+                select(Report).where(
+                    Report.status == ReportStatus.PUBLISHED,
+                    col(Report.published_at) >= cutoff,
+                )
+            ).all()
+        )
     return templates.TemplateResponse(
         request,
         "dashboard.html",
@@ -193,7 +216,21 @@ def dashboard(request: Request, session: SessionDep, user: CurrentUser):
             "report_counts": report_counts,
             "next_report": next_report,
             "feed_unread": feed_unread,
+            "open_tasking": open_tasking,
+            "published_30d": published_30d,
         },
+    )
+
+
+@router.get("/notebooks")
+def notebooks_list(request: Request, session: SessionDep, user: CurrentUser):
+    # Notebooks are writer-only collection material; stakeholders never list them.
+    _require_writer(user)
+    notebooks = list(
+        session.exec(select(Notebook).order_by(Notebook.updated_at.desc())).all()
+    )
+    return templates.TemplateResponse(
+        request, "notebooks_list.html", {"user": user, "notebooks": notebooks}
     )
 
 
@@ -1243,6 +1280,22 @@ def matrix_view(request: Request, session: SessionDep, user: CurrentUser):
             "matrix": attack_service.coverage_matrix(reports),
             "report_count": len(reports),
         },
+    )
+
+
+@router.get("/tags")
+def entities_list(request: Request, session: SessionDep, user: CurrentUser):
+    """Browse index over named-threat entities (ACTOR/MALWARE/CAMPAIGN), grouped
+    by kind and linking to the per-entity profile at /tags/{id}."""
+    named = [
+        t
+        for t in tag_service.list_tags(session, include_inactive=True)
+        if t.kind in tag_service.ALIASABLE_KINDS
+    ]
+    return templates.TemplateResponse(
+        request,
+        "entities_list.html",
+        {"user": user, "entities_by_kind": _tags_by_kind(named)},
     )
 
 
