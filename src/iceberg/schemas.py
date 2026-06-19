@@ -1,5 +1,7 @@
 """Request bodies for the JSON API (responses serialise models/dicts directly)."""
 
+from datetime import date
+
 from pydantic import BaseModel, model_validator
 
 from .models import (
@@ -11,6 +13,7 @@ from .models import (
     ProductFormat,
     RelationType,
     ReportStatus,
+    RequirementKind,
     RequirementStatus,
     SourceCredibility,
     SourceReliability,
@@ -200,6 +203,10 @@ class RequirementCreate(BaseModel):
     description: str = ""
     intel_level: IntelLevel = IntelLevel.STRATEGIC
     priority: Priority = Priority.MEDIUM
+    kind: RequirementKind = RequirementKind.RFI
+    # PIR-only; ignored (blanked) by the service for GIR/RFI.
+    decision_context: str = ""
+    review_by: date | None = None
 
 
 class RequirementUpdate(BaseModel):
@@ -207,6 +214,9 @@ class RequirementUpdate(BaseModel):
     description: str | None = None
     intel_level: IntelLevel | None = None
     priority: Priority | None = None
+    kind: RequirementKind | None = None
+    decision_context: str | None = None
+    review_by: date | None = None
 
 
 class RequirementStatusUpdate(BaseModel):

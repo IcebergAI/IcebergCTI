@@ -15,6 +15,7 @@ from ..models import (
     IntelLevel,
     Priority,
     Requirement,
+    RequirementKind,
     RequirementStatus,
     Role,
     utcnow,
@@ -83,6 +84,9 @@ def create_requirement(
         description=body.description,
         intel_level=body.intel_level,
         priority=body.priority,
+        kind=body.kind,
+        decision_context=body.decision_context,
+        review_by=body.review_by,
     )
 
 
@@ -113,6 +117,10 @@ def update_requirement(
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Cannot edit this requirement")
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(req, field, value)
+    # Keep the PIR-only fields consistent: GIR/RFI never carry collection-planning
+    # data (mirrors the service rule on create).
+    if RequirementKind(req.kind) is not RequirementKind.PIR:
+        req.decision_context, req.review_by = "", None
     req.updated_at = utcnow()
     session.add(req)
     session.commit()

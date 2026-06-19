@@ -24,6 +24,7 @@
           <a href="/requirements/{{ r.id }}" class="row">
             <span class="row-title flex-1">{{ r.title }}</span>
             <span class="flex gap-1.5 items-center flex-wrap">
+              {{ m.req_kind_badge(r.kind) }}
               {{ m.req_status_badge(r.status) }}
               {{ m.priority_badge(r.priority) }}
               {{ m.level_badge(r.intel_level) }}
@@ -38,7 +39,7 @@
 
   <section>
     <h2 class="section-title mb-4">Submit a requirement</h2>
-    <form method="post" action="/requirements" class="card card-pad-lg space-y-3">
+    <form method="post" action="/requirements" class="card card-pad-lg space-y-3" x-data="{ kind: 'RFI' }">
       <div>
         <label class="field-label">What do you need to know?</label>
         <input name="title" required placeholder="Intelligence question" class="field">
@@ -47,6 +48,29 @@
         <label class="field-label">Context / detail</label>
         <textarea name="description" rows="3" placeholder="Background, decisions this informs…" class="field"></textarea>
       </div>
+      <div>
+        <label class="field-label">Requirement kind</label>
+        <select name="kind" x-model="kind" class="field">
+          {% for k in RequirementKind %}<option value="{{ k.value }}">{{ k.value }}</option>{% endfor %}
+        </select>
+        <p class="muted text-xs mt-1" x-text="{
+          PIR: 'Priority Intelligence Requirement — leadership-designated, decision-tied, time-bound.',
+          GIR: 'General Intelligence Requirement — standing baseline coverage.',
+          RFI: 'Request For Information — an ad-hoc, one-off question.'
+        }[kind]"></p>
+      </div>
+      <template x-if="kind === 'PIR'">
+        <div class="space-y-3" x-cloak>
+          <div>
+            <label class="field-label">Decision this informs</label>
+            <textarea name="decision_context" rows="2" placeholder="The leadership decision this PIR supports…" class="field"></textarea>
+          </div>
+          <div>
+            <label class="field-label">Review by <span class="opt">PIRs expire / need review</span></label>
+            <input type="date" name="review_by" class="field">
+          </div>
+        </div>
+      </template>
       <div>
         <label class="field-label">Intelligence level</label>
         <select name="intel_level" class="field">

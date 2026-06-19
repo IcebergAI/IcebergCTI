@@ -260,16 +260,27 @@ CONCEPTS: list[Concept] = [
     ),
     Concept(
         slug="requirements",
-        term="Requirements, PIRs & the tasking board",
+        term="Requirements (PIR / GIR / RFI) & the tasking board",
         category="Workflow",
         body=(
-            "Stakeholders submit intelligence requirements (PIRs / RFIs) with a "
-            "priority. Analysts, reviewers and admins see the aggregated tasking board "
-            "— grouped by status, ordered by priority — and drive each requirement's "
-            "status. Traceability is established by linking the reports that satisfy a "
-            "requirement and the notebooks that address it."
+            "Stakeholders submit intelligence requirements with a kind and a "
+            "priority. The kind records what is being asked: a PIR (Priority "
+            "Intelligence Requirement) is leadership-designated, tied to a decision "
+            "and time-bound; a GIR (General Intelligence Requirement) is standing "
+            "baseline coverage; an RFI (Request for Information) is an ad-hoc, "
+            "one-off question. Analysts, reviewers and admins see the aggregated "
+            "tasking board — grouped by status — and drive each requirement's "
+            "status. Traceability is established by linking the reports that satisfy "
+            "a requirement and the notebooks that address it."
         ),
         points=[
+            "Kinds — PIR (decision-tied, time-bound), GIR (standing), RFI (ad-hoc). "
+            "A PIR adds a decision-context note and a review-by date.",
+            "Board ordering blends urgency and kind: a PIR is treated as at least "
+            "High priority so it leads standing/ad-hoc work, but a genuine Critical "
+            "item of any kind still tops its column — urgent work is never buried.",
+            "The PIR coverage panel flags PIRs with no linked report or notebook "
+            "(collection gaps) and PIRs past their review-by date (overdue).",
             "Statuses — OPEN, IN_PROGRESS, SATISFIED, CLOSED.",
             "Only stakeholders/admins create requirements; only analysts/reviewers/"
             "admins change status and create links.",
