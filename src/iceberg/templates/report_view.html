@@ -1,104 +1,111 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m %}
 {% block title %}{{ report.title }} · {{ app_name }}{% endblock %}
-{% block page_class %}page-narrow{% endblock %}
+{% block crumb %}{{ report.title }}{% endblock %}
 {% block content %}
+
+{% set tech_tags = tags | selectattr('kind.value', 'equalto', 'TECHNIQUE') | selectattr('external_id') | list %}
 
 <a href="/reports" class="backlink">← Reports</a>
 
-<article class="doc mt-4">
-  <!-- classification / marking strip -->
-  <div class="doc-marker">
-    {{ m.tlp_badge(report.tlp) }}
-    {{ m.level_badge(report.intel_level) }}
-    {{ m.confidence_badge(report.analytic_confidence) }}
-    <span class="ml-auto eyebrow">
-      {% if report.published_at %}Published {{ report.published_at.strftime('%d %b %Y') }}{% else %}Draft{% endif %}
-    </span>
-  </div>
-
-  <div style="padding: 30px 40px 40px;">
-    <div class="flex items-center gap-1.5 mb-3">
+<div class="doc-layout mt-4">
+  <article class="doc">
+    <!-- classification / marking strip -->
+    <div class="doc-marker">
       {{ m.status_badge(report.status) }}
+      {{ m.level_badge(report.intel_level) }}
+      {{ m.tlp_badge(report.tlp) }}
+      {{ m.confidence_badge(report.analytic_confidence) }}
+      <span class="ml-auto eyebrow">
+        {% if report.published_at %}Published {{ report.published_at.strftime('%d %b %Y') }}{% else %}Draft{% endif %}
+      </span>
     </div>
-    <h1 style="font-family:var(--fs-sans); font-size:30px; font-weight:800; letter-spacing:-0.02em; line-height:1.12; color:var(--ink);">{{ report.title }}</h1>
-    <div class="title-rule" style="margin-top:16px; margin-bottom:26px;"></div>
 
-    {% if tags %}
-      <div class="flex gap-1.5 flex-wrap mb-6">
-        {% for t in tags %}{{ m.tag_chip(t) }}{% endfor %}
-      </div>
-    {% endif %}
+    <div style="padding: 28px 40px 40px;">
+      <h1 style="font-family:var(--fs-sans); font-size:30px; font-weight:800; letter-spacing:-0.02em; line-height:1.12; color:var(--ink);">{{ report.title }}</h1>
+      <div class="title-rule" style="margin-top:16px; margin-bottom:26px;"></div>
 
-    {{ product_html | safe }}
+      {% if tags %}
+        <div class="flex gap-1.5 flex-wrap mb-6">
+          {% for t in tags %}{{ m.tag_chip(t) }}{% endfor %}
+        </div>
+      {% endif %}
 
-    {% if cited_sources %}
-      <h2 class="section-title mt-9 mb-3">Sources</h2>
-      <ol class="space-y-2" style="counter-reset:src; list-style:none; padding:0;">
-        {% for s in cited_sources %}
-          <li class="flex gap-3 text-sm" style="counter-increment:src;">
-            <span class="mono" style="color:var(--accent-deep); font-size:12px; min-width:1.6em;">[{{ loop.index }}]</span>
-            <span>
-              <span class="font-medium">{{ s.title }}</span>
-              <span class="ml-1">{{ m.source_grade_chip(s) }}</span>
-              {% if s.reference %} — <span class="mono text-xs break-all" style="color:var(--accent-deep);">{{ s.reference }}</span>{% endif %}
-            </span>
-          </li>
-        {% endfor %}
-      </ol>
-    {% endif %}
+      {{ product_html | safe }}
 
-    {% if cited_attachments and user.role != 'STAKEHOLDER' %}
-      <h2 class="section-title mt-9 mb-3">Attachments</h2>
-      <div class="space-y-2">
-        {% for a in cited_attachments %}
-          <a class="file-row" href="/notebooks/{{ a.notebook_id }}/attachments/{{ a.id }}/download" style="text-decoration:none; color:inherit;">
-            <span class="file-fmt">{{ a.title or a.original_filename }}</span>
-            <span class="mono text-xs" style="color:var(--muted);">{{ a.file_size | filesizeformat }}</span>
-            <span class="btn-link ml-auto">Download</span>
-          </a>
-        {% endfor %}
-      </div>
-    {% endif %}
+      {% if cited_sources %}
+        <h2 class="section-title mt-9 mb-3">Sources</h2>
+        <ol class="space-y-2" style="counter-reset:src; list-style:none; padding:0;">
+          {% for s in cited_sources %}
+            <li class="flex gap-3 text-sm" style="counter-increment:src;">
+              <span class="mono" style="color:var(--accent-deep); font-size:12px; min-width:1.6em;">[{{ loop.index }}]</span>
+              <span>
+                <span class="font-medium">{{ s.title }}</span>
+                <span class="ml-1">{{ m.source_grade_chip(s) }}</span>
+                {% if s.reference %} — <span class="mono text-xs break-all" style="color:var(--accent-deep);">{{ s.reference }}</span>{% endif %}
+              </span>
+            </li>
+          {% endfor %}
+        </ol>
+      {% endif %}
 
-    {% if requirements %}
-      <h2 class="section-title mt-9 mb-3">Requirements satisfied</h2>
-      <ul class="space-y-1.5 text-sm" style="list-style:none; padding:0;">
-        {% for r in requirements %}
-          <li><a href="/requirements/{{ r.id }}" class="btn-link">↳ {{ r.title }}</a></li>
-        {% endfor %}
-      </ul>
-    {% endif %}
+      {% if cited_attachments and user.role != 'STAKEHOLDER' %}
+        <h2 class="section-title mt-9 mb-3">Attachments</h2>
+        <div class="space-y-2">
+          {% for a in cited_attachments %}
+            <a class="file-row" href="/notebooks/{{ a.notebook_id }}/attachments/{{ a.id }}/download" style="text-decoration:none; color:inherit;">
+              <span class="file-fmt">{{ a.title or a.original_filename }}</span>
+              <span class="mono text-xs" style="color:var(--muted);">{{ a.file_size | filesizeformat }}</span>
+              <span class="btn-link ml-auto">Download</span>
+            </a>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </div>
+  </article>
 
-    {% set tech_tags = tags | selectattr('kind.value', 'equalto', 'TECHNIQUE') | selectattr('external_id') | list %}
+  <aside class="side-rail">
     {% if products or tech_tags %}
-      <h2 class="section-title mt-9 mb-3">Downloads</h2>
+    <div class="side-card">
+      <div class="side-card-label">Downloads</div>
       <div class="space-y-2">
         {% if tech_tags %}
           <a class="file-row" href="/api/attack/reports/{{ report.id }}/layer" style="text-decoration:none; color:inherit;">
-            <span class="file-fmt">ATT&CK Navigator layer</span>
-            <span class="mono text-xs" style="color:var(--muted);">JSON · {{ tech_tags | length }} technique{{ '' if tech_tags | length == 1 else 's' }}</span>
-            <span class="btn-link ml-auto">Download ↓</span>
+            <span class="file-fmt">ATT&CK layer</span>
+            <span class="btn-link ml-auto">JSON ↓</span>
           </a>
         {% endif %}
         {% for p in products %}
           <a class="file-row" href="/reports/{{ report.id }}/products/{{ p.id }}/download" style="text-decoration:none; color:inherit;">
             <span class="file-fmt">{{ p.format.value.replace('_',' ') }}</span>
-            <span class="mono text-xs" style="color:var(--muted);">PDF</span>
-            <span class="btn-link ml-auto">Download ↓</span>
+            <span class="btn-link ml-auto">PDF ↓</span>
           </a>
         {% endfor %}
       </div>
+    </div>
     {% endif %}
-  </div>
-</article>
 
-{% if user.role != 'STAKEHOLDER' %}
-  <div class="flex items-center gap-4 mt-5">
-    {% if report.status.value == 'PUBLISHED' %}
-      <span class="eyebrow">Disseminated to {{ dissemination_count }} stakeholder{{ '' if dissemination_count == 1 else 's' }}</span>
+    {% if requirements or (user.role != 'STAKEHOLDER' and report.status.value == 'PUBLISHED') %}
+    <div class="side-card">
+      <div class="side-card-label">Traceability</div>
+      {% if requirements %}
+        <ul class="space-y-1.5 text-sm" style="list-style:none; padding:0;">
+          {% for r in requirements %}
+            <li><a href="/requirements/{{ r.id }}" class="btn-link">↳ {{ r.title }}</a></li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+      {% if user.role != 'STAKEHOLDER' and report.status.value == 'PUBLISHED' %}
+        <div class="eyebrow mt-3">Disseminated to {{ dissemination_count }} stakeholder{{ '' if dissemination_count == 1 else 's' }}</div>
+      {% endif %}
+    </div>
     {% endif %}
-    <a href="/reports/{{ report.id }}/edit" class="btn btn--ghost btn--sm ml-auto">Edit report</a>
-  </div>
-{% endif %}
+
+    {% if user.role != 'STAKEHOLDER' %}
+    <div class="side-card">
+      <a href="/reports/{{ report.id }}/edit" class="btn btn--ghost btn--sm" style="width:100%; justify-content:center;">Edit report</a>
+    </div>
+    {% endif %}
+  </aside>
+</div>
 {% endblock %}

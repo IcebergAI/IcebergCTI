@@ -1,25 +1,32 @@
 {% extends "base.html" %}
 {% block title %}Preferences · {{ app_name }}{% endblock %}
+{% block crumb %}Preferences{% endblock %}
 {% block page_class %}page-narrow{% endblock %}
 {% block content %}
 
-<div class="mb-7">
+<div class="mb-6">
   <div class="eyebrow eyebrow-accent">Dissemination</div>
-  <h1 class="page-title mt-2">Preferences</h1>
-  <div class="title-rule"></div>
+  <h1 class="page-title mt-1">Preferences</h1>
 </div>
 
 <div class="grid md:grid-cols-3 gap-6">
   <form method="post" action="/preferences" class="card card-pad-lg md:col-span-2">
     <h2 class="section-title mb-1">Preferred intelligence level</h2>
     <p class="text-xs mb-4" style="color:var(--muted);">Choose which level lands in your feed. "All levels" receives everything you're eligible for.</p>
-    <label class="field-label">Level</label>
-    <select name="preferred_intel_level" class="field" style="max-width:280px;">
-      <option value="" {% if not user.preferred_intel_level %}selected{% endif %}>All levels</option>
+    <div class="radio-cards">
+      <label class="radio-card">
+        <input type="radio" name="preferred_intel_level" value="" {% if not user.preferred_intel_level %}checked{% endif %}>
+        <span class="radio-card-title">All levels</span>
+        <span class="radio-card-meta">Receive every report you're eligible for.</span>
+      </label>
       {% for lvl in IntelLevel %}
-        <option value="{{ lvl.value }}" {% if user.preferred_intel_level and user.preferred_intel_level == lvl %}selected{% endif %}>{{ lvl.value }}</option>
+        <label class="radio-card">
+          <input type="radio" name="preferred_intel_level" value="{{ lvl.value }}" {% if user.preferred_intel_level and user.preferred_intel_level == lvl %}checked{% endif %}>
+          <span class="radio-card-title">{{ lvl.value | capitalize }}</span>
+          <span class="radio-card-meta">Only {{ lvl.value | lower }} products.</span>
+        </label>
       {% endfor %}
-    </select>
+    </div>
     <div class="mt-5"><button class="btn btn--ink">Save preferences</button></div>
   </form>
 

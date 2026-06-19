@@ -30,6 +30,29 @@ def test_dashboard_renders(client, login):
     assert "Notebooks" in resp.text
 
 
+def test_notebooks_index_renders_for_writer(client, login):
+    login("ANALYST")
+    client.post("/notebooks", data={"title": "Volt Typhoon", "topic": "CNI"})
+    resp = client.get("/notebooks")
+    assert resp.status_code == 200
+    assert "Volt Typhoon" in resp.text
+
+
+def test_notebooks_index_forbidden_for_stakeholder(client, login):
+    # Notebooks are writer-only collection material; stakeholders are excluded.
+    login("STAKEHOLDER")
+    resp = client.get("/notebooks")
+    assert resp.status_code == 403
+
+
+def test_entities_index_renders(client, login):
+    login("ANALYST")
+    resp = client.get("/tags")
+    assert resp.status_code == 200
+    # Named-threat kinds head the browse index.
+    assert "Threat entities" in resp.text
+
+
 def test_full_authoring_flow_through_portal(client, login):
     login("ANALYST", email="author@example.com")
 

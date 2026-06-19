@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Entities · {{ app_name }}{% endblock %}
+{% block crumb %}Entities{% endblock %}
+{% block content %}
+<div class="head-row mb-7">
+  <div>
+    <div class="eyebrow eyebrow-accent">Discovery</div>
+    <h1 class="page-title mt-1">Threat entities</h1>
+    <p class="lede mt-2">Actors, malware and campaigns in the controlled taxonomy. Open one for its attribution, relationships and ATT&amp;CK coverage.</p>
+  </div>
+</div>
+
+{% if entities_by_kind %}
+  {% for kind, entities in entities_by_kind.items() %}
+    <section class="mb-7">
+      <div class="head-row mb-3">
+        <h2 class="section-title">{{ kind.value | capitalize }}</h2>
+        <span class="eyebrow">{{ entities | length }}</span>
+      </div>
+      <div class="rows">
+        {% for t in entities %}
+          <a href="/tags/{{ t.id }}" class="row">
+            <span class="flex-1 min-w-0">
+              <span class="row-title">{{ t.label }}{% if not t.active %} · Retired{% endif %}</span>
+              {% if t.aliases %}<span class="muted text-xs ml-2">aka {{ t.aliases | join(', ') }}</span>{% endif %}
+              {% if t.suspected_attribution %}<span class="muted text-xs block mt-1">{{ t.suspected_attribution }}</span>{% endif %}
+            </span>
+            <span class="flex items-center gap-2">
+              {% if t.external_id %}<span class="mono text-xs muted">{{ t.external_id }}</span>{% endif %}
+              <span class="mono text-xs muted">{{ t.reports | length }} report(s)</span>
+            </span>
+          </a>
+        {% endfor %}
+      </div>
+    </section>
+  {% endfor %}
+{% else %}
+  <div class="well card-pad text-center">
+    <p class="empty">No threat entities in the taxonomy yet.</p>
+  </div>
+{% endif %}
+{% endblock %}

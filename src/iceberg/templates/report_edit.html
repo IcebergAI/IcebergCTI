@@ -7,87 +7,44 @@
 {% set can_tag = is_author or user.role == 'ADMIN' %}
 {% set lifecycle_steps = ['DRAFT', 'IN_REVIEW', 'APPROVED', 'PUBLISHED'] %}
 {% set current_index = lifecycle_steps.index(report.status.value) %}
+{% set has_embeds = diamonds or figures or ach_models %}
 {% block title %}Edit · {{ report.title }}{% endblock %}
+{% block crumb %}{{ report.title }}{% endblock %}
+{% block canvas_class %}canvas--flush{% endblock %}
 {% block content %}
 
-<div class="head-row mb-5">
-  <div>
-    <a href="/notebooks/{{ notebook.id }}" class="backlink">← {{ notebook.title }}</a>
-    <div class="eyebrow eyebrow-accent mt-3">Intelligence product · Editor</div>
-    <h1 class="page-title mt-2">{{ report.title }}</h1>
-    <div class="mt-3 flex gap-1.5 items-center flex-wrap">
-      {{ m.status_badge(report.status) }}
-      {{ m.level_badge(report.intel_level) }}
-      {{ m.tlp_badge(report.tlp) }}
-      {{ m.confidence_badge(report.analytic_confidence) }}
-    </div>
-  </div>
-  <a href="/reports/{{ report.id }}" class="btn btn--ghost btn--sm">
-    {% if report.status.value == 'PUBLISHED' %}View published report{% else %}Preview report page{% endif %} →
-  </a>
-</div>
+{% macro transition_btn(target, label, cls) %}
+  <form method="post" action="/reports/{{ report.id }}/transition">
+    <input type="hidden" name="target" value="{{ target }}">
+    <button class="btn {{ cls }} btn--sm">{{ label }}</button>
+  </form>
+{% endmacro %}
 
-<!-- Lifecycle -->
-<div class="lifecycle mb-5">
-  <div class="flow">
-    {% for step in lifecycle_steps %}
-      <span class="flow-step {{ 'now' if loop.index0 == current_index else ('done' if loop.index0 < current_index) }}">{{ step.replace('_', ' ') }}</span>
-      {% if not loop.last %}<span class="flow-sep"></span>{% endif %}
-    {% endfor %}
-  </div>
-  <div class="flex items-center gap-2 ml-auto">
-    {% macro transition_btn(target, label, cls) %}
-      <form method="post" action="/reports/{{ report.id }}/transition">
-        <input type="hidden" name="target" value="{{ target }}">
-        <button class="btn {{ cls }} btn--sm">{{ label }}</button>
-      </form>
-    {% endmacro %}
-    {% if report.status.value == 'DRAFT' and (is_author or user.role == 'ADMIN') %}
-      {{ transition_btn('IN_REVIEW', 'Submit for review', 'btn--primary') }}
-    {% elif report.status.value == 'IN_REVIEW' and can_review %}
-      {{ transition_btn('DRAFT', 'Send back', 'btn--quiet') }}
-      {{ transition_btn('APPROVED', 'Approve', 'btn--primary') }}
-    {% elif report.status.value == 'APPROVED' and can_review %}
-      {{ transition_btn('IN_REVIEW', 'Back to review', 'btn--quiet') }}
-      {{ transition_btn('PUBLISHED', 'Publish & disseminate', 'btn--ink') }}
-    {% elif report.status.value == 'PUBLISHED' %}
-      <span class="eyebrow" style="color:var(--c-ok);">Published {{ report.published_at and report.published_at.strftime('%Y-%m-%d %H:%M') }}</span>
-    {% elif report.status.value == 'DRAFT' %}
-      <span class="eyebrow">Only the author can submit</span>
-    {% elif report.status.value == 'IN_REVIEW' %}
-      <span class="eyebrow">Awaiting reviewer action</span>
-    {% elif report.status.value == 'APPROVED' %}
-      <span class="eyebrow">Awaiting publication</span>
-    {% else %}
-      <span class="eyebrow">Awaiting another role</span>
-    {% endif %}
-  </div>
-</div>
-
-<div class="status-note mb-5">
-  {% if report.status.value == 'DRAFT' %}
-    <strong>Draft is editable.</strong> Save changes here, then submit when the assessment is ready for review.
-  {% elif report.status.value == 'IN_REVIEW' and can_review %}
-    <strong>Ready for decision.</strong> Approve the report or send it back for author rework.
-  {% elif report.status.value == 'IN_REVIEW' %}
-    <strong>In review.</strong> A reviewer or admin needs to approve it or send it back.
-  {% elif report.status.value == 'APPROVED' and can_review %}
-    <strong>Approved.</strong> Publish when the product is ready to disseminate.
-  {% elif report.status.value == 'APPROVED' %}
-    <strong>Approved.</strong> A reviewer or admin can publish this product.
-  {% else %}
-    <strong>Published.</strong> This report is locked for editing and available from the report page.
-  {% endif %}
-</div>
-
-<div class="editor-grid" x-data='{
+<div class="editor-shell" x-data='{
        body: {{ report.body_md | tojson }},
        kj: {{ report.key_judgements | tojson }},
        ka: {{ report.key_assumptions | tojson }},
        gaps: {{ report.intelligence_gaps | tojson }},
        previewHtml: {{ preview_html | tojson }},
+       tab: "cite",
+       insertOpen: false,
+       dirty: false,
+       saving: false,
        timer: null,
-       schedule() { clearTimeout(this.timer); this.timer = setTimeout(() => this.refresh(), 350); },
+       saveTimer: null,
+       markDirty() { this.dirty = true; this.scheduleSave(); },
+       schedule() { this.dirty = true; clearTimeout(this.timer); this.timer = setTimeout(() => this.refresh(), 350); this.scheduleSave(); },
+       scheduleSave() { clearTimeout(this.saveTimer); this.saveTimer = setTimeout(() => this.autosave(), 1200); },
+       async autosave() {
+         const form = document.getElementById("reportform");
+         if (!form) return;
+         this.saving = true;
+         try {
+           const res = await fetch(form.action, { method: "POST", body: new FormData(form), headers: { "X-Requested-With": "fetch" } });
+           this.dirty = !res.ok;
+         } catch (_e) { /* leave dirty; manual Save remains available */ }
+         this.saving = false;
+       },
        async refresh() {
          const res = await fetch("/api/preview/product", {
            method: "POST",
@@ -103,22 +60,404 @@
          if (res.ok) { this.previewHtml = (await res.json()).html; }
        }
      }'>
-  <!-- Editor -->
-  <section class="card card-pad-lg">
+
+  <!-- ===== command header ===== -->
+  <header class="editor-head">
+    <a href="/notebooks/{{ notebook.id }}" class="backlink">← {{ notebook.title }}</a>
     {% if can_edit %}
-      <div class="pane-label"><span class="pip"></span> Draft · markdown</div>
-      <form method="post" action="/reports/{{ report.id }}" class="space-y-3">
-        <input name="title" value="{{ report.title }}" class="field" style="font-weight:600;">
-        <div class="grid grid-cols-2 gap-3">
+      <input form="reportform" name="title" value="{{ report.title }}" class="editor-title-input"
+             aria-label="Report title" @input="markDirty()">
+    {% else %}
+      <span class="editor-title-input" style="cursor:default;">{{ report.title }}</span>
+    {% endif %}
+    <div class="editor-head-actions">
+      {{ m.status_badge(report.status) }}
+      {{ m.confidence_badge(report.analytic_confidence) }}
+      {% if can_edit %}
+        <span class="save-state" :class="saving ? '' : (dirty ? 'is-dirty' : 'is-saved')"
+              x-text="saving ? 'Saving…' : (dirty ? 'Unsaved changes' : 'Saved')"></span>
+        <button form="reportform" class="btn btn--ink btn--sm">Save draft</button>
+      {% endif %}
+      <a href="/reports/{{ report.id }}" class="btn btn--ghost btn--sm">
+        {% if report.status.value == 'PUBLISHED' %}View published{% else %}Preview{% endif %} →
+      </a>
+    </div>
+  </header>
+
+  <!-- ===== lifecycle subhead ===== -->
+  <div class="editor-subhead">
+    <div class="flow">
+      {% for step in lifecycle_steps %}
+        <span class="flow-step {{ 'now' if loop.index0 == current_index else ('done' if loop.index0 < current_index) }}">{{ step.replace('_', ' ') }}</span>
+        {% if not loop.last %}<span class="flow-sep"></span>{% endif %}
+      {% endfor %}
+    </div>
+    <div class="flex items-center gap-2 ml-auto">
+      {% if report.status.value == 'DRAFT' and (is_author or user.role == 'ADMIN') %}
+        {{ transition_btn('IN_REVIEW', 'Submit for review', 'btn--primary') }}
+      {% elif report.status.value == 'IN_REVIEW' and can_review %}
+        {{ transition_btn('DRAFT', 'Send back', 'btn--quiet') }}
+        {{ transition_btn('APPROVED', 'Approve', 'btn--primary') }}
+      {% elif report.status.value == 'APPROVED' and can_review %}
+        {{ transition_btn('IN_REVIEW', 'Back to review', 'btn--quiet') }}
+        {{ transition_btn('PUBLISHED', 'Publish & disseminate', 'btn--ink') }}
+      {% elif report.status.value == 'PUBLISHED' %}
+        <span class="eyebrow" style="color:var(--c-ok);">Published {{ report.published_at and report.published_at.strftime('%Y-%m-%d %H:%M') }}</span>
+      {% elif report.status.value == 'DRAFT' %}
+        <span class="eyebrow">Only the author can submit</span>
+      {% elif report.status.value == 'IN_REVIEW' %}
+        <span class="eyebrow">Awaiting reviewer action</span>
+      {% elif report.status.value == 'APPROVED' %}
+        <span class="eyebrow">Awaiting publication</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- ===== 3-pane body ===== -->
+  <div class="editor-body">
+
+    <!-- markdown / source pane -->
+    <section class="editor-pane">
+      <div class="editor-pane-head">
+        <span class="pane-label" style="margin:0;"><span class="pip"></span> {% if can_edit %}Markdown{% else %}Read-only{% if report.status.value == 'PUBLISHED' %} · published{% endif %}{% endif %}</span>
+        {% if can_edit %}<a href="/help#diamond-model" class="help-hint" target="_blank" title="Embedding analytic models &amp; figures">?</a>{% endif %}
+        {% if can_edit and has_embeds %}
+          <div class="insert-menu ml-auto" @click.outside="insertOpen = false">
+            <button type="button" class="btn btn--ghost btn--sm" @click="insertOpen = !insertOpen">+ Insert ▾</button>
+            <div class="insert-menu-pop" x-show="insertOpen" x-cloak>
+              {% if diamonds %}
+                <div class="insert-group-label">Diamond models</div>
+                {% for d in diamonds %}
+                  <button type="button" class="insert-opt" @click="insertOpen=false" onclick="insertDiamond({{ d.id }})">
+                    <span class="flex-1 truncate">{{ d.title or 'Untitled assessment' }}</span>
+                    <span class="mono">[[diamond:{{ d.id }}]]</span>
+                  </button>
+                {% endfor %}
+              {% endif %}
+              {% if figures %}
+                <div class="insert-group-label">Figures</div>
+                {% for f in figures %}
+                  <button type="button" class="insert-opt" @click="insertOpen=false" onclick="insertFigure({{ f.id }})">
+                    <span class="flex-1 truncate">{{ f.title or f.original_filename }}</span>
+                    <span class="mono">[[figure:{{ f.id }}]]</span>
+                  </button>
+                {% endfor %}
+              {% endif %}
+              {% if ach_models %}
+                <div class="insert-group-label">ACH analyses</div>
+                {% for a in ach_models %}
+                  <button type="button" class="insert-opt" @click="insertOpen=false" onclick="insertAch({{ a.id }})">
+                    <span class="flex-1 truncate">{{ a.title or 'Untitled analysis' }}</span>
+                    <span class="mono">[[ach:{{ a.id }}]]</span>
+                  </button>
+                {% endfor %}
+              {% endif %}
+            </div>
+          </div>
+        {% endif %}
+      </div>
+      <div class="editor-pane-scroll">
+        {% if can_edit %}
+          <form id="reportform" method="post" action="/reports/{{ report.id }}">
+            <textarea name="body_md" class="editor-body-textarea" x-model="body" @input="schedule()"
+                      placeholder="Write the assessment in Markdown. Use the Insert menu to embed diamonds, figures and ACH matrices."></textarea>
+
+            <details class="yardstick mt-4" open>
+              <summary>Analytic scaffolding · ICD 203
+                <a href="/help#icd-203" class="help-hint" target="_blank">?</a></summary>
+              <div class="mt-3">
+                <label class="field-label">Key judgements</label>
+                <p class="text-xs mb-1" style="color:var(--muted);">Markdown · the BLUF — leads the report and is the sole content of the Executive Brief / One-Pager.</p>
+                <textarea name="key_judgements" rows="5" x-model="kj" @input="schedule()" class="field field-mono"></textarea>
+              </div>
+              <div class="mt-3">
+                <label class="field-label">Key assumptions</label>
+                <p class="text-xs mb-1" style="color:var(--muted);">Markdown · the analytic assumptions the judgements rest on.</p>
+                <textarea name="key_assumptions" rows="4" x-model="ka" @input="schedule()" class="field field-mono"></textarea>
+              </div>
+              <div class="mt-3">
+                <label class="field-label">Intelligence gaps</label>
+                <p class="text-xs mb-1" style="color:var(--muted);">Markdown · what is not known, and collection still required.</p>
+                <textarea name="intelligence_gaps" rows="4" x-model="gaps" @input="schedule()" class="field field-mono"></textarea>
+              </div>
+            </details>
+
+            <details class="yardstick mt-3">
+              <summary>Probability yardstick — standardised likelihood terms (ICD 203)</summary>
+              <p class="text-xs mt-2 mb-2" style="color:var(--muted);">Phrase the likelihood of an event using these terms so "likely" always means the same thing. This is separate from your analytic confidence.</p>
+              <ul class="yardstick-scale">
+                {% for b in probability_yardstick %}
+                  <li><span class="yardstick-term">{{ b.term }}</span><span class="yardstick-range mono">{{ b.range_label }}</span></li>
+                {% endfor %}
+              </ul>
+            </details>
+          </form>
+        {% else %}
+          <div class="md" x-html="previewHtml"></div>
+        {% endif %}
+      </div>
+    </section>
+
+    <!-- live preview pane -->
+    {% if can_edit %}
+    <section class="editor-pane editor-pane--preview">
+      <div class="editor-pane-head">
+        <span class="pane-label" style="margin:0;"><span class="pip"></span> Finished preview</span>
+      </div>
+      <div class="editor-pane-scroll">
+        <div class="md" x-html="previewHtml"></div>
+      </div>
+    </section>
+    {% endif %}
+
+    <!-- docked panel -->
+    <aside class="editor-pane dock">
+      <div class="dock-tabs">
+        <button type="button" class="dock-tab" :class="tab==='cite' ? 'is-active' : ''" @click="tab='cite'">Citations</button>
+        <button type="button" class="dock-tab" :class="tab==='tags' ? 'is-active' : ''" @click="tab='tags'">Tags</button>
+        <button type="button" class="dock-tab" :class="tab==='req' ? 'is-active' : ''" @click="tab='req'">Reqs</button>
+        <button type="button" class="dock-tab" :class="tab==='render' ? 'is-active' : ''" @click="tab='render'">Render</button>
+      </div>
+      <div class="dock-body">
+
+        <!-- Citations: sources + attachments -->
+        <div x-show="tab==='cite'">
+          <h2 class="section-title mb-1">Cited sources</h2>
+          <p class="text-xs mb-3" style="color:var(--muted);">Sources drawn from this notebook to back the assessment.</p>
+          {% if sources %}
+            <form method="post" action="/reports/{{ report.id }}/citations"
+                  x-data="{ error: false, async save() {
+                    this.error = false;
+                    try {
+                      const res = await fetch($el.action, {
+                        method: 'POST',
+                        body: new FormData($el),
+                        headers: { 'X-Requested-With': 'fetch' }
+                      });
+                      this.error = !res.ok;
+                    } catch (_err) { this.error = true; }
+                  } }">
+              <div class="grid gap-1">
+                {% for s in sources %}
+                  <label class="check">
+                    <input type="checkbox" name="source_ids" value="{{ s.id }}" @change="save()"
+                           {% if s.id in cited_ids %}checked{% endif %} {% if not can_edit %}disabled{% endif %}>
+                    <span>
+                      <span class="font-medium">{{ s.title }}</span>
+                      <span class="ml-1">{{ m.source_grade_chip(s) }}</span>
+                      {% if s.reference %}<span class="mono text-xs block mt-0.5" style="color:var(--accent-deep);">{{ s.reference }}</span>{% endif %}
+                    </span>
+                  </label>
+                {% endfor %}
+              </div>
+              {% if can_edit %}
+                <template x-if="error">
+                  <div class="autosave-state mt-3" aria-live="polite">Could not save citations. Try again.</div>
+                </template>
+              {% endif %}
+            </form>
+          {% else %}
+            <p class="empty">No sources in this notebook to cite yet.
+              <a href="/notebooks/{{ notebook.id }}#sources" class="btn-link">Add sources</a> first.</p>
+          {% endif %}
+
+          <h2 class="section-title mt-6 mb-1">Attachments cited</h2>
+          <p class="text-xs mb-3" style="color:var(--muted);">Files from this notebook referenced by the product.</p>
+          {% if updated == 'attachments' %}<div class="inline-notice mb-3">Attachment citations updated.</div>{% endif %}
+          {% if attachments %}
+            <form method="post" action="/reports/{{ report.id }}/attachments">
+              <div class="grid gap-1">
+                {% for a in attachments %}
+                  <label class="check">
+                    <input type="checkbox" name="attachment_ids" value="{{ a.id }}"
+                           {% if a.id in cited_attachment_ids %}checked{% endif %} {% if not can_edit %}disabled{% endif %}>
+                    <span>
+                      <span class="font-medium">{{ a.title or a.original_filename }}</span>
+                      <span class="mono text-xs block mt-0.5" style="color:var(--accent-deep);">{{ a.original_filename }} · {{ a.file_size | filesizeformat }}</span>
+                    </span>
+                  </label>
+                {% endfor %}
+              </div>
+              {% if can_edit %}<button class="btn btn--ghost btn--sm mt-3">Update attachments</button>{% endif %}
+            </form>
+          {% else %}
+            <p class="empty">No attachments in this notebook to cite yet.
+              <a href="/notebooks/{{ notebook.id }}#attachments" class="btn-link">Upload reference files</a> first.</p>
+          {% endif %}
+        </div>
+
+        <!-- Tags -->
+        <div x-show="tab==='tags'" x-cloak>
+          {% if all_tags %}
+            <script type="application/json" id="taxonomy-data">
+            [{% for t in all_tags %}{"id": {{ t.id }}, "kind": {{ t.kind.value | tojson }}, "label": {{ t.label | tojson }}, "ext": {{ (t.external_id or '') | tojson }}, "desc": {{ (t.description or '') | tojson }}, "active": {{ t.active | tojson }}}{{ ',' if not loop.last }}{% endfor %}]
+            </script>
+          {% endif %}
+          <div x-data="tagPicker({
+                 tags: JSON.parse(document.getElementById('taxonomy-data')?.textContent || '[]'),
+                 selectedIds: {{ linked_tag_ids | list | tojson }},
+                 canTag: {{ 'true' if can_tag else 'false' }}
+               })">
+            <div class="head-row mb-1">
+              <h2 class="section-title">Tags</h2>
+              <span class="tag-summary" x-text="summaryText"></span>
+            </div>
+            <p class="text-xs mb-3" style="color:var(--muted);">Classify this product against the controlled taxonomy. Editable after publication.</p>
+            {% if updated == 'tags' %}<div class="inline-notice mb-3"><span class="dot"></span> Tags updated.</div>{% endif %}
+            <div x-show="justSaved" x-cloak class="inline-notice mb-3"><span class="dot"></span> Tags updated.</div>
+
+            {% if all_tags %}
+              <form method="post" action="/reports/{{ report.id }}/tags" @submit="justSaved = true">
+                <div class="tagpick" @click.outside="open = false">
+                  <div class="tagpick-control" :class="open ? 'is-focused' : (canTag ? '' : 'is-disabled')" @click="focusInput()">
+                    <template x-for="t in selected" :key="t.id">
+                      <span class="tagk" :class="kindClass[t.kind] + (t.active ? '' : ' is-retired')">
+                        <span class="tagk-kind" x-text="t.kind.slice(0,3)"></span>
+                        <span class="tagk-body">
+                          <template x-if="t.ext"><span class="tagk-ext" x-text="t.ext"></span></template>
+                          <span class="tagk-label" x-text="t.label"></span>
+                          <template x-if="canTag"><button type="button" class="tagk-x" @click.stop="remove(t.id)" :aria-label="'Remove ' + t.label">&times;</button></template>
+                        </span>
+                      </span>
+                    </template>
+                    <template x-if="canTag">
+                      <input x-ref="input" class="tagpick-input" type="text"
+                             :placeholder="selected.length ? 'Add a tag…' : 'Search the taxonomy…'"
+                             x-model="q"
+                             @focus="open = true" @click.stop="open = true"
+                             @keydown.arrow-down.prevent="move(1)" @keydown.arrow-up.prevent="move(-1)"
+                             @keydown.enter.prevent="enter()" @keydown.escape="open = false" @keydown.backspace="backspace()">
+                    </template>
+                    <template x-if="!canTag && !selected.length"><span class="tagpick-hint">No tags · your role can’t classify products</span></template>
+                  </div>
+
+                  <div class="tagpick-menu" x-show="open" x-cloak>
+                    <template x-if="groups.length === 0">
+                      <div class="tagpick-empty empty">No taxonomy terms match “<span x-text="q"></span>”.</div>
+                    </template>
+                    <template x-for="g in groups" :key="g.kind">
+                      <div class="tagpick-group">
+                        <div class="tagpick-group-label">
+                          <span class="kindtab" :class="kindClass[g.kind]" x-text="g.kind"></span>
+                          <span class="gl-count" x-text="g.items.length"></span>
+                        </div>
+                        <template x-for="t in g.items" :key="t.id">
+                          <div class="tagpick-opt" :class="kindClass[t.kind] + (activeId === t.id ? ' is-active' : '')"
+                               @mouseenter="activeId = t.id" @click="toggle(t.id)">
+                            <div class="tagpick-opt-main">
+                              <span class="tagpick-opt-label">
+                                <template x-if="t.ext"><span class="ext" x-text="t.ext"></span></template>
+                                <span x-text="t.label"></span>
+                              </span>
+                              <template x-if="t.desc"><span class="tagpick-opt-meta" x-text="t.desc"></span></template>
+                            </div>
+                            <span class="tagpick-opt-cue" x-text="activeId === t.id ? 'Add ↵' : 'add'"></span>
+                          </div>
+                        </template>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+
+                {# posts identically to the original checkbox grid: repeated name="tag_ids" #}
+                <template x-for="id in selectedIds" :key="id"><input type="hidden" name="tag_ids" :value="id"></template>
+
+                {% if can_tag %}
+                <div class="tagpick-actions">
+                  <button class="btn btn--ghost btn--sm" type="submit" :disabled="!dirty">Save tags</button>
+                  <span class="tagpick-dirty" x-show="dirty" x-cloak><span class="dot"></span> Unsaved changes</span>
+                </div>
+                {% endif %}
+              </form>
+            {% else %}
+              <p class="empty">The taxonomy is empty.
+                {% if user.role == 'ADMIN' %}<a href="/admin/tags" class="btn-link">Curate the taxonomy</a> to classify products.
+                {% else %}An admin curates the taxonomy before products can be tagged.{% endif %}
+              </p>
+            {% endif %}
+          </div>
+        </div>
+
+        <!-- Requirements -->
+        <div x-show="tab==='req'" x-cloak>
+          <h2 class="section-title mb-1">Requirements satisfied</h2>
+          <p class="text-xs mb-3" style="color:var(--muted);">Establishes traceability back to stakeholder needs.</p>
+          {% if updated == 'requirements' %}<div class="inline-notice mb-3">Requirement links updated.</div>{% endif %}
+          {% if all_requirements %}
+            <form method="post" action="/reports/{{ report.id }}/requirements">
+              <div class="grid gap-1">
+                {% for r in all_requirements %}
+                  <label class="check">
+                    <input type="checkbox" name="requirement_ids" value="{{ r.id }}"
+                           {% if r.id in linked_req_ids %}checked{% endif %} {% if not can_edit %}disabled{% endif %}>
+                    <span class="flex items-center gap-2 flex-wrap">
+                      <span class="font-medium">{{ r.title }}</span>
+                      {{ m.priority_badge(r.priority) }}
+                      {{ m.level_badge(r.intel_level) }}
+                    </span>
+                  </label>
+                {% endfor %}
+              </div>
+              {% if can_edit %}<button class="btn btn--ghost btn--sm mt-3">Update requirements</button>{% endif %}
+            </form>
+          {% else %}
+            <p class="empty">No open requirements to link.</p>
+          {% endif %}
+        </div>
+
+        <!-- Render -->
+        <div x-show="tab==='render'" x-cloak>
+          <h2 class="section-title mb-1">Rendered products</h2>
+          <p class="text-xs mb-3" style="color:var(--muted);">Typeset PDF artefacts via Typst.</p>
+          {% if can_edit or user.role != 'STAKEHOLDER' %}
+            {% if typst_available %}
+              <form method="post" action="/reports/{{ report.id }}/render" class="flex gap-2 items-center mb-3">
+                <select name="format" class="field" style="width:auto;">
+                  {% for f in ProductFormat %}<option value="{{ f.value }}">{{ f.value.replace('_',' ') }}</option>{% endfor %}
+                </select>
+                <button class="btn btn--primary btn--sm">Render PDF</button>
+              </form>
+            {% else %}
+              <span class="tag tag--c is-warn mb-3"><span class="dot"></span>Typst not installed</span>
+            {% endif %}
+          {% endif %}
+          {% if updated == 'rendered-products' %}<div class="inline-notice mb-3">PDF product rendered.</div>{% endif %}
+          <div class="space-y-2">
+            {% for p in products %}
+              <div class="file-row" style="flex-wrap:wrap;">
+                <span class="file-fmt">{{ p.format.value.replace('_',' ') }}</span>
+                <span class="mono text-xs" style="color:var(--muted);">{{ p.rendered_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                <div class="file-row-actions">
+                  <a class="btn-link" href="/reports/{{ report.id }}/products/{{ p.id }}/download">Download ↓</a>
+                  {% if can_edit %}
+                    <form method="post" action="/reports/{{ report.id }}/products/{{ p.id }}/delete"
+                          onsubmit="return confirm('Delete this rendered product?');">
+                      <button class="icon-action icon-action--danger" type="submit"
+                              aria-label="Delete rendered product" title="Delete rendered product"></button>
+                    </form>
+                  {% endif %}
+                </div>
+              </div>
+            {% else %}
+              <p class="empty">Nothing rendered yet.{% if typst_available %} Choose a format and render a PDF when ready.{% else %} Install Typst to generate PDFs.{% endif %}</p>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      <!-- pinned markings footer (submitted with the product form) -->
+      {% if can_edit %}
+      <div class="dock-foot">
+        <div class="grid grid-cols-2 gap-2">
           <div>
             <label class="field-label">Intel level</label>
-            <select name="intel_level" class="field">
+            <select form="reportform" name="intel_level" class="field" @change="markDirty()">
               {% for lvl in IntelLevel %}<option value="{{ lvl.value }}" {% if lvl == report.intel_level %}selected{% endif %}>{{ lvl.value }}</option>{% endfor %}
             </select>
           </div>
           <div>
-            <label class="field-label">TLP marking</label>
-            <select name="tlp" class="field">
+            <label class="field-label">TLP</label>
+            <select form="reportform" name="tlp" class="field" @change="markDirty()">
               {% for t in TLP %}<option value="{{ t.value }}" {% if t == report.tlp %}selected{% endif %}>{{ tlp_label(t) }}</option>{% endfor %}
             </select>
           </div>
@@ -126,400 +465,23 @@
         <div>
           <label class="field-label">Analytic confidence
             <a href="/help#estimative-language" class="help-hint" target="_blank">?</a></label>
-          <select name="analytic_confidence" class="field">
+          <select form="reportform" name="analytic_confidence" class="field" @change="markDirty()">
             <option value="" {% if not report.analytic_confidence %}selected{% endif %}>— Not stated —</option>
             {% for c in AnalyticConfidence %}<option value="{{ c.value }}" {% if c == report.analytic_confidence %}selected{% endif %}>{{ c.value | capitalize }}</option>{% endfor %}
           </select>
-          <p class="text-xs mt-1" style="color:var(--muted);">ICD 203 · your confidence in the judgements. State the <em>likelihood</em> of events in prose using the yardstick below.</p>
-        </div>
-        <textarea name="body_md" rows="22" x-model="body" @input="schedule()"
-                  class="field field-mono"></textarea>
-
-        <div class="eyebrow eyebrow-accent" style="margin-top:6px;">Analytic scaffolding · ICD 203
-          <a href="/help#icd-203" class="help-hint" target="_blank">?</a></div>
-        <div>
-          <label class="field-label">Key judgements</label>
-          <p class="text-xs mb-1" style="color:var(--muted);">Markdown · the BLUF — leads the report and is the sole content of the Executive Brief / One-Pager.</p>
-          <textarea name="key_judgements" rows="5" x-model="kj" @input="schedule()" class="field field-mono"></textarea>
-        </div>
-        <div>
-          <label class="field-label">Key assumptions</label>
-          <p class="text-xs mb-1" style="color:var(--muted);">Markdown · the analytic assumptions the judgements rest on.</p>
-          <textarea name="key_assumptions" rows="4" x-model="ka" @input="schedule()" class="field field-mono"></textarea>
-        </div>
-        <div>
-          <label class="field-label">Intelligence gaps</label>
-          <p class="text-xs mb-1" style="color:var(--muted);">Markdown · what is not known, and collection still required.</p>
-          <textarea name="intelligence_gaps" rows="4" x-model="gaps" @input="schedule()" class="field field-mono"></textarea>
-        </div>
-
-        <details class="yardstick">
-          <summary>Probability yardstick — standardised likelihood terms (ICD 203)</summary>
-          <p class="text-xs mt-2 mb-2" style="color:var(--muted);">Phrase the likelihood of an event using these terms so "likely" always means the same thing. This is separate from your analytic confidence above.</p>
-          <ul class="yardstick-scale">
-            {% for b in probability_yardstick %}
-              <li><span class="yardstick-term">{{ b.term }}</span><span class="yardstick-range mono">{{ b.range_label }}</span></li>
-            {% endfor %}
-          </ul>
-        </details>
-
-        <button class="btn btn--ink">Save draft</button>
-      </form>
-    {% else %}
-      <div class="pane-label"><span class="pip"></span> Read-only{% if report.status.value == 'PUBLISHED' %} · published{% endif %}</div>
-      <div class="mt-1" x-html="previewHtml"></div>
-    {% endif %}
-  </section>
-
-  <!-- Live preview -->
-  {% if can_edit %}
-  <section class="card card-pad-lg" style="background:var(--surface-2);">
-    <div class="pane-label"><span class="pip"></span> Finished preview</div>
-    <div x-html="previewHtml"></div>
-  </section>
-  {% endif %}
-</div>
-
-<!-- Diamond models -->
-<section id="diamond-models" class="card card-pad-lg mt-6">
-  <h2 class="section-title mb-1">Diamond models <a href="/help#diamond-model" class="help-hint" target="_blank">?</a></h2>
-  <p class="text-xs mb-4" style="color:var(--muted);">Insert a Diamond Model with its token — it renders inline in the preview, the published report and the PDF.</p>
-  {% if diamonds %}
-    <div class="space-y-2">
-      {% for d in diamonds %}
-        <div class="file-row" style="align-items:flex-start;gap:14px;">
-          {% if diamond_svgs and diamond_svgs[d.id] %}
-            <div class="diamond-svg" style="flex:none;width:132px;border:1px solid var(--line);border-radius:var(--radius-sm);overflow:hidden;background:var(--surface-2);">{{ diamond_svgs[d.id] | safe }}</div>
-          {% endif %}
-          <div class="flex-1" style="min-width:0;">
-            <div class="file-fmt">{{ d.title or 'Untitled assessment' }}</div>
-            <span class="mono text-xs" style="color:var(--accent-deep);">[[diamond:{{ d.id }}]]</span>
-            <div class="file-row-actions mt-2" style="margin-left:0;">
-              {% if can_edit %}
-                <button type="button" class="btn btn--ghost btn--sm" onclick="insertDiamond({{ d.id }})">Insert at cursor</button>
-              {% endif %}
-              <a class="btn-link" href="/notebooks/{{ notebook.id }}/diamonds/{{ d.id }}/edit">Edit</a>
-            </div>
-          </div>
-        </div>
-      {% endfor %}
-    </div>
-  {% else %}
-    <p class="empty">No Diamond Model assessments in this notebook yet.
-      <a href="/notebooks/{{ notebook.id }}#diamonds" class="btn-link">Build one in the notebook</a>, then insert it here.</p>
-  {% endif %}
-</section>
-
-<!-- Figures -->
-<section id="figures-embed" class="card card-pad-lg mt-6">
-  <h2 class="section-title mb-1">Figures</h2>
-  <p class="text-xs mb-4" style="color:var(--muted);">Insert an image with its token — it renders inline in the preview, the published report and the PDF.</p>
-  {% if figures %}
-    <div class="space-y-2">
-      {% for f in figures %}
-        <div class="file-row" style="align-items:flex-start;gap:14px;">
-          <img src="/notebooks/{{ notebook.id }}/figures/{{ f.id }}/raw" alt="{{ f.title or f.original_filename }}" loading="lazy"
-               style="flex:none;width:132px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-2);object-fit:contain;">
-          <div class="flex-1" style="min-width:0;">
-            <div class="file-fmt">{{ f.title or f.original_filename }}</div>
-            <span class="mono text-xs" style="color:var(--accent-deep);">[[figure:{{ f.id }}]]</span>
-            <div class="file-row-actions mt-2" style="margin-left:0;">
-              {% if can_edit %}
-                <button type="button" class="btn btn--ghost btn--sm" onclick="insertFigure({{ f.id }})">Insert at cursor</button>
-              {% endif %}
-            </div>
-          </div>
-        </div>
-      {% endfor %}
-    </div>
-  {% else %}
-    <p class="empty">No figures in this notebook yet.
-      <a href="/notebooks/{{ notebook.id }}#figures" class="btn-link">Upload one in the notebook</a>, then insert it here.</p>
-  {% endif %}
-</section>
-
-<!-- ACH analyses -->
-<section id="ach-embed" class="card card-pad-lg mt-6">
-  <h2 class="section-title mb-1">ACH analyses <a href="/help#ach-model" class="help-hint" target="_blank">?</a></h2>
-  <p class="text-xs mb-4" style="color:var(--muted);">Insert an Analysis of Competing Hypotheses matrix with its token — it renders inline in the preview, the published report and the PDF.</p>
-  {% if ach_models %}
-    <div class="space-y-2">
-      {% for a in ach_models %}
-        <div class="file-row" style="align-items:flex-start;gap:14px;">
-          {% if ach_svgs and ach_svgs[a.id] %}
-            <div class="ach-svg" style="flex:none;width:160px;border:1px solid var(--line);border-radius:var(--radius-sm);overflow:hidden;background:var(--surface-2);">{{ ach_svgs[a.id] | safe }}</div>
-          {% endif %}
-          <div class="flex-1" style="min-width:0;">
-            <div class="file-fmt">{{ a.title or 'Untitled analysis' }}</div>
-            <span class="mono text-xs" style="color:var(--accent-deep);">[[ach:{{ a.id }}]]</span>
-            <div class="file-row-actions mt-2" style="margin-left:0;">
-              {% if can_edit %}
-                <button type="button" class="btn btn--ghost btn--sm" onclick="insertAch({{ a.id }})">Insert at cursor</button>
-              {% endif %}
-              <a class="btn-link" href="/notebooks/{{ notebook.id }}/ach/{{ a.id }}/edit">Edit</a>
-            </div>
-          </div>
-        </div>
-      {% endfor %}
-    </div>
-  {% else %}
-    <p class="empty">No ACH analyses in this notebook yet.
-      <a href="/notebooks/{{ notebook.id }}#ach" class="btn-link">Build one in the notebook</a>, then insert it here.</p>
-  {% endif %}
-</section>
-
-<!-- Citations -->
-<section id="citations" class="card card-pad-lg mt-6">
-  <h2 class="section-title mb-1">Cited sources</h2>
-  <p class="text-xs mb-4" style="color:var(--muted);">Sources drawn from this notebook to back the assessment.</p>
-  {% if sources %}
-    <form method="post" action="/reports/{{ report.id }}/citations"
-          x-data="{ error: false, async save() {
-            this.error = false;
-            try {
-              const res = await fetch($el.action, {
-                method: 'POST',
-                body: new FormData($el),
-                headers: { 'X-Requested-With': 'fetch' }
-              });
-              this.error = !res.ok;
-            } catch (_err) {
-              this.error = true;
-            }
-          } }">
-      <div class="grid sm:grid-cols-2 gap-1">
-        {% for s in sources %}
-          <label class="check">
-            <input type="checkbox" name="source_ids" value="{{ s.id }}"
-                   @change="save()"
-                   {% if s.id in cited_ids %}checked{% endif %} {% if not can_edit %}disabled{% endif %}>
-            <span>
-              <span class="font-medium">{{ s.title }}</span>
-              <span class="ml-1">{{ m.source_grade_chip(s) }}</span>
-              {% if s.reference %}<span class="mono text-xs block mt-0.5" style="color:var(--accent-deep);">{{ s.reference }}</span>{% endif %}
-            </span>
-          </label>
-        {% endfor %}
-      </div>
-      {% if can_edit %}
-        <template x-if="error">
-          <div class="autosave-state mt-3" aria-live="polite">
-            Could not save citations. Try again.
-          </div>
-        </template>
-      {% endif %}
-    </form>
-  {% else %}
-    <p class="empty">No sources in this notebook to cite yet.
-      <a href="/notebooks/{{ notebook.id }}#sources" class="btn-link">Add sources in the notebook</a>,
-      then return here to cite them.
-    </p>
-  {% endif %}
-</section>
-
-<!-- Attachments cited -->
-<section id="attachments-cited" class="card card-pad-lg mt-6">
-  <h2 class="section-title mb-1">Attachments cited</h2>
-  <p class="text-xs mb-4" style="color:var(--muted);">Files from this notebook referenced by the product.</p>
-  {% if updated == 'attachments' %}
-    <div class="inline-notice mb-4">Attachment citations updated.</div>
-  {% endif %}
-  {% if attachments %}
-    <form method="post" action="/reports/{{ report.id }}/attachments">
-      <div class="grid sm:grid-cols-2 gap-1">
-        {% for a in attachments %}
-          <label class="check">
-            <input type="checkbox" name="attachment_ids" value="{{ a.id }}"
-                   {% if a.id in cited_attachment_ids %}checked{% endif %} {% if not can_edit %}disabled{% endif %}>
-            <span>
-              <span class="font-medium">{{ a.title or a.original_filename }}</span>
-              <span class="mono text-xs block mt-0.5" style="color:var(--accent-deep);">{{ a.original_filename }} · {{ a.file_size | filesizeformat }}</span>
-            </span>
-          </label>
-        {% endfor %}
-      </div>
-      {% if can_edit %}<button class="btn btn--ghost btn--sm mt-4">Update attachments</button>{% endif %}
-    </form>
-  {% else %}
-    <p class="empty">No attachments in this notebook to cite yet.
-      <a href="/notebooks/{{ notebook.id }}#attachments" class="btn-link">Upload reference files in the notebook</a>
-      before citing them.
-    </p>
-  {% endif %}
-</section>
-
-<!-- Requirements satisfied -->
-<section id="requirements-satisfied" class="card card-pad-lg mt-6">
-  <h2 class="section-title mb-1">Requirements satisfied</h2>
-  <p class="text-xs mb-4" style="color:var(--muted);">Establishes traceability back to stakeholder needs.</p>
-  {% if updated == 'requirements' %}
-    <div class="inline-notice mb-4">Requirement links updated.</div>
-  {% endif %}
-  {% if all_requirements %}
-    <form method="post" action="/reports/{{ report.id }}/requirements">
-      <div class="grid sm:grid-cols-2 gap-1">
-        {% for r in all_requirements %}
-          <label class="check">
-            <input type="checkbox" name="requirement_ids" value="{{ r.id }}"
-                   {% if r.id in linked_req_ids %}checked{% endif %} {% if not can_edit %}disabled{% endif %}>
-            <span class="flex items-center gap-2 flex-wrap">
-              <span class="font-medium">{{ r.title }}</span>
-              {{ m.priority_badge(r.priority) }}
-              {{ m.level_badge(r.intel_level) }}
-            </span>
-          </label>
-        {% endfor %}
-      </div>
-      {% if can_edit %}<button class="btn btn--ghost btn--sm mt-4">Update requirements</button>{% endif %}
-    </form>
-  {% else %}
-    <p class="empty">No open requirements to link. When stakeholder requirements exist, link the ones this report satisfies.</p>
-  {% endif %}
-</section>
-
-<!-- Tags — searchable controlled-taxonomy classifier -->
-{% if all_tags %}
-<script type="application/json" id="taxonomy-data">
-[{% for t in all_tags %}{"id": {{ t.id }}, "kind": {{ t.kind.value | tojson }}, "label": {{ t.label | tojson }}, "ext": {{ (t.external_id or '') | tojson }}, "desc": {{ (t.description or '') | tojson }}, "active": {{ t.active | tojson }}}{{ ',' if not loop.last }}{% endfor %}]
-</script>
-{% endif %}
-<section id="tags" class="card card-pad-lg mt-6"
-         x-data="tagPicker({
-           tags: JSON.parse(document.getElementById('taxonomy-data')?.textContent || '[]'),
-           selectedIds: {{ linked_tag_ids | list | tojson }},
-           canTag: {{ 'true' if can_tag else 'false' }}
-         })">
-  <div class="head-row mb-1">
-    <h2 class="section-title">Tags</h2>
-    <span class="tag-summary" x-text="summaryText"></span>
-  </div>
-  <p class="text-xs mb-4" style="color:var(--muted);">Classify this product against the controlled taxonomy. Editable after publication.</p>
-
-  {% if updated == 'tags' %}<div class="inline-notice mb-4"><span class="dot"></span> Tags updated.</div>{% endif %}
-  <div x-show="justSaved" x-cloak class="inline-notice mb-4"><span class="dot"></span> Tags updated.</div>
-
-  {% if all_tags %}
-    <form method="post" action="/reports/{{ report.id }}/tags" @submit="justSaved = true">
-      <div class="tagpick" @click.outside="open = false">
-        <div class="tagpick-control" :class="open ? 'is-focused' : (canTag ? '' : 'is-disabled')" @click="focusInput()">
-          <template x-for="t in selected" :key="t.id">
-            <span class="tagk" :class="kindClass[t.kind] + (t.active ? '' : ' is-retired')">
-              <span class="tagk-kind" x-text="t.kind.slice(0,3)"></span>
-              <span class="tagk-body">
-                <template x-if="t.ext"><span class="tagk-ext" x-text="t.ext"></span></template>
-                <span class="tagk-label" x-text="t.label"></span>
-                <template x-if="canTag"><button type="button" class="tagk-x" @click.stop="remove(t.id)" :aria-label="'Remove ' + t.label">&times;</button></template>
-              </span>
-            </span>
-          </template>
-          <template x-if="canTag">
-            <input x-ref="input" class="tagpick-input" type="text"
-                   :placeholder="selected.length ? 'Add a tag…' : 'Search the taxonomy — actor, sector, technique, ATT&CK id…'"
-                   x-model="q"
-                   @focus="open = true" @click.stop="open = true"
-                   @keydown.arrow-down.prevent="move(1)" @keydown.arrow-up.prevent="move(-1)"
-                   @keydown.enter.prevent="enter()" @keydown.escape="open = false" @keydown.backspace="backspace()">
-          </template>
-          <template x-if="!canTag && !selected.length"><span class="tagpick-hint">No tags · your role can’t classify products</span></template>
-        </div>
-
-        <div class="tagpick-menu" x-show="open" x-cloak>
-          <template x-if="groups.length === 0">
-            <div class="tagpick-empty empty">No taxonomy terms match “<span x-text="q"></span>”.</div>
-          </template>
-          <template x-for="g in groups" :key="g.kind">
-            <div class="tagpick-group">
-              <div class="tagpick-group-label">
-                <span class="kindtab" :class="kindClass[g.kind]" x-text="g.kind"></span>
-                <span class="gl-count" x-text="g.items.length"></span>
-              </div>
-              <template x-for="t in g.items" :key="t.id">
-                <div class="tagpick-opt" :class="kindClass[t.kind] + (activeId === t.id ? ' is-active' : '')"
-                     @mouseenter="activeId = t.id" @click="toggle(t.id)">
-                  <div class="tagpick-opt-main">
-                    <span class="tagpick-opt-label">
-                      <template x-if="t.ext"><span class="ext" x-text="t.ext"></span></template>
-                      <span x-text="t.label"></span>
-                    </span>
-                    <template x-if="t.desc"><span class="tagpick-opt-meta" x-text="t.desc"></span></template>
-                  </div>
-                  <span class="tagpick-opt-cue" x-text="activeId === t.id ? 'Add ↵' : 'add'"></span>
-                </div>
-              </template>
-            </div>
-          </template>
         </div>
       </div>
-
-      {# posts identically to the original checkbox grid: repeated name="tag_ids" #}
-      <template x-for="id in selectedIds" :key="id"><input type="hidden" name="tag_ids" :value="id"></template>
-
-      {% if can_tag %}
-      <div class="tagpick-actions">
-        <button class="btn btn--ghost btn--sm" type="submit" :disabled="!dirty">Save tags</button>
-        <span class="tagpick-dirty" x-show="dirty" x-cloak><span class="dot"></span> Unsaved changes</span>
-      </div>
-      {% endif %}
-    </form>
-  {% else %}
-    <p class="empty">The taxonomy is empty.
-      {% if user.role == 'ADMIN' %}<a href="/admin/tags" class="btn-link">Curate the taxonomy</a> to classify products.
-      {% else %}An admin curates the taxonomy before products can be tagged.{% endif %}
-    </p>
-  {% endif %}
-</section>
-
-<!-- Rendered products -->
-<section id="rendered-products" class="card card-pad-lg mt-6">
-  <div class="head-row mb-4">
-    <div>
-      <h2 class="section-title">Rendered products</h2>
-      <p class="text-xs mt-1" style="color:var(--muted);">Typeset PDF artefacts via Typst.</p>
-    </div>
-    {% if can_edit or user.role != 'STAKEHOLDER' %}
-      {% if typst_available %}
-        <form method="post" action="/reports/{{ report.id }}/render" class="flex gap-2 items-center">
-          <select name="format" class="field" style="width:auto;">
-            {% for f in ProductFormat %}<option value="{{ f.value }}">{{ f.value.replace('_',' ') }}</option>{% endfor %}
-          </select>
-          <button class="btn btn--primary btn--sm">Render PDF</button>
-        </form>
       {% else %}
-        <span class="tag tag--c is-warn"><span class="dot"></span>Typst not installed</span>
-      {% endif %}
-    {% endif %}
-  </div>
-  {% if updated == 'rendered-products' %}
-    <div class="inline-notice mb-4">PDF product rendered.</div>
-  {% endif %}
-  <div class="space-y-2">
-    {% for p in products %}
-      <div class="file-row">
-        <span class="file-fmt">{{ p.format.value.replace('_',' ') }}</span>
-        <span class="mono text-xs" style="color:var(--muted);">{{ p.rendered_at.strftime('%Y-%m-%d %H:%M') }}</span>
-        <div class="file-row-actions">
-          <a class="btn-link" href="/reports/{{ report.id }}/products/{{ p.id }}/download">Download ↓</a>
-          {% if can_edit %}
-            <form method="post" action="/reports/{{ report.id }}/products/{{ p.id }}/delete"
-                  onsubmit="return confirm('Delete this rendered product?');">
-              <button class="icon-action icon-action--danger" type="submit"
-                      aria-label="Delete rendered product"
-                      title="Delete rendered product"></button>
-            </form>
-          {% endif %}
+      <div class="dock-foot">
+        <div class="flex gap-1.5 flex-wrap items-center">
+          {{ m.level_badge(report.intel_level) }}
+          {{ m.tlp_badge(report.tlp) }}
         </div>
       </div>
-    {% else %}
-      <p class="empty">
-        {% if typst_available %}
-          Nothing rendered yet. Choose a format and render a PDF when the product is ready.
-        {% else %}
-          Nothing rendered yet. Install Typst to generate PDF products from approved report content.
-        {% endif %}
-      </p>
-    {% endfor %}
+      {% endif %}
+    </aside>
   </div>
-</section>
+</div>
 
 <script>
   // Insert an embed token at the cursor and notify Alpine's x-model (dispatch

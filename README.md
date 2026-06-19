@@ -28,8 +28,10 @@ ATT&CK techniques tagged across reports drive a **coverage heatmap** and downloa
 
 ## Screenshots
 
-The portal is a server-rendered "light editorial-intel" design system (Archivo /
-JetBrains Mono / Spectral). The views below use realistic sample data.
+The portal is a server-rendered "command-center" design system (Archivo /
+JetBrains Mono / Spectral) — a persistent role-aware left rail + topbar + scrolling
+canvas, a ⌘K command palette, and a full-height 3-pane report editor. The views below
+use realistic sample data.
 
 ### The analyst workspace
 ![Dashboard](docs/images/dashboard.png)
@@ -82,7 +84,7 @@ carry structured **aliases** so APT28 / Fancy Bear / Sofacy resolve to one entit
 ## Stack
 - **Python ≥ 3.14**, **FastAPI** (single app: JSON API `/api/*` + server-rendered portal `/*`)
 - **SQLModel** on **SQLite**
-- **Jinja2 + Alpine.js** portal with a "light editorial-intel" design system
+- **Jinja2 + Alpine.js** portal with a "command-center" design system (left rail + ⌘K palette)
   (`static/css/iceberg.css`; Archivo / JetBrains Mono / Spectral; Tailwind CDN for utilities)
 - **markdown-it-py + nh3** for the live markdown preview
 - **SQLite FTS5** (bm25) for full-text report search
@@ -178,7 +180,7 @@ a browsable look at what the other roles do, and a glossary of the intelligence 
    (actor → uses → malware, campaign → attributed-to → actor, actor → targets → sector).
 2. As an `ANALYST`, open a report editor → **Tags** panel → tick tags to classify the product.
    (Tags stay editable even after the report is published.)
-3. Use **Search** (top nav) — full-text query over title/body, narrowed by tag / kind / intel
+3. Use **Search** (left rail, or ⌘K) — full-text query over title/body, narrowed by tag / kind / intel
    level / TLP / status facets. Search is **alias-aware** — querying an alias (e.g. "Fancy Bear")
    surfaces reports tagged with the canonical entity. Click a named-threat tag chip to open its
    **entity profile** (attribution + aliases + inbound/outbound relationship chips + an SVG
@@ -187,7 +189,7 @@ a browsable look at what the other roles do, and a glossary of the intelligence 
 
 ### See ATT&CK coverage & export a Navigator layer
 1. Tag reports with **TECHNIQUE** taxonomy terms (they carry MITRE ATT&CK T-codes).
-2. Open **Matrix** (top nav, `/matrix`) for a technique-coverage heatmap across all visible
+2. Open **Matrix** (left rail, `/matrix`) for a technique-coverage heatmap across all visible
    reports, grouped by ATT&CK tactic and shaded by how many reports exhibit each technique.
    An entity profile shows the same heatmap scoped to that actor/malware/campaign.
 3. Download an **ATT&CK Navigator layer** (`.json`) — per report (from the report's *Downloads*)
