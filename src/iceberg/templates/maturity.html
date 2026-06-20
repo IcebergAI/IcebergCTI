@@ -167,6 +167,19 @@
       {{ diss.withheld_count }} published report{{ '' if diss.withheld_count == 1 else 's' }} held above
       the {{ diss.max_tlp_label }} broadcast ceiling.
     </p>
+
+    {% set fb = diss.feedback %}
+    <div class="head-row mt-5 mb-3">
+      <h2 class="section-title">Feedback loop</h2>
+      <span class="eyebrow">{{ fb.responses }} response{{ '' if fb.responses == 1 else 's' }}</span>
+    </div>
+    {{ pctbar('Response rate', fb.response_rate) }}
+    {{ pctbar('Useful (or better)', fb.useful_rate) }}
+    {% if fb.verdicts %}
+      {{ pctbar('RFI satisfaction', fb.satisfaction_rate) }}
+    {% else %}
+      <p class="text-sm mt-2" style="color:var(--muted);">No RFI-satisfaction verdicts recorded yet.</p>
+    {% endif %}
   </section>
 
   <!-- Tradecraft adoption -->

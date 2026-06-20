@@ -35,6 +35,7 @@ from ..models import (
     is_disseminable,
     tlp_label,
 )
+from . import feedback as feedback_service
 from . import requirements as req_service
 
 # CTI-CMM maturity-level names (CTI0..CTI3). Derived, indicative only.
@@ -195,6 +196,8 @@ def _dissemination(session: Session, reports: list[Report]) -> dict:
         "withheld_count": withheld,
         "withheld_rate": _pct(withheld, len(published)),
         "max_tlp_label": tlp_label(max_tlp),
+        # Intelligence-cycle feedback loop (backlog D): the return signal.
+        "feedback": feedback_service.feedback_effectiveness(session),
     }
 
 
@@ -239,6 +242,16 @@ def _tradecraft(reports: list[Report]) -> dict:
     }
 
 
+def _alignment_value(requirements: dict, feedback: dict) -> float:
+    """Stakeholder alignment = collection coverage, blended with satisfaction once
+    feedback verdicts exist (so the loop's return signal lifts/lowers the score,
+    but absence of feedback never penalises a covered program)."""
+    coverage = requirements["coverage_rate"]
+    if feedback["verdicts"]:
+        return (coverage + feedback["satisfaction_rate"]) / 2
+    return coverage
+
+
 def _maturity(production: dict, requirements: dict, dissemination: dict,
               tradecraft: dict) -> dict:
     dims = [
@@ -250,9 +263,9 @@ def _maturity(production: dict, requirements: dict, dissemination: dict,
         ),
         _dimension(
             "Stakeholder alignment",
-            "Active requirements traced to a report or notebook (collection "
-            "answering stated needs).",
-            requirements["coverage_rate"], 0.50, 0.80,
+            "Active requirements traced to a report or notebook, blended with "
+            "stakeholder satisfaction on delivered products.",
+            _alignment_value(requirements, dissemination["feedback"]), 0.50, 0.80,
         ),
         _dimension(
             "Production discipline",

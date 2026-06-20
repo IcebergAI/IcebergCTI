@@ -24,6 +24,7 @@ from ..models import (
     utcnow,
 )
 from ..services import (
+    feedback as feedback_service,
     requirements as req_service,
 )
 from ..templating import templates
@@ -135,6 +136,7 @@ def requirement_detail(
             "stakeholder": req.stakeholder,
             "reports": list(req.reports),
             "notebooks": list(req.notebooks),
+            "feedback": feedback_service.feedback_for_requirement(session, req),
             "can_edit": user.role == Role.ADMIN or req.stakeholder_id == user.id,
             "can_triage": user.role in (Role.ANALYST, Role.REVIEWER, Role.ADMIN),
             "today": date.today(),

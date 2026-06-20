@@ -25,8 +25,9 @@ indicators.
 > **Status:** Milestones 1–4 are implemented — the full vision plus a knowledge layer:
 > the analyst authoring loop, stakeholder requirement intake + tasking board + traceability,
 > dissemination (on publish, reports are matched to stakeholders by preferred intel level +
-> TLP into a personalized feed, with email notifications), and an admin-curated tag taxonomy
-> with full-text + faceted search. See [CLAUDE.md](CLAUDE.md).
+> TLP into a personalized feed, with email notifications) **closed by a stakeholder feedback /
+> RFI-satisfaction loop**, and an admin-curated tag taxonomy with full-text + faceted search.
+> See [CLAUDE.md](CLAUDE.md).
 
 ## Screenshots
 
@@ -70,6 +71,13 @@ Critical item still tops its column. A PIR coverage panel flags PIRs with no lin
 ![Intelligence feed](docs/images/feed.png)
 *On publish, a report is matched to stakeholders by preferred intel level + TLP and delivered
 to their personal feed (with an email notification).*
+
+### Intelligence-cycle feedback loop
+*On a product delivered to them, a stakeholder leaves **feedback** — a usefulness rating, an optional
+**RFI-satisfaction** verdict against one of their own requirements the report addressed, and a comment.
+A **Met** verdict from the owning stakeholder auto-advances that requirement to **Satisfied**, closing
+the cycle. Feedback surfaces on the report (for authors) and the requirement detail (for analysts), and
+its response / satisfaction / useful rates roll up into the maturity dashboard.*
 
 ### Full-text + faceted search
 ![Search](docs/images/search.png)
@@ -189,6 +197,15 @@ a browsable look at what the other roles do, and a glossary of the intelligence 
    dashboard); a notification email is recorded by the `console` backend (in-memory outbox).
    Reports marked TLP:RED or AMBER+STRICT are withheld from broadcast.
 
+### Try the feedback loop
+1. Before publishing, have the `ANALYST` tick the **Requirements satisfied** so the report addresses
+   one of the stakeholder's requirements; then publish so it disseminates to that stakeholder.
+2. As the `STAKEHOLDER`, open the report from your **Feed** → the **Your feedback** card: rate its
+   usefulness, pick the requirement it satisfied, mark it **Met**, and send. The requirement jumps
+   straight to **Satisfied** — the cycle is closed.
+3. As the `ANALYST`/`REVIEWER`, the report view shows a **Product feedback** panel and the
+   requirement detail shows the verdict; **Maturity** picks up the new response / satisfaction rates.
+
 ### Try tagging & search
 1. Sign in as an `ADMIN` → **Taxonomy** (`/admin/tags`). A starter taxonomy (~94 tags: CISA
    sectors, intel topics, MITRE ATT&CK techniques, and example threat actors + malware) is
@@ -220,7 +237,8 @@ a browsable look at what the other roles do, and a glossary of the intelligence 
 1. Open **Maturity** (left rail, `/maturity`) — a writer-only, leadership-facing dashboard that
    derives program-health indicators purely from existing data: production (publish velocity,
    time-to-publish, reviewer engagement), requirement coverage across all kinds (PIR/GIR/RFI),
-   dissemination reach (stakeholders reached, feed read-rate, TLP-withheld), and tradecraft
+   dissemination reach (stakeholders reached, feed read-rate, TLP-withheld, plus feedback-loop
+   response / satisfaction / useful rates), and tradecraft
    adoption (share of published reports using source grading, structured judgements, analytic
    confidence, embedded analytic models and ATT&CK tags).
 2. The page tops it with an **indicative [CTI-CMM](https://cti-cmm.org/) maturity rollup** —
