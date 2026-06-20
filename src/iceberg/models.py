@@ -803,6 +803,9 @@ class AuditEvent(SQLModel, table=True):
     category: AuditCategory = Field(default=AuditCategory.SYSTEM)
     severity: AuditSeverity = Field(default=AuditSeverity.INFO, index=True)
     outcome: AuditOutcome = Field(default=AuditOutcome.SUCCESS)
+    # what — a human-readable summary (OWASP "Description"); auto-derived from the
+    # structured fields when a caller doesn't supply one.
+    description: str = ""
     # who — actor identity (nullable: anonymous / pre-auth events)
     actor_id: int | None = Field(
         default=None, foreign_key="user.id", ondelete="SET NULL", index=True

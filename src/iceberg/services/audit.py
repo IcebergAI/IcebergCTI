@@ -10,6 +10,9 @@ OWASP discipline: the ``detail`` dict is curated by callers and must never carry
 secrets, tokens, passwords, JWTs or file bytes.
 """
 
+import socket
+from datetime import datetime, timezone
+from importlib.metadata import PackageNotFoundError, version
 from typing import TYPE_CHECKING
 
 from sqlmodel import Session
@@ -22,8 +25,18 @@ from ..models import (
     AuditSeverity,
     ReportStatus,
     User,
+    utcnow,
 )
 from . import audit_settings, siem
+
+# Static deployment identity for the OWASP "Where" attributes — resolved once.
+APP_NAME = "iceberg"
+try:
+    APP_VERSION = version("iceberg")
+except PackageNotFoundError:  # pragma: no cover — only when not pip-installed
+    APP_VERSION = "0.0.0"
+HOSTNAME = socket.gethostname() or "-"
+SERVICE = "iceberg/http"
 
 # Maps the post-transition report status to the audit action it represents. A
 # transition to DRAFT in this lifecycle is always a reviewer "send back".
@@ -41,6 +54,28 @@ def lifecycle_action(status: ReportStatus) -> AuditAction | None:
 if TYPE_CHECKING:  # avoid importing Starlette/FastAPI types at module load
     from fastapi import BackgroundTasks
     from starlette.requests import Request
+
+
+def _iso_utc(dt: datetime) -> str:
+    """ISO-8601 in UTC ("international format"). DB round-trips drop the tzinfo,
+    so a naive value is treated as the UTC it was written in."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).isoformat()
+
+
+def _describe(
+    action: str,
+    outcome: AuditOutcome,
+    actor: User | None,
+    resource_type: str,
+    resource_id: str | int | None,
+) -> str:
+    """A human-readable one-line summary (OWASP "Description")."""
+    who = actor.email if actor else "anonymous"
+    target = f" on {resource_type} #{resource_id}" if resource_type else ""
+    verb = "was denied" if outcome == AuditOutcome.FAILURE else "performed"
+    return f"{who} {verb} {action}{target}"
 
 
 def _request_fields(request: "Request | None") -> dict:
@@ -68,16 +103,20 @@ def record(
     resource_id: str | int | None = None,
     status_code: int | None = None,
     correlation_id: str = "",
+    description: str = "",
     detail: dict | None = None,
 ) -> AuditEvent:
     """Persist a security-relevant event and return it."""
     if not correlation_id and request is not None:
         correlation_id = getattr(request.state, "correlation_id", "")
+    if not description:
+        description = _describe(action, outcome, actor, resource_type, resource_id)
     event = AuditEvent(
         action=str(action),
         category=category,
         severity=severity,
         outcome=outcome,
+        description=description,
         actor_id=actor.id if actor else None,
         actor_email=actor.email if actor else "",
         actor_role=str(actor.role) if actor else "",
@@ -97,29 +136,41 @@ def record(
 def to_owasp_dict(event: AuditEvent) -> dict:
     """Render an event as the structured-JSON payload sent to the SIEM.
 
-    Follows the OWASP logging vocabulary (when / what / where / who / result).
+    Carries the full OWASP Logging Cheat Sheet event attributes:
+      - **when**  — event + log datetime (international format) + interaction id
+      - **where** — application (name/version/host), service, entry point (URL/method)
+      - **who**   — source address + user identity
+      - **what**  — type, severity, security-relevance flag, description, result
     """
     return {
-        "datetime": event.occurred_at.isoformat(),
-        "appname": "iceberg",
-        "action": event.action,
-        "category": str(event.category),
-        "severity": str(event.severity),
-        "outcome": str(event.outcome),
-        "actor": {
-            "id": event.actor_id,
-            "email": event.actor_email,
-            "role": event.actor_role,
-        },
-        "source_ip": event.source_ip,
-        "user_agent": event.user_agent,
+        # when
+        "event_datetime": _iso_utc(event.occurred_at),
+        "logged_datetime": _iso_utc(utcnow()),
+        "interaction_id": event.correlation_id,
+        # where
+        "application": {"name": APP_NAME, "version": APP_VERSION, "host": HOSTNAME},
+        "service": SERVICE,
         "request": {
             "method": event.request_method,
             "path": event.request_path,
             "status_code": event.status_code,
         },
+        # who
+        "source_ip": event.source_ip,
+        "user_agent": event.user_agent,
+        "actor": {
+            "id": event.actor_id,
+            "email": event.actor_email,
+            "role": event.actor_role,
+        },
+        # what
+        "action": event.action,
+        "category": str(event.category),
+        "severity": str(event.severity),
+        "security_relevant": True,
+        "outcome": str(event.outcome),
+        "description": event.description,
         "resource": {"type": event.resource_type, "id": event.resource_id},
-        "correlation_id": event.correlation_id,
         "detail": event.detail,
     }
 

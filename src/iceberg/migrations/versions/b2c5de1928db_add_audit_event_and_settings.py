@@ -44,6 +44,7 @@ def upgrade() -> None:
     sa.Column('category', sa.Enum('AUTHENTICATION', 'AUTHORIZATION', 'LIFECYCLE', 'ADMIN', 'DATA_ACCESS', 'DISSEMINATION', 'SYSTEM', name='auditcategory'), nullable=False),
     sa.Column('severity', sa.Enum('INFO', 'WARNING', 'CRITICAL', name='auditseverity'), nullable=False),
     sa.Column('outcome', sa.Enum('SUCCESS', 'FAILURE', name='auditoutcome'), nullable=False),
+    sa.Column('description', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('actor_id', sa.Integer(), nullable=True),
     sa.Column('actor_email', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('actor_role', sqlmodel.sql.sqltypes.AutoString(), nullable=False),

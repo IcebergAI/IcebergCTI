@@ -145,21 +145,26 @@
           <th style="padding:8px 10px;">Sev</th>
           <th style="padding:8px 10px;">Outcome</th>
           <th style="padding:8px 10px;">Actor</th>
+          <th style="padding:8px 10px;">Source IP</th>
           <th style="padding:8px 10px;">Resource</th>
-          <th style="padding:8px 10px;">Path</th>
+          <th style="padding:8px 10px;">Entry point</th>
         </tr>
       </thead>
       <tbody>
         {% for e in events %}
         {% set sev_color = 'var(--c-crit)' if e.severity == 'CRITICAL' else ('var(--c-warn, #b8860b)' if e.severity == 'WARNING' else 'var(--muted)') %}
-        <tr style="border-bottom:1px solid var(--line);">
+        <tr style="border-top:1px solid var(--line);">
           <td style="padding:8px 10px;" class="mono">{{ e.occurred_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
           <td style="padding:8px 10px;" class="mono">{{ e.action }}</td>
           <td style="padding:8px 10px;font-weight:600;color:{{ sev_color }};">{{ e.severity }}</td>
           <td style="padding:8px 10px;color:{{ 'var(--c-crit)' if e.outcome == 'FAILURE' else 'var(--muted)' }};">{{ e.outcome }}</td>
           <td style="padding:8px 10px;">{{ e.actor_email or '—' }}{% if e.actor_role %} <span class="muted">({{ e.actor_role }})</span>{% endif %}</td>
+          <td style="padding:8px 10px;" class="mono muted">{{ e.source_ip or '—' }}</td>
           <td style="padding:8px 10px;">{% if e.resource_type %}{{ e.resource_type }}{% if e.resource_id %} #{{ e.resource_id }}{% endif %}{% else %}—{% endif %}</td>
           <td style="padding:8px 10px;" class="mono muted">{{ e.request_method }} {{ e.request_path }}</td>
+        </tr>
+        <tr>
+          <td colspan="8" style="padding:0 10px 8px 10px;color:var(--ink-soft);">{{ e.description }}</td>
         </tr>
         {% endfor %}
       </tbody>

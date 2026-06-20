@@ -110,10 +110,29 @@ def test_record_persists_and_owasp_dict(client, login, engine):
     assert e.category == AuditCategory.AUTHENTICATION
     assert e.outcome == AuditOutcome.SUCCESS
     assert e.correlation_id  # stamped by the middleware
+    assert e.description and "rec@example.com" in e.description
     payload = audit.to_owasp_dict(e)
     assert payload["action"] == AuditAction.AUTH_LOGIN
     assert payload["actor"]["email"] == "rec@example.com"
-    assert "datetime" in payload and "request" in payload
+
+
+def test_owasp_payload_has_full_attribute_set(client, login, engine):
+    login("ANALYST", email="full@example.com")
+    e = _events(engine, AuditAction.AUTH_LOGIN)[0]
+    p = audit.to_owasp_dict(e)
+    # when
+    assert p["event_datetime"].endswith("+00:00")  # international format, UTC
+    assert "logged_datetime" in p and p["interaction_id"]
+    # where
+    assert p["application"]["name"] == "iceberg" and p["application"]["version"]
+    assert p["application"]["host"] and p["service"]
+    assert p["request"]["method"] == "POST" and p["request"]["path"]
+    # who
+    assert p["source_ip"] and p["actor"]["email"] == "full@example.com"
+    # what
+    assert p["security_relevant"] is True
+    assert p["description"] and "full@example.com" in p["description"]
+    assert p["severity"] and p["outcome"]
 
 
 # --------------------------------------------------------------------------- #
