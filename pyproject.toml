@@ -39,6 +39,7 @@ dev = [
     "bandit>=1.9.4",
     "vulture>=2.16",
     "pip-audit>=2.10.1",
+    "pre-commit>=4.4.0",
 ]
 
 [project.scripts]
