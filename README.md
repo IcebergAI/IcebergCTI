@@ -83,9 +83,8 @@ intel-level / TLP / status facets — access-scoped so stakeholders only ever ma
 topic — that analysts classify reports against. Named-threat entities (actor / malware / campaign)
 carry structured **aliases** so APT28 / Fancy Bear / Sofacy resolve to one entity, plus structured
 **attribution** (suspected sponsor/country, motivation, first/last seen) — `/tags/{id}` is a proper
-**entity profile page** for those kinds. STIX-shaped **entity relationships**
-(actor → uses → malware, campaign → attributed-to → actor, actor → targets → sector), curated at
-`/admin/relationships`, render on the profile as inbound/outbound chips + an SVG mini-graph.*
+**entity profile page** for those kinds (attribution + aliases + ATT&CK coverage + the reports
+tagged with it).*
 
 ## Stack
 - **Python ≥ 3.14**, **FastAPI** (single app: JSON API `/api/*` + server-rendered portal `/*`)
@@ -195,16 +194,13 @@ a browsable look at what the other roles do, and a glossary of the intelligence 
    sectors, intel topics, MITRE ATT&CK techniques, and example threat actors + malware) is
    seeded on first run; add or retire entries, or add a **campaign**. For actor / malware /
    campaign terms, list **aliases** (comma-separated) so alternate names resolve to one entity, and
-   record **attribution** (suspected sponsor/country, motivation, first/last seen). Then open
-   **Entity relationships** (`/admin/relationships`) to link entities with STIX verbs
-   (actor → uses → malware, campaign → attributed-to → actor, actor → targets → sector).
+   record **attribution** (suspected sponsor/country, motivation, first/last seen).
 2. As an `ANALYST`, open a report editor → **Tags** panel → tick tags to classify the product.
    (Tags stay editable even after the report is published.)
 3. Use **Search** (left rail, or ⌘K) — full-text query over title/body, narrowed by tag / kind / intel
    level / TLP / status facets. Search is **alias-aware** — querying an alias (e.g. "Fancy Bear")
    surfaces reports tagged with the canonical entity. Click a named-threat tag chip to open its
-   **entity profile** (attribution + aliases + inbound/outbound relationship chips + an SVG
-   mini-graph + the reports tagged with it).
+   **entity profile** (attribution + aliases + ATT&CK coverage + the reports tagged with it).
    Stakeholders' searches only ever return published reports.
 
 ### See ATT&CK coverage & export a Navigator layer
@@ -257,21 +253,15 @@ All settings use the `ICEBERG_` env prefix and can live in `.env` (see
 | `ICEBERG_DISSEMINATION_MAX_TLP` | Broadcast ceiling (default `AMBER`; RED/AMBER_STRICT withheld) |
 | `ICEBERG_EMAIL_BACKEND` + `ICEBERG_SMTP_*` | `console` (dev) or `smtp`; SMTP server settings |
 | `ICEBERG_PORTAL_BASE_URL` | Base URL used in notification email links |
-| `ICEBERG_SOURCE_GRADER_PROVIDER` | `heuristic` by default; opt into `openai`, `anthropic`, or `openai_compatible` |
-| `ICEBERG_SOURCE_GRADER_MODEL` / `ICEBERG_SOURCE_GRADER_API_KEY` | Model/key for external source grading |
-| `ICEBERG_SOURCE_GRADER_BASE_URL` | Optional OpenAI-compatible or alternate provider base URL |
-| `ICEBERG_SOURCE_GRADER_FALLBACK` | `heuristic` by default; controls local fallback after fetch/provider failure |
 
 ### Source reliability grading
 Notebook sources carry Admiralty/NATO-style grades: source reliability (`A-F`) plus
-information credibility (`1-6`), displayed as chips such as `B2` or `B6`. Auto-grading
-is conservative: Iceberg safely fetches public HTTP(S) source pages, extracts readable
-text, and then uses the configured grader. Without provider config, or when fetching/LLM
-grading fails, it falls back to a local heuristic. If only the source identity can be
-judged, credibility is marked `6` ("cannot be judged"); when URL fetching fails, the
-notebook page shows a compact warning after grade/regrade. External LLM grading sends
-only source metadata and extracted page text, never notebook notes, report bodies,
-attachments, or stakeholder data.
+information credibility (`1-6`), displayed as chips such as `B2` or `B6`. Grading is a
+**fully offline local heuristic** applied inline when a source is added: reliability is
+inferred from the source identity (recognised publisher domain or named authority) and
+credibility from the analyst's summary. If only the source identity can be judged,
+credibility is marked `6` ("cannot be judged"). There is no outbound network fetch and no
+external LLM provider — analysts can always manually override, clear, or regrade a source.
 
 ### Entra ID (OIDC)
 Set `ICEBERG_OIDC_ENABLED=true` and fill in `ICEBERG_OIDC_TENANT_ID`,

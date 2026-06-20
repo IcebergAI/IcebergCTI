@@ -5,8 +5,6 @@ the HTML routes."""
 from sqlmodel import Session
 
 from iceberg.models import ProductFormat, RenderedProduct
-from iceberg.services import source_grading
-from iceberg.services.source_grading import SourceFetchError
 
 
 def _first_notebook_id(client) -> int:
@@ -177,14 +175,10 @@ def test_portal_can_edit_source(client, login):
     assert "Original source" not in resp.text
 
 
-def test_portal_source_edit_preserves_auto_grade(client, login, monkeypatch):
+def test_portal_source_edit_preserves_auto_grade(client, login):
     login("ANALYST")
     nb = client.post("/api/notebooks", json={"title": "Auto source edit"}).json()
 
-    def fail_fetch(_reference):
-        raise SourceFetchError("blocked")
-
-    monkeypatch.setattr(source_grading, "fetch_source_content", fail_fetch)
     client.post(
         f"/api/notebooks/{nb['id']}/sources",
         json={
@@ -192,8 +186,8 @@ def test_portal_source_edit_preserves_auto_grade(client, login, monkeypatch):
             "reference": "https://www.cisa.gov/news-events/cybersecurity-advisories/test",
         },
     )
-    # Grading is deferred to a background task; read the graded source back so we
-    # resubmit its real (auto) grade unchanged when editing the title.
+    # Grading is inline and offline; read the graded source back so we resubmit
+    # its real (auto) grade unchanged when editing the title.
     src = client.get(f"/api/notebooks/{nb['id']}").json()["sources"][0]
     assert src["grading_origin"] == "AUTO"
 

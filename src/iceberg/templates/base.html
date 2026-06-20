@@ -86,7 +86,6 @@
       {'label': 'ATT&CK matrix', 'href': '/matrix', 'group': 'Discovery'},
       {'label': 'Program maturity', 'href': '/maturity', 'group': 'Discovery'},
       {'label': 'Taxonomy', 'href': '/admin/tags', 'group': 'Administration'},
-      {'label': 'Relationships', 'href': '/admin/relationships', 'group': 'Administration'},
       {'label': 'Tasking', 'href': '/requirements', 'group': 'Administration'},
       {'label': 'Help', 'href': '/help', 'group': 'Help'}
     ] %}
@@ -166,7 +165,6 @@
           <div class="rail-group">
             <div class="rail-group-label">Administration</div>
             {{ rail_link('/admin/tags', 'ic-taxonomy', 'Taxonomy', path.startswith('/admin/tags')) }}
-            {{ rail_link('/admin/relationships', 'ic-entity', 'Relationships', path.startswith('/admin/relationships')) }}
             {{ rail_link('/requirements', 'ic-tasking', 'Tasking', path.startswith('/requirements')) }}
           </div>
         {% else %}

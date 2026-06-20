@@ -39,8 +39,6 @@
     {% set grade = source_grade_label(source.reliability, source.credibility) %}
     {% set title = source_reliability_label(source.reliability) ~ ' · ' ~ source_credibility_label(source.credibility) %}
     <span class="source-grade source-grade--graded" title="{{ title }}">{{ grade }}</span>
-  {% elif source.grading_origin.value == 'PENDING' %}
-    <span class="source-grade source-grade--pending" title="Auto-grading in progress; refresh to update.">Grading…</span>
   {% else %}
     <span class="source-grade source-grade--empty">Ungraded</span>
   {% endif %}
