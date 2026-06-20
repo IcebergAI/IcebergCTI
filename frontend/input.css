@@ -1,0 +1,6 @@
+/* Tailwind entry compiled by scripts/vendor_assets.py into
+   src/iceberg/static/css/vendor/tailwind.css. The portal's components live in
+   the hand-authored iceberg.css; Tailwind supplies layout utilities only. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
