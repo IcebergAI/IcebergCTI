@@ -4,34 +4,17 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ app_name }}{% endblock %}</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: { extend: {
-        colors: {
-          paper: 'var(--paper)', surface: 'var(--surface)', 'surface-2': 'var(--surface-2)',
-          ink: 'var(--ink)', 'ink-soft': 'var(--ink-soft)', muted: 'var(--muted)',
-          faint: 'var(--faint)', line: 'var(--line)', accent: 'var(--accent)',
-          'accent-ink': 'var(--accent-ink)', 'accent-deep': 'var(--accent-deep)',
-          'accent-soft': 'var(--accent-soft)'
-        },
-        fontFamily: {
-          sans: ['Archivo', 'ui-sans-serif', 'system-ui', 'sans-serif'],
-          mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
-          serif: ['Spectral', 'Georgia', 'serif']
-        }
-      } }
-    }
-  </script>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Spectral:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+  {# First-party, version-pinned, SRI-protected assets (see scripts/vendor_assets.py).
+     Self-hosted fonts (@font-face) + the compiled Tailwind utility build map onto the
+     oklch tokens in iceberg.css, which carries the component design system. #}
+  <link rel="stylesheet" href="/static/{{ assets.fonts.path }}" integrity="{{ assets.fonts.integrity }}">
+  <link rel="stylesheet" href="/static/{{ assets.tailwind.path }}" integrity="{{ assets.tailwind.integrity }}">
   <link rel="stylesheet" href="/static/css/iceberg.css">
   {# tags.js must define window.tagPicker/taxonomyFilter BEFORE Alpine starts.
-     This Alpine CDN build starts on its own (deferred) execution — already past
-     DOM parse — so a later-deferred script would lose the race. Load it first. #}
+     The Alpine build starts on its own (deferred) execution — already past DOM
+     parse — so a later-deferred script would lose the race. Load it first. #}
   <script defer src="/static/js/tags.js"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <script defer src="/static/{{ assets.alpine.path }}" integrity="{{ assets.alpine.integrity }}"></script>
 </head>
 <body>
   {# Hidden icon sprite — referenced via <use href="#ic-…"> by the rail/topbar #}

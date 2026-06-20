@@ -1,0 +1,33 @@
+/* Tailwind v4 entrypoint, compiled by scripts/vendor_assets.py into
+   src/iceberg/static/css/vendor/tailwind.css (standalone CLI binary, no Node).
+   The portal's components live in the hand-authored iceberg.css; Tailwind supplies
+   layout utilities only.
+
+   CSS-first config (v4): the theme below maps Tailwind's colour/font tokens onto the
+   oklch CSS variables defined in iceberg.css. `@theme inline` makes the generated
+   utilities reference those variables directly (e.g. `bg-surface` → `var(--surface)`)
+   rather than re-declaring them. `source(none)` + explicit `@source` pins exactly which
+   files are scanned for class names (deterministic, reproducible builds). */
+@import "tailwindcss" source(none);
+
+@source "../src/iceberg/templates";
+@source "../src/iceberg/static/js";
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-deep: var(--accent-deep);
+  --color-accent-soft: var(--accent-soft);
+
+  --font-sans: var(--fs-sans);
+  --font-mono: var(--fs-mono);
+  --font-serif: var(--fs-serif);
+}

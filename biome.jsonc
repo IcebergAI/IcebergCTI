@@ -7,7 +7,14 @@
   "formatter": { "enabled": false },
   "assist": { "enabled": false },
   "files": {
-    "includes": ["src/iceberg/static/**/*.css", "src/iceberg/static/**/*.js"]
+    // Lint only the hand-authored assets; the vendored/ subtree is third-party
+    // (minified Alpine, the compiled Tailwind build) and version-pinned by
+    // scripts/vendor_assets.py, so it's excluded from the house lint.
+    "includes": [
+      "src/iceberg/static/**/*.css",
+      "src/iceberg/static/**/*.js",
+      "!src/iceberg/static/**/vendor/**"
+    ]
   },
   "linter": {
     "enabled": true,

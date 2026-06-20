@@ -100,7 +100,9 @@ tagged with it).*
 - **Python ≥ 3.14**, **FastAPI** (single app: JSON API `/api/*` + server-rendered portal `/*`)
 - **SQLModel** on **SQLite**
 - **Jinja2 + Alpine.js** portal with a "command-center" design system (left rail + ⌘K palette)
-  (`static/css/iceberg.css`; Archivo / JetBrains Mono / Spectral; Tailwind CDN for utilities)
+  (`static/css/iceberg.css`; Archivo / JetBrains Mono / Spectral; a compiled **Tailwind v4** utility build)
+  — Tailwind, Alpine and the fonts are **self-hosted, version-pinned and SRI-protected** (no CDN);
+  regenerate with `python scripts/vendor_assets.py` (Tailwind's theme/sources live in `frontend/input.css`)
 - **markdown-it-py + nh3** for the live markdown preview
 - **SQLite FTS5** (bm25) for full-text report search
 - **Typst** for PDF rendering
@@ -347,10 +349,12 @@ with `vulture_whitelist.py` for framework false positives), `pip-audit --skip-ed
 (fails on a known CVE in any installed dependency — the version floors in `pyproject.toml`
 are not a lockfile), plus **frontend lint**: `djlint src/iceberg/templates --lint` (Jinja/HTML
 structure, configured under `[tool.djlint]`) and `biome lint src/iceberg/static` (the
-hand-authored CSS + Alpine component JS; configured in `biome.jsonc`). Third-party actions are
-**pinned to commit SHAs** (with a tracking version comment), and [Dependabot](.github/dependabot.yml)
-keeps the Python dependencies and those action pins current. Reproduce the local gates with
-`pip install -e ".[dev]"` then the commands above.
+hand-authored CSS + Alpine component JS, vendored assets excluded; configured in `biome.jsonc`).
+A third **assets** job re-runs `scripts/vendor_assets.py` and fails on any drift, so the
+self-hosted, SRI-protected Tailwind/Alpine/font assets always match their pinned versions.
+Third-party actions are **pinned to commit SHAs** (with a tracking version comment), and
+[Dependabot](.github/dependabot.yml) keeps the Python dependencies and those action pins current.
+Reproduce the local gates with `pip install -e ".[dev]"` then the commands above.
 
 The static gates also run automatically on every commit via
 [pre-commit](.pre-commit-config.yaml) — `repo: local` hooks that invoke the same pinned dev

@@ -20,3 +20,5 @@ htmlcov/
 /figures/
 .env
 settings.json
+# Cached standalone Tailwind binary (downloaded by scripts/vendor_assets.py)
+frontend/.bin/
