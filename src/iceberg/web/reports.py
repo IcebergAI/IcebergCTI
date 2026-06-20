@@ -15,15 +15,17 @@ from fastapi import (
 from fastapi.responses import FileResponse
 
 from .. import help_content
-from ..auth.dependencies import CurrentUser
+from ..auth.dependencies import CurrentUser, ensure_role
 from ..models import (
     AnalyticConfidence,
     IntelLevel,
     Notebook,
     ProductFormat,
+    ProductUsefulness,
     RenderedProduct,
     Report,
     ReportStatus,
+    RfiSatisfaction,
     Role,
     TLP,
     utcnow,
@@ -34,6 +36,7 @@ from ..services import (
     attachments as attachment_service,
     diamond as diamond_service,
     dissemination,
+    feedback as feedback_service,
     lifecycle,
     product_html as product_html_service,
     requirements as req_service,
@@ -79,6 +82,20 @@ def report_view(
     report_id: int, request: Request, session: SessionDep, user: CurrentUser
 ):
     report = ensure_visible(_get_report(session, report_id), user)
+
+    # Feedback loop (backlog D): a stakeholder who was delivered this product can
+    # leave feedback; writers see the feedback received.
+    feedback_form = None
+    received_feedback: list = []
+    if user.role == Role.STAKEHOLDER:
+        if feedback_service.was_delivered(session, report, user):
+            feedback_form = {
+                "existing": feedback_service.existing_feedback(session, report, user),
+                "requirements": feedback_service.linked_requirements(report, user),
+            }
+    elif user.role in (Role.ANALYST, Role.REVIEWER, Role.ADMIN):
+        received_feedback = feedback_service.feedback_for_report(session, report)
+
     return templates.TemplateResponse(
         request,
         "report_view.html",
@@ -94,8 +111,43 @@ def report_view(
             "requirements": list(report.requirements),
             "tags": list(report.tags),
             "dissemination_count": len(report.dissemination_events),
+            "feedback_form": feedback_form,
+            "received_feedback": received_feedback,
+            "usefulness_options": list(ProductUsefulness),
+            "satisfaction_options": list(RfiSatisfaction),
         },
     )
+
+
+def _blank_to_none(raw: str) -> str | None:
+    raw = (raw or "").strip()
+    return raw or None
+
+
+@router.post("/reports/{report_id}/feedback")
+def report_feedback(
+    report_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+    usefulness: Annotated[ProductUsefulness, Form()],
+    requirement_id: Annotated[str, Form()] = "",
+    satisfaction: Annotated[str, Form()] = "",
+    comment: Annotated[str, Form()] = "",
+):
+    ensure_role(user, Role.STAKEHOLDER, detail="Only stakeholders give product feedback")
+    report = ensure_visible(_get_report(session, report_id), user)
+    rid = _blank_to_none(requirement_id)
+    sat = _blank_to_none(satisfaction)
+    feedback_service.submit_feedback(
+        session,
+        report=report,
+        stakeholder=user,
+        usefulness=usefulness,
+        requirement_id=int(rid) if rid else None,
+        satisfaction=RfiSatisfaction(sat) if sat else None,
+        comment=comment,
+    )
+    return _redirect(f"/reports/{report_id}")
 
 
 @router.get("/reports/{report_id}/edit")

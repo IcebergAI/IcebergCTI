@@ -111,6 +111,22 @@ class RequirementKind(StrEnum):
     RFI = "RFI"  # Request For Information: ad-hoc, one-off question
 
 
+class ProductUsefulness(StrEnum):
+    """How useful a stakeholder found a disseminated product (feedback loop)."""
+
+    NOT_USEFUL = "NOT_USEFUL"
+    USEFUL = "USEFUL"
+    HIGHLY_USEFUL = "HIGHLY_USEFUL"
+
+
+class RfiSatisfaction(StrEnum):
+    """Whether a delivered product satisfied the requirement that prompted it."""
+
+    MET = "MET"
+    PARTIALLY_MET = "PARTIALLY_MET"
+    NOT_MET = "NOT_MET"
+
+
 class TagKind(StrEnum):
     """Facets of the controlled CTI taxonomy. Threat actors, campaigns and
     malware are org-curated; TECHNIQUE carries a MITRE ATT&CK id in
@@ -542,6 +558,9 @@ class Report(SQLModel, table=True):
     dissemination_events: list["DisseminationEvent"] = Relationship(
         back_populates="report", cascade_delete=True
     )
+    feedback: list["ProductFeedback"] = Relationship(
+        back_populates="report", cascade_delete=True
+    )
 
 
 class RenderedProduct(SQLModel, table=True):
@@ -670,3 +689,29 @@ class DisseminationEvent(SQLModel, table=True):
     read_at: datetime | None = Field(default=None)
 
     report: Report = Relationship(back_populates="dissemination_events")
+
+
+class ProductFeedback(SQLModel, table=True):
+    """A stakeholder's feedback on a disseminated report — the intelligence-cycle
+    feedback loop (backlog D). One row per (report, stakeholder); the submit path
+    upserts. Optionally tied to one of the stakeholder's own requirements that the
+    product satisfied — a ``MET`` verdict from the owner auto-closes it."""
+
+    __table_args__ = (
+        UniqueConstraint("report_id", "stakeholder_id", name="uq_feedback_report_stakeholder"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    report_id: int = Field(foreign_key="report.id", ondelete="CASCADE", index=True)
+    stakeholder_id: int = Field(foreign_key="user.id", index=True)
+    # Optional: which of the stakeholder's own requirements this product satisfied.
+    requirement_id: int | None = Field(
+        default=None, foreign_key="requirement.id", ondelete="SET NULL", index=True
+    )
+    usefulness: ProductUsefulness
+    satisfaction: RfiSatisfaction | None = Field(default=None)
+    comment: str = ""
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+    report: Report = Relationship(back_populates="feedback")

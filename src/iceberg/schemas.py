@@ -11,9 +11,11 @@ from .models import (
     Motivation,
     Priority,
     ProductFormat,
+    ProductUsefulness,
     ReportStatus,
     RequirementKind,
     RequirementStatus,
+    RfiSatisfaction,
     SourceCredibility,
     SourceReliability,
     TagKind,
@@ -226,6 +228,15 @@ class RequirementLinks(BaseModel):
     """Set the requirements a report/notebook is linked to."""
 
     requirement_ids: list[int]
+
+
+class FeedbackSubmit(BaseModel):
+    """A stakeholder's feedback on a disseminated product (backlog D)."""
+
+    usefulness: ProductUsefulness
+    requirement_id: int | None = None
+    satisfaction: RfiSatisfaction | None = None
+    comment: str = ""
 
 
 class AttachmentLinks(BaseModel):

@@ -88,6 +88,25 @@
   </section>
 </div>
 
+{% if feedback %}
+  <section class="card card-pad-lg mt-5">
+    <h2 class="section-title mb-3">Stakeholder feedback</h2>
+    <ul class="space-y-3">
+      {% for f in feedback %}
+        <li class="flex flex-col gap-1">
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <span class="tag">{{ f.usefulness.value.replace('_',' ') | title }}</span>
+            {% if f.satisfaction %}<span class="tag">{{ f.satisfaction.value.replace('_',' ') | title }}</span>{% endif %}
+            <a href="/reports/{{ f.report_id }}" class="btn-link ml-auto text-sm">↳ {{ f.report.title }}</a>
+          </div>
+          {% if f.comment %}<p class="text-sm whitespace-pre-wrap" style="color:var(--ink-soft);">{{ f.comment }}</p>{% endif %}
+          <span class="mono text-xs" style="color:var(--faint);">{{ f.created_at.strftime('%d %b %Y') }}</span>
+        </li>
+      {% endfor %}
+    </ul>
+  </section>
+{% endif %}
+
 {% if can_edit %}
   <div x-data="{ open: false }" class="mt-5">
     <button @click="open = !open" class="btn-link" style="background:none;border:0;cursor:pointer;">
