@@ -186,8 +186,13 @@ The portal's frontend assets are **self-hosted** — `static/css/iceberg.css` (t
 ## Testing
 Test all crucial functionality with Pytest, create regression tests for identified bugs.
 ```bash
-pytest
+pytest        # parallel by default (-n auto via pytest-xdist; pass -n0 to debug)
 ```
+The suite is per-test setup-bound (each test rebuilds the app: migrations + taxonomy seed + FTS
+rebuild), so it's run **in parallel** via `pytest-xdist` (`addopts = "-n auto"`) — ~107s → ~40s
+on 8 cores. Tests are process-isolated and parallel-safe (in-memory DB per test, `tmp_path` for
+files, ASGI transport so no port binding; the `siem`/`email` `OUTBOX` globals are cleared by
+autouse fixtures per test). Use `pytest -n0` when you need `pdb` or live `-s` output.
 
 **Static gates** (CI + pre-commit, mirrored): `ruff` (lint), `bandit` (security), `vulture`
 (dead code), `pip-audit` (dependency CVEs), and **frontend lint** — `djlint src/iceberg/templates
