@@ -34,6 +34,7 @@ dependencies = [
 dev = [
     "pytest>=9.1.0",
     "pytest-cov>=7.1.0",
+    "pytest-xdist>=3.8.0",
     "ruff>=0.15.17",
     "bandit>=1.9.4",
     "vulture>=2.16",
@@ -54,6 +55,12 @@ iceberg = ["data/*.json", "migrations/script.py.mako", "migrations/versions/*.py
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+# Run in parallel by default (pytest-xdist) — the suite is per-test setup-bound
+# (each test rebuilds the app: migrations + taxonomy seed + FTS rebuild), so it
+# scales near-linearly across cores (~107s → ~40s on 8 cores). Tests are
+# process-isolated and parallel-safe (in-memory DB per test, tmp_path for files,
+# ASGI transport so no port binding). Pass `-n0` to disable for pdb/-s debugging.
+addopts = "-n auto"
 
 [tool.ruff]
 target-version = "py314"

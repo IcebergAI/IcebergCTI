@@ -333,10 +333,14 @@ but no version row — run **`alembic stamp head`** once to mark it current befo
 
 ## Tests
 ```bash
-pytest                              # run the suite
+pytest                              # run the suite (parallel by default via pytest-xdist)
 pytest --cov=iceberg --cov-report=term-missing   # with coverage (CI gates on a floor)
+pytest -n0 tests/test_foo.py       # disable parallelism (for pdb / -s output)
 ```
-Tests run against in-memory SQLite using the dev-login bypass; `tests/test_migrations.py`
+The suite runs **in parallel by default** (`-n auto`, set in `addopts`): it's per-test
+setup-bound — each test rebuilds the app (migrations + taxonomy seed + FTS rebuild) — so it
+scales near-linearly across cores (~107s → ~40s on 8). Tests run against in-memory SQLite using
+the dev-login bypass; `tests/test_migrations.py`
 additionally applies the real migrations to a temp database and checks the models haven't
 drifted from them. The Typst render test skips automatically when the binary isn't present.
 
