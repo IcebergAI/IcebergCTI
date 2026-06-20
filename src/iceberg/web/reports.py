@@ -1,0 +1,323 @@
+"""Report authoring & lifecycle portal routes."""
+
+from sqlmodel import Session, select
+from pathlib import Path
+from typing import Annotated
+
+from fastapi import (
+    BackgroundTasks,
+    Form,
+    HTTPException,
+    Request,
+    Response,
+    status,
+)
+from fastapi.responses import FileResponse
+
+from .. import help_content
+from ..auth.dependencies import CurrentUser
+from ..models import (
+    AnalyticConfidence,
+    IntelLevel,
+    Notebook,
+    ProductFormat,
+    RenderedProduct,
+    Report,
+    ReportStatus,
+    Role,
+    TLP,
+    utcnow,
+)
+from ..rendering.typst import TypstNotAvailable, TypstRenderError, typst_available
+from ..services import (
+    ach as ach_service,
+    attachments as attachment_service,
+    diamond as diamond_service,
+    dissemination,
+    lifecycle,
+    product_html as product_html_service,
+    requirements as req_service,
+    tags as tag_service,
+)
+from ..services.reports import (
+    delete_rendered_product,
+    ensure_author,
+    ensure_editable,
+    ensure_visible,
+    render_report,
+    set_citations,
+)
+from ..templating import templates
+from .common import (
+    SessionDep,
+    _open_requirements,
+    _redirect,
+    _require_writer,
+    router,
+)
+
+@router.get("/reports")
+def reports_list(request: Request, session: SessionDep, user: CurrentUser):
+    stmt = select(Report).order_by(Report.updated_at.desc())
+    if user.role == Role.STAKEHOLDER:
+        stmt = stmt.where(Report.status == ReportStatus.PUBLISHED)
+    reports = list(session.exec(stmt).all())
+    return templates.TemplateResponse(
+        request, "reports_list.html", {"user": user, "reports": reports}
+    )
+
+
+def _get_report(session: Session, report_id: int) -> Report:
+    report = session.get(Report, report_id)
+    if not report:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Report not found")
+    return report
+
+
+@router.get("/reports/{report_id}")
+def report_view(
+    report_id: int, request: Request, session: SessionDep, user: CurrentUser
+):
+    report = ensure_visible(_get_report(session, report_id), user)
+    return templates.TemplateResponse(
+        request,
+        "report_view.html",
+        {
+            "user": user,
+            "report": report,
+            "product_html": product_html_service.render_report_product_html(
+                session, report
+            ),
+            "cited_sources": list(report.cited_sources),
+            "cited_attachments": list(report.cited_attachments),
+            "products": list(report.rendered_products),
+            "requirements": list(report.requirements),
+            "tags": list(report.tags),
+            "dissemination_count": len(report.dissemination_events),
+        },
+    )
+
+
+@router.get("/reports/{report_id}/edit")
+def report_edit(
+    report_id: int,
+    request: Request,
+    session: SessionDep,
+    user: CurrentUser,
+    updated: str = "",
+):
+    _require_writer(user)
+    report = _get_report(session, report_id)
+    notebook = session.get(Notebook, report.notebook_id)
+    cited_ids = {s.id for s in report.cited_sources}
+    return templates.TemplateResponse(
+        request,
+        "report_edit.html",
+        {
+            "user": user,
+            "report": report,
+            "notebook": notebook,
+            "sources": list(notebook.sources),
+            "cited_ids": cited_ids,
+            "attachments": list(notebook.attachments),
+            "cited_attachment_ids": {a.id for a in report.cited_attachments},
+            "products": list(report.rendered_products),
+            "typst_available": typst_available(),
+            "preview_html": product_html_service.render_report_product_html(
+                session, report
+            ),
+            "diamonds": list(notebook.diamond_models),
+            "diamond_svgs": {
+                d.id: diamond_service.render_diamond_svg(d)
+                for d in notebook.diamond_models
+            },
+            "ach_models": list(notebook.ach_models),
+            "ach_svgs": {
+                a.id: ach_service.render_ach_svg(a) for a in notebook.ach_models
+            },
+            "figures": list(notebook.figures),
+            "all_requirements": _open_requirements(session, report.requirements),
+            "linked_req_ids": {r.id for r in report.requirements},
+            "all_tags": tag_service.offerable_tags(session, report.tags),
+            "linked_tag_ids": {t.id for t in report.tags},
+            "probability_yardstick": help_content.PROBABILITY_YARDSTICK,
+            "updated": updated,
+        },
+    )
+
+
+@router.post("/reports/{report_id}")
+def report_save(
+    report_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+    title: Annotated[str, Form()],
+    body_md: Annotated[str, Form()] = "",
+    key_judgements: Annotated[str, Form()] = "",
+    key_assumptions: Annotated[str, Form()] = "",
+    intelligence_gaps: Annotated[str, Form()] = "",
+    # Posted as "" by the "— Not stated —" option; coerced to None below.
+    analytic_confidence: Annotated[str, Form()] = "",
+    intel_level: Annotated[IntelLevel, Form()] = IntelLevel.OPERATIONAL,
+    tlp: Annotated[TLP, Form()] = TLP.AMBER,
+):
+    _require_writer(user)
+    report = ensure_editable(_get_report(session, report_id), user)
+    report.title = title
+    report.body_md = body_md
+    report.key_judgements = key_judgements
+    report.key_assumptions = key_assumptions
+    report.intelligence_gaps = intelligence_gaps
+    report.analytic_confidence = (
+        AnalyticConfidence(analytic_confidence) if analytic_confidence else None
+    )
+    report.intel_level = intel_level
+    report.tlp = tlp
+    report.updated_at = utcnow()
+    session.add(report)
+    session.commit()
+    return _redirect(f"/reports/{report_id}/edit")
+
+
+@router.post("/reports/{report_id}/citations")
+def report_citations(
+    report_id: int,
+    request: Request,
+    session: SessionDep,
+    user: CurrentUser,
+    source_ids: Annotated[list[int], Form()] = [],
+):
+    _require_writer(user)
+    report = ensure_editable(_get_report(session, report_id), user)
+    set_citations(session, report, source_ids)
+    if request.headers.get("x-requested-with") == "fetch":
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    return _redirect(f"/reports/{report_id}/edit?updated=citations#citations")
+
+
+@router.post("/reports/{report_id}/transition")
+def report_transition(
+    report_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+    background_tasks: BackgroundTasks,
+    target: Annotated[ReportStatus, Form()],
+):
+    report = _get_report(session, report_id)
+    try:
+        report = lifecycle.transition(session, report, target, actor=user)
+    except lifecycle.LifecycleError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc))
+    if report.status == ReportStatus.PUBLISHED:
+        dissemination.queue_dissemination(session, report, background_tasks)
+    return _redirect(f"/reports/{report_id}/edit")
+
+
+@router.post("/reports/{report_id}/render")
+def report_render(
+    report_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+    format: Annotated[str, Form()],
+):
+    _require_writer(user)
+    report = _get_report(session, report_id)
+    try:
+        fmt = ProductFormat(format)
+    except ValueError:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unknown product format")
+    try:
+        render_report(session, report, fmt)
+    except TypstNotAvailable as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc))
+    except TypstRenderError as exc:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, str(exc))
+    return _redirect(
+        f"/reports/{report_id}/edit?updated=rendered-products#rendered-products"
+    )
+
+
+@router.get("/reports/{report_id}/products/{product_id}/download")
+def download_product(
+    report_id: int, product_id: int, session: SessionDep, user: CurrentUser
+):
+    ensure_visible(_get_report(session, report_id), user)
+    product = session.get(RenderedProduct, product_id)
+    if not product or product.report_id != report_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Product not found")
+    path = Path(product.pdf_path)
+    if not path.exists():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Rendered file missing")
+    return FileResponse(path, media_type="application/pdf", filename=path.name)
+
+
+@router.post("/reports/{report_id}/products/{product_id}/delete")
+def delete_product(
+    report_id: int, product_id: int, session: SessionDep, user: CurrentUser
+):
+    _require_writer(user)
+    report = ensure_editable(_get_report(session, report_id), user)
+    product = session.get(RenderedProduct, product_id)
+    if not product or product.report_id != report.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Product not found")
+    delete_rendered_product(session, product)
+    return _redirect(f"/reports/{report_id}/edit#rendered-products")
+
+
+@router.post("/reports/{report_id}/requirements")
+def report_requirements(
+    report_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+    requirement_ids: Annotated[list[int], Form()] = [],
+):
+    _require_writer(user)
+    report = ensure_author(_get_report(session, report_id), user)
+    req_service.set_report_requirements(session, report, requirement_ids)
+    return _redirect(
+        f"/reports/{report_id}/edit?updated=requirements#requirements-satisfied"
+    )
+
+
+@router.post("/reports/{report_id}/attachments")
+def report_attachments(
+    report_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+    attachment_ids: Annotated[list[int], Form()] = [],
+):
+    _require_writer(user)
+    report = ensure_editable(_get_report(session, report_id), user)
+    attachment_service.set_report_attachments(session, report, attachment_ids)
+    return _redirect(f"/reports/{report_id}/edit?updated=attachments#attachments-cited")
+
+
+@router.post("/reports/{report_id}/tags")
+def report_tags(
+    report_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+    tag_ids: Annotated[list[int], Form()] = [],
+):
+    _require_writer(user)
+    # Author guard only (not ensure_editable): tags stay editable post-publish.
+    report = ensure_author(_get_report(session, report_id), user)
+    tag_service.set_report_tags(session, report, tag_ids)
+    return _redirect(f"/reports/{report_id}/edit?updated=tags#tags")
+
+
+@router.post("/notebooks/{notebook_id}/requirements")
+def notebook_requirements(
+    notebook_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+    requirement_ids: Annotated[list[int], Form()] = [],
+):
+    _require_writer(user)
+    nb = session.get(Notebook, notebook_id)
+    if not nb:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Notebook not found")
+    req_service.set_notebook_requirements(session, nb, requirement_ids)
+    return _redirect(f"/notebooks/{notebook_id}")
+
+
