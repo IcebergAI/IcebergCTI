@@ -307,20 +307,30 @@ drifted from them. The Typst render test skips automatically when the binary isn
 job (`pytest` + coverage, with Typst installed so the PDF-render path is exercised; coverage is
 gated by `fail_under` in `pyproject.toml`) and a **static** job — `ruff check` (lint),
 `bandit -r src/iceberg` (security), `vulture` (dead code; configured under `[tool.vulture]`
-with `vulture_whitelist.py` for framework false positives), and `pip-audit --skip-editable`
+with `vulture_whitelist.py` for framework false positives), `pip-audit --skip-editable`
 (fails on a known CVE in any installed dependency — the version floors in `pyproject.toml`
-are not a lockfile). Third-party actions are **pinned
-to commit SHAs** (with a tracking version comment), and [Dependabot](.github/dependabot.yml)
+are not a lockfile), plus **frontend lint**: `djlint src/iceberg/templates --lint` (Jinja/HTML
+structure, configured under `[tool.djlint]`) and `biome lint src/iceberg/static` (the
+hand-authored CSS + Alpine component JS; configured in `biome.jsonc`). Third-party actions are
+**pinned to commit SHAs** (with a tracking version comment), and [Dependabot](.github/dependabot.yml)
 keeps the Python dependencies and those action pins current. Reproduce the local gates with
 `pip install -e ".[dev]"` then the commands above.
 
-The static gates (`ruff check .`, `bandit -r src/iceberg`, `vulture`) also run automatically on
-every commit via [pre-commit](.pre-commit-config.yaml) — `repo: local` hooks that invoke the same
-pinned dev tools, so local and CI results match. Activate them once per clone:
+The static gates also run automatically on every commit via
+[pre-commit](.pre-commit-config.yaml) — `repo: local` hooks that invoke the same pinned dev
+tools, so local and CI results match. Activate them once per clone:
 ```bash
 pip install -e ".[dev]"
 pre-commit install                  # wire the git pre-commit hook
 pre-commit run --all-files          # optional: run them on demand
+```
+[Biome](https://biomejs.dev) is the one gate not in the pip dev extra — it ships as a standalone
+binary (no Node toolchain). CI installs it via `biomejs/setup-biome`; for the local hook, drop the
+binary on your `PATH` (the pre-commit hook no-ops if it's absent):
+```bash
+curl -fsSL -o ~/.local/bin/biome \
+  https://github.com/biomejs/biome/releases/download/@biomejs/biome@2.5.0/biome-linux-x64
+chmod +x ~/.local/bin/biome
 ```
 
 ## Project layout

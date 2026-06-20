@@ -99,10 +99,12 @@
     <div class="tax-filter">
       <button type="button" class="tax-pill" :class="kindFilter==='' ? 'is-on' : ''" @click="kindFilter=''">All</button>
       {% for k in kinds %}
+        {# djlint:off H037 — Alpine :class/@click both reference kindFilter; not a duplicate attribute #}
         <button type="button" class="tax-pill" :class="kindFilter==='{{ k.value }}' ? 'is-on' : ''"
                 @click="kindFilter = kindFilter==='{{ k.value }}' ? '' : '{{ k.value }}'">
           {{ k.value.title() }} <span style="opacity:.55;margin-left:4px;">{{ tags_by_kind.get(k, []) | length }}</span>
         </button>
+        {# djlint:on #}
       {% endfor %}
     </div>
     <div class="flex items-center gap-3">

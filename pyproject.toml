@@ -39,6 +39,7 @@ dev = [
     "vulture>=2.16",
     "pip-audit>=2.10.1",
     "pre-commit>=4.4.0",
+    "djlint>=1.39.2",
 ]
 
 [project.scripts]
@@ -83,3 +84,20 @@ ignore_decorators = [
     "@model_validator",
     "@property",
 ]
+
+[tool.djlint]
+# Jinja-aware template lint (structure / nesting / duplicate-attribute / a11y).
+# Lint-only — no reformat: the templates are hand-authored with embedded Alpine,
+# which djLint's reformatter mangles. The ignored rules are deliberate house
+# conventions, not defects:
+#   H006  img width/height — figures are variable-sized data-URI images
+#   H021  inline style= — used intentionally throughout the design system
+#   H023  HTML entity refs (&mdash; / &times;) — intentional
+#   H030/H031  meta description/keywords — internal app, not SEO-indexed
+#   J004  literal /static href — the portal links assets by path, not url_for
+#   J018  literal internal hrefs — the portal uses path literals, not url_for
+#   T003  unnamed {% endblock %} — consistent house style
+# H037 (duplicate attribute) is kept on; its one Alpine false positive is
+# suppressed inline in admin_tags.html.
+profile = "jinja"
+ignore = "H006,H021,H023,H030,H031,J004,J018,T003"

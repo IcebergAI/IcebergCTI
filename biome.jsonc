@@ -1,0 +1,24 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.0/schema.json",
+  // Lint-only gate for the hand-authored frontend assets (CSS + the Alpine
+  // component factories). Formatting is left off deliberately — iceberg.css is
+  // hand-authored in a specific house style, so we lint for correctness rather
+  // than reformat (mirrors the djLint lint-only decision for templates).
+  "formatter": { "enabled": false },
+  "assist": { "enabled": false },
+  "files": {
+    "includes": ["src/iceberg/static/**/*.css", "src/iceberg/static/**/*.js"]
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "style": {
+        // Descending-specificity is an inherent, benign property of a single
+        // hand-authored stylesheet (base class defined after a compound rule);
+        // satisfying it would mean reordering the whole file for no real win.
+        "noDescendingSpecificity": "off"
+      }
+    }
+  }
+}

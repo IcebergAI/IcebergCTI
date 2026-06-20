@@ -34,7 +34,7 @@ jobs:
         run: pytest --cov=iceberg --cov-report=term-missing  # fail_under enforced from pyproject
 
   static:
-    name: Lint + security + dead code + audit
+    name: Lint + security + dead code + audit + frontend
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -50,6 +50,15 @@ jobs:
         run: bandit -r src/iceberg
       - name: Vulture (dead code)
         run: vulture
+      - name: djLint (templates)
+        run: djlint src/iceberg/templates --lint
+      # Biome installs as a standalone binary (no Node toolchain) and lints the
+      # hand-authored CSS + Alpine component JS.
+      - uses: biomejs/setup-biome@4c91541eaada48f67d7dbd7833600ce162b68f51 # v2.7.1
+        with:
+          version: 2.5.0
+      - name: Biome (frontend css/js lint)
+        run: biome lint src/iceberg/static
       # Fails on a known CVE in any installed dependency (the version floors in
       # pyproject are not a lockfile). Audits the full env minus the editable
       # install; pin an unfixable advisory out with `--ignore-vuln GHSA-...`.

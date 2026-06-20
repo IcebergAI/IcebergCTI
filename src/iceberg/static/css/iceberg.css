@@ -64,6 +64,7 @@
 }
 
 * { box-sizing: border-box; }
+/* biome-ignore lint/complexity/noImportantStyles: required to hide Alpine x-cloak elements before init */
 [x-cloak] { display: none !important; }
 
 html { -webkit-text-size-adjust: 100%; }

@@ -6,7 +6,7 @@
  * KIND_ORDER and KIND_CLASS are the single source of truth for facet order and
  * the chip colour class — keep in sync with models.TagKind and iceberg.css (.k-*).
  */
-(function () {
+(() => {
   const KIND_ORDER = ['ACTOR', 'CAMPAIGN', 'MALWARE', 'TECHNIQUE', 'SECTOR', 'TOPIC'];
   const KIND_CLASS = {
     ACTOR: 'k-actor', CAMPAIGN: 'k-campaign', MALWARE: 'k-malware',
@@ -14,7 +14,7 @@
   };
 
   /* ---- Report classification: searchable token combobox -------------------- */
-  window.tagPicker = function ({ tags, selectedIds, canTag }) {
+  window.tagPicker = ({ tags, selectedIds, canTag }) => {
     return {
       all: tags || [],
       selectedIds: Array.isArray(selectedIds) ? [...selectedIds] : [],
@@ -46,18 +46,21 @@
       },
       get groups() {
         const g = {};
-        for (const t of this.menuItems) (g[t.kind] ||= []).push(t);
+        for (const t of this.menuItems) {
+          if (!g[t.kind]) g[t.kind] = [];
+          g[t.kind].push(t);
+        }
         return KIND_ORDER.filter(k => g[k]).map(k => ({ kind: k, items: g[k] }));
       },
       get flat() { return this.groups.flatMap(g => g.items); },
 
-      focusInput() { if (this.canTag) { this.open = true; this.$refs.input && this.$refs.input.focus(); } },
+      focusInput() { if (this.canTag) { this.open = true; this.$refs.input?.focus(); } },
       ensureActive() { const f = this.flat; if (!f.some(t => t.id === this.activeId)) this.activeId = f.length ? f[0].id : null; },
       move(d) { this.open = true; const f = this.flat; if (!f.length) { this.activeId = null; return; } let i = f.findIndex(t => t.id === this.activeId); i = (i + d + f.length) % f.length; this.activeId = f[i].id; },
       enter() { if (this.activeId != null) this.toggle(this.activeId); },
       toggle(id) {
         this.selectedIds = this.isSelected(id) ? this.selectedIds.filter(x => x !== id) : [...this.selectedIds, id];
-        this.q = ''; this.$nextTick(() => { this.ensureActive(); this.$refs.input && this.$refs.input.focus(); });
+        this.q = ''; this.$nextTick(() => { this.ensureActive(); this.$refs.input?.focus(); });
       },
       remove(id) { this.selectedIds = this.selectedIds.filter(x => x !== id); },
       backspace() { if (this.q === '' && this.selectedIds.length) this.selectedIds = this.selectedIds.slice(0, -1); },
@@ -69,12 +72,12 @@
   /* Reads server-rendered rows; the live page submits via the per-row <form>s
    * (POST /admin/tags, /admin/tags/{id}, /admin/tags/{id}/delete). This factory
    * only powers client-side filter/search/live-preview — see admin_tags.html. */
-  window.taxonomyFilter = function ({ kinds }) {
+  window.taxonomyFilter = ({ kinds }) => {
     return {
-      kindOrder: kinds && kinds.length ? kinds : KIND_ORDER,
+      kindOrder: kinds?.length ? kinds : KIND_ORDER,
       kindClass: KIND_CLASS,
       kindFilter: '', search: '', showRetired: true,
-      draft: { kind: (kinds && kinds[0]) || 'ACTOR', label: '', ext: '' },
+      draft: { kind: kinds?.[0] || 'ACTOR', label: '', ext: '' },
 
       matches(el) {
         const kind = el.dataset.kind, active = el.dataset.active === 'true';

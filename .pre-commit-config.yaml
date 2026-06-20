@@ -6,7 +6,8 @@
 # in the dev extra (pyproject `[project.optional-dependencies].dev`) from the
 # active environment, so the pinned versions are the single source of truth and
 # local hooks match CI exactly. Install once with `pre-commit install` after
-# `pip install -e ".[dev]"`.
+# `pip install -e ".[dev]"`. The sole exception is Biome (frontend css/js),
+# which is a standalone binary rather than a pip package — see its hook below.
 #
 # Each hook runs its full configured scope (pass_filenames: false) rather than
 # only the staged files — vulture needs whole-program analysis, bandit scans the
@@ -36,5 +37,27 @@ repos:
         entry: vulture
         language: system
         types: [python]
+        pass_filenames: false
+        require_serial: true
+
+      - id: djlint
+        name: djlint (templates)
+        entry: djlint src/iceberg/templates --lint
+        language: system
+        files: \.html$
+        pass_filenames: false
+        require_serial: true
+
+      # Biome is the one tool not in the pip dev extra: it ships as a standalone
+      # binary (no Node). Install it on PATH to get this hook locally —
+      #   curl -fsSL -o ~/.local/bin/biome \
+      #     https://github.com/biomejs/biome/releases/download/@biomejs/biome@2.5.0/biome-linux-x64 \
+      #     && chmod +x ~/.local/bin/biome
+      # (CI installs it via biomejs/setup-biome). The hook no-ops if biome is absent.
+      - id: biome
+        name: biome (frontend css/js)
+        entry: bash -c 'command -v biome >/dev/null && biome lint src/iceberg/static || echo "biome not installed; skipping (see .pre-commit-config.yaml)"'
+        language: system
+        files: ^src/iceberg/static/.*\.(css|js)$
         pass_filenames: false
         require_serial: true
