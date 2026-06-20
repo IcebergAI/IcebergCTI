@@ -36,8 +36,8 @@ import httpx
 # --------------------------------------------------------------------------- #
 # Pinned versions — bump here, then re-run this script and commit the result.
 # --------------------------------------------------------------------------- #
-TAILWIND_VERSION = "3.4.19"  # latest 3.4.x; keeps the v3 config shape (v4 = future)
-ALPINE_VERSION = "3.15.12"   # exact (was a floating @3.x.x CDN pin)
+TAILWIND_VERSION = "4.3.1"   # latest major; CSS-first config in frontend/input.css
+ALPINE_VERSION = "3.15.12"   # latest major (Alpine has no v4 yet); exact pin
 
 # Google Fonts request mirroring the historical base.html <link>. Only the
 # latin + latin-ext subsets are kept (the portal is an English-language app).
@@ -128,11 +128,11 @@ def build_tailwind() -> dict:
     rel = "css/vendor/tailwind.css"
     out = STATIC / rel
     out.parent.mkdir(parents=True, exist_ok=True)
-    # Run from the repo root so the config's content globs resolve.
+    # v4 is CSS-first (no -c config file); the theme + scanned sources live in
+    # frontend/input.css. Run from the repo root so its @source paths resolve.
     subprocess.run(  # nosec B603 — fixed argv, the binary we just pinned/downloaded
         [
             str(binary),
-            "-c", str(FRONTEND / "tailwind.config.js"),
             "-i", str(FRONTEND / "input.css"),
             "-o", str(out),
             "--minify",

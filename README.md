@@ -100,9 +100,9 @@ tagged with it).*
 - **Python ≥ 3.14**, **FastAPI** (single app: JSON API `/api/*` + server-rendered portal `/*`)
 - **SQLModel** on **SQLite**
 - **Jinja2 + Alpine.js** portal with a "command-center" design system (left rail + ⌘K palette)
-  (`static/css/iceberg.css`; Archivo / JetBrains Mono / Spectral; a compiled Tailwind utility build)
+  (`static/css/iceberg.css`; Archivo / JetBrains Mono / Spectral; a compiled **Tailwind v4** utility build)
   — Tailwind, Alpine and the fonts are **self-hosted, version-pinned and SRI-protected** (no CDN);
-  regenerate with `python scripts/vendor_assets.py`
+  regenerate with `python scripts/vendor_assets.py` (Tailwind's theme/sources live in `frontend/input.css`)
 - **markdown-it-py + nh3** for the live markdown preview
 - **SQLite FTS5** (bm25) for full-text report search
 - **Typst** for PDF rendering

@@ -38,8 +38,8 @@
     "version": "google-fonts"
   },
   "tailwind": {
-    "integrity": "sha384-e+G++q/Qqa5GoBwyJm6F8Kt2JdN/2Nft6yxAamGf6CtcqnUnmQBc8B+jcHIeEsxG",
+    "integrity": "sha384-UiOY2a5ZRHAkFnklU8ZB+STJjSzTd1c9TPUunmg3P9MvKmQqnW4XeaCt0ySXGKQt",
     "path": "css/vendor/tailwind.css",
-    "version": "3.4.19"
+    "version": "4.3.1"
   }
 }
