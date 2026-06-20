@@ -134,14 +134,16 @@ src/iceberg/
   schemas.py       # API request bodies
   seed.py          # CLI: import the tag taxonomy (python -m iceberg.seed)
   help_content.py  # structured /help copy: per-role guides + concepts glossary
+  embeds.py        # single source of the inline-embed token grammar ([[diamond|figure|ach:ID]] / [[attack]])
   templating.py    # shared Jinja2Templates instance
   auth/            # OIDC (Entra) + dev login, JWT, role dependencies, same-origin CSRF mw
   api/             # JSON routers: notebooks, reports, requirements, feed, account, preview, tags, search, attack
                    #   (/api/preview/* are an authoring aid and are WRITER-ONLY: they resolve notebook-scoped
                    #    [[diamond]]/[[figure]]/[[ach]] tokens, so a read-only stakeholder must not reach them)
-  web/             # portal routes (Jinja2)
-  services/        # users, notebooks, lifecycle, citations/rendering (reports), requirements, attachments, figures, diamond, ach, product_html (shared report-HTML assembler), dissemination, email, tags, search, attack (ATT&CK Navigator export + coverage matrix), maturity (CTI program maturity & effectiveness dashboard)
-  rendering/       # markdown->HTML, report->PDF
+  web/             # portal routes (Jinja2): common (shared router + guards/helpers) + domain modules
+                   #   (notebooks, analytics [diamond/ACH], reports, requirements, feed, discovery [search/taxonomy])
+  services/        # users, notebooks, lifecycle, citations/rendering (reports), requirements, attachments, figures, diamond, ach, product_html (shared report-HTML assembler + inline-embed registry), dissemination, email, tags, search, attack (ATT&CK Navigator export + coverage matrix), maturity (CTI program maturity & effectiveness dashboard)
+  rendering/       # markdown->HTML, report->PDF (typst), svg (shared diagram helpers: escape/fonts/wrap/placard)
   data/            # starter_tags.json (importable starter taxonomy)
   templates/       # Jinja2 + Alpine: base (command-center shell: rail+topbar+canvas+⌘K palette), _glyph, _macros,
                    #   one per screen (+ notebooks_list / entities_list index pages backing the rail)

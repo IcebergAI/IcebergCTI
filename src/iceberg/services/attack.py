@@ -20,10 +20,11 @@ hardening (noted in the roadmap), out of scope for this quick win.
 from __future__ import annotations
 
 import math
-import re
-from xml.sax.saxutils import escape  # nosec B406 — escapes text for SVG output, never parses XML
 
+from ..embeds import ATTACK_TOKEN_RE  # noqa: F401 — re-exported for callers
 from ..models import Report, Tag, TagKind
+from ..rendering.svg import MONO as _MONO, SANS as _SANS, escape, wrap_lines as _attack_wrap
+from ..rendering.svg import placard as _svg_placard
 
 # Enterprise ATT&CK tactics, in kill-chain order — the matrix column order.
 TACTIC_ORDER: list[str] = [
@@ -174,18 +175,12 @@ def coverage_matrix(reports: list[Report]) -> dict:
 
 
 # --------------------------------------------------------------------------- #
-# Inline embed: the `[[attack]]` token renders a report's *own* technique
-# coverage as a self-contained SVG matrix, inline at the token's position (web
-# view, live preview, Typst PDF). Unlike the notebook-scoped diamond/figure/ach
-# tokens the techniques come from the report's own tags, so the token is bare
-# (no ID). The Typst path re-declares an equivalent literal in
-# rendering/typst.py to keep the rendering layer free of a service import; the
-# web/preview pipeline lives in services/product_html.py (it injects the SVG
-# after nh3 sanitisation, like the diamond/ach SVGs).
+# Inline embed: the `[[attack]]` token (see ``embeds.py`` for the grammar)
+# renders a report's *own* technique coverage as a self-contained SVG matrix,
+# inline at the token's position (web view, live preview, Typst PDF). Unlike the
+# notebook-scoped diamond/figure/ach tokens the techniques come from the report's
+# own tags, so the token is bare (no ID).
 # --------------------------------------------------------------------------- #
-ATTACK_TOKEN_RE = re.compile(r"\[\[attack\]\]")
-
-
 def has_attack_token(text: str) -> bool:
     """Whether a report body embeds the `[[attack]]` coverage matrix."""
     return bool(ATTACK_TOKEN_RE.search(text or ""))
@@ -205,9 +200,6 @@ def report_attack_svg(report: Report) -> str | None:
 # discipline as render_diamond_svg / render_ach_svg; dynamically sized from the
 # tactic-column × technique-row counts, like the ACH matrix).
 # --------------------------------------------------------------------------- #
-_SANS = "Archivo, 'Helvetica Neue', Arial, sans-serif"
-_MONO = "'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace"
-
 # White → Iceberg accent, five steps; both the shade AND the printed count encode
 # frequency (never colour alone) — same accessibility discipline as the ACH
 # glyphs / diamond pip-meter.
@@ -236,46 +228,13 @@ def _heat_level(count: int, max_count: int) -> int:
     return max(1, min(5, math.ceil(5 * count / max_count)))
 
 
-def _attack_wrap(text: str, *, max_chars: int = 20, max_lines: int = 2) -> list[str]:
-    """Greedy word-wrap with hard-truncation + ellipsis when overflowing."""
-    raw = " ".join((text or "").split())
-    if not raw:
-        return []
-    words = raw.split(" ")
-    lines: list[str] = []
-    cur = ""
-    i = 0
-    while i < len(words) and len(lines) < max_lines:
-        word = words[i]
-        if len(word) > max_chars:
-            word = word[: max_chars - 1] + "…"
-        candidate = (cur + " " + word).strip()
-        if len(candidate) <= max_chars or cur == "":
-            cur = candidate
-            i += 1
-        else:
-            lines.append(cur)
-            cur = ""
-    if cur and len(lines) < max_lines:
-        lines.append(cur)
-    if i < len(words) and lines and not lines[-1].endswith("…"):
-        lines[-1] = lines[-1][: max_chars - 2].rstrip() + " …"
-    return lines
-
-
 def _attack_placard(message: str) -> str:
     """An empty-matrix SVG — used when no technique tags resolve to a column."""
-    return (
-        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 180" '
-        'width="600" height="180" role="img" aria-label="Empty ATT&amp;CK matrix">'
-        '<rect x="1" y="1" width="598" height="178" rx="14" ry="14" '
-        'fill="#fbfdfe" stroke="#e3e9ef" stroke-width="1.5"/>'
-        f'<text x="30" y="36" font-family="{_MONO}" font-size="10.5" '
-        'font-weight="700" letter-spacing="1.6" fill="#1f6f93">'
-        "ATT&amp;CK TECHNIQUE COVERAGE</text>"
-        f'<text x="300" y="104" text-anchor="middle" font-family="{_SANS}" '
-        f'font-size="14" font-style="italic" fill="#a6aeb8">{escape(message)}</text>'
-        "</svg>"
+    return _svg_placard(
+        "ATT&CK TECHNIQUE COVERAGE",
+        message,
+        height=180,
+        aria_label="Empty ATT&CK matrix",
     )
 
 

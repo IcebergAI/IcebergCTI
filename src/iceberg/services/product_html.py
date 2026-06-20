@@ -13,6 +13,8 @@ what lets the SVG / image through; nh3 would otherwise strip a raw ``<svg>`` or 
 """
 
 import re
+from collections.abc import Callable
+from dataclasses import dataclass
 
 from sqlmodel import Session
 
@@ -23,126 +25,33 @@ from . import attack as attack_service
 from . import diamond as diamond_service
 from . import figures as figures_service
 
-# Sentinels: `<p>x…x</p>` is a token alone on its own line (a block figure);
-# the bare form is a token left mid-paragraph (degrades to an inline fragment).
-_DIAMOND_BLOCK_RE = re.compile(r"<p>xICEBERGDIAMONDx(\d+)x</p>")
-_DIAMOND_BARE_RE = re.compile(r"xICEBERGDIAMONDx(\d+)x")
-_FIGURE_BLOCK_RE = re.compile(r"<p>xICEBERGFIGUREx(\d+)x</p>")
-_FIGURE_BARE_RE = re.compile(r"xICEBERGFIGUREx(\d+)x")
-_ACH_BLOCK_RE = re.compile(r"<p>xICEBERGACHx(\d+)x</p>")
-_ACH_BARE_RE = re.compile(r"xICEBERGACHx(\d+)x")
-# The `[[attack]]` token is bare (a report's own technique coverage — no ID).
-_ATTACK_BLOCK_RE = re.compile(r"<p>xICEBERGATTACKx</p>")
-_ATTACK_BARE_RE = re.compile(r"xICEBERGATTACKx")
+
+def _wrapped_figure(css: str, caption: str) -> Callable[[object, dict], str]:
+    """A block-figure renderer for the SVG embeds (diamond / ACH): wrap the
+    resolved SVG in a captioned ``<figure>``, or degrade to a missing notice."""
+
+    def render(key: object, resolved: dict) -> str:
+        svg = resolved.get(key)
+        if svg is None:
+            return f'<p class="{css}-missing">{caption} unavailable.</p>'
+        return (
+            f'<figure class="{css}-figure"><div class="{css}-svg">{svg}</div>'
+            f"<figcaption>{caption}</figcaption></figure>"
+        )
+
+    return render
 
 
-def _diamond_figure(diamond_id: int, svg_by_id: dict[int, str]) -> str:
-    svg = svg_by_id.get(diamond_id)
-    if svg is None:
-        return '<p class="diamond-missing">Diamond model unavailable.</p>'
-    return (
-        '<figure class="diamond-figure">'
-        f'<div class="diamond-svg">{svg}</div>'
-        "<figcaption>Diamond Model of Intrusion Analysis</figcaption>"
-        "</figure>"
-    )
+def _inline_svg(css: str, label: str) -> Callable[[object, dict], str]:
+    """A bare (mid-paragraph) renderer for the SVG embeds: an inline ``<span>``
+    or a missing notice."""
 
+    def render(key: object, resolved: dict) -> str:
+        if key in resolved:
+            return f'<span class="{css}-inline">{resolved[key]}</span>'
+        return f'<span class="{css}-missing">[{label} unavailable]</span>'
 
-def _ach_figure(ach_id: int, svg_by_id: dict[int, str]) -> str:
-    svg = svg_by_id.get(ach_id)
-    if svg is None:
-        return '<p class="ach-missing">ACH analysis unavailable.</p>'
-    return (
-        '<figure class="ach-figure">'
-        f'<div class="ach-svg">{svg}</div>'
-        "<figcaption>Analysis of Competing Hypotheses</figcaption>"
-        "</figure>"
-    )
-
-
-def _attack_figure(attack_svg: str | None) -> str:
-    if attack_svg is None:
-        return '<p class="attack-missing">ATT&CK coverage unavailable — no techniques tagged.</p>'
-    return (
-        '<figure class="attack-figure">'
-        f'<div class="attack-svg">{attack_svg}</div>'
-        "<figcaption>ATT&CK technique coverage</figcaption>"
-        "</figure>"
-    )
-
-
-def _to_html(
-    markdown_text: str,
-    *,
-    diamond_svgs: dict[int, str],
-    figure_html: dict[int, str],
-    ach_svgs: dict[int, str],
-    attack_svg: str | None = None,
-) -> str:
-    """Render a report body to sanitised HTML with diamond diagrams, figures, ACH
-    matrices and the ATT&CK coverage matrix inlined (resolved fragments injected
-    after nh3)."""
-    pre = diamond_service.DIAMOND_TOKEN_RE.sub(
-        lambda m: f"\n\nxICEBERGDIAMONDx{int(m.group(1))}x\n\n", markdown_text or ""
-    )
-    pre = figures_service.FIGURE_TOKEN_RE.sub(
-        lambda m: f"\n\nxICEBERGFIGUREx{int(m.group(1))}x\n\n", pre
-    )
-    pre = ach_service.ACH_TOKEN_RE.sub(
-        lambda m: f"\n\nxICEBERGACHx{int(m.group(1))}x\n\n", pre
-    )
-    pre = attack_service.ATTACK_TOKEN_RE.sub(
-        lambda m: "\n\nxICEBERGATTACKx\n\n", pre
-    )
-    html = render_markdown(pre)
-
-    html = _DIAMOND_BLOCK_RE.sub(
-        lambda m: _diamond_figure(int(m.group(1)), diamond_svgs), html
-    )
-    html = _DIAMOND_BARE_RE.sub(
-        lambda m: (
-            f'<span class="diamond-inline">{diamond_svgs[int(m.group(1))]}</span>'
-            if int(m.group(1)) in diamond_svgs
-            else '<span class="diamond-missing">[diamond unavailable]</span>'
-        ),
-        html,
-    )
-
-    html = _FIGURE_BLOCK_RE.sub(
-        lambda m: figure_html.get(
-            int(m.group(1)), '<p class="figure-missing">Figure unavailable.</p>'
-        ),
-        html,
-    )
-    html = _FIGURE_BARE_RE.sub(
-        lambda m: figure_html.get(
-            int(m.group(1)), '<span class="figure-missing">[figure unavailable]</span>'
-        ),
-        html,
-    )
-
-    html = _ACH_BLOCK_RE.sub(
-        lambda m: _ach_figure(int(m.group(1)), ach_svgs), html
-    )
-    html = _ACH_BARE_RE.sub(
-        lambda m: (
-            f'<span class="ach-inline">{ach_svgs[int(m.group(1))]}</span>'
-            if int(m.group(1)) in ach_svgs
-            else '<span class="ach-missing">[ACH unavailable]</span>'
-        ),
-        html,
-    )
-
-    html = _ATTACK_BLOCK_RE.sub(lambda m: _attack_figure(attack_svg), html)
-    html = _ATTACK_BARE_RE.sub(
-        lambda m: (
-            f'<span class="attack-inline">{attack_svg}</span>'
-            if attack_svg is not None
-            else '<span class="attack-missing">[ATT&CK coverage unavailable]</span>'
-        ),
-        html,
-    )
-    return html
+    return render
 
 
 def _attack_svg_for(report: Report | None, markdown_text: str) -> str | None:
@@ -154,22 +63,113 @@ def _attack_svg_for(report: Report | None, markdown_text: str) -> str | None:
     return attack_service.report_attack_svg(report)
 
 
+@dataclass(frozen=True)
+class _Embed:
+    """One inline-embed kind. Each token is first swapped for an alnum sentinel
+    that survives markdown-it + nh3, the markdown is sanitised, then the sentinel
+    is replaced with its (server-generated, trusted) fragment — injecting after
+    sanitisation is what lets the SVG / data-URI image through nh3."""
+
+    name: str  # sentinel tag, e.g. "DIAMOND"
+    token_re: re.Pattern  # the `[[…]]` source token
+    has_id: bool  # carries a row id (vs the bare `[[attack]]`)
+    render_block: Callable[[object, object], str]  # token alone on its own line
+    render_bare: Callable[[object, object], str]  # token mid-paragraph
+    resolve: Callable[[Session, int, str, Report | None], object]
+
+    @property
+    def _block_re(self) -> re.Pattern:
+        body = r"(\d+)x" if self.has_id else ""
+        return re.compile(rf"<p>x{self.name}x{body}</p>")
+
+    @property
+    def _bare_re(self) -> re.Pattern:
+        body = r"(\d+)x" if self.has_id else ""
+        return re.compile(rf"x{self.name}x{body}")
+
+    def _to_sentinel(self, m: re.Match) -> str:
+        suffix = f"{int(m.group(1))}x" if self.has_id else ""
+        return f"\n\nx{self.name}x{suffix}\n\n"
+
+    def _key(self, m: re.Match) -> object:
+        return int(m.group(1)) if self.has_id else None
+
+
+# Order matters only for determinism; tokens occupy disjoint sentinels.
+_EMBEDS: list[_Embed] = [
+    _Embed(
+        "ICEBERGDIAMOND",
+        diamond_service.DIAMOND_TOKEN_RE,
+        has_id=True,
+        render_block=_wrapped_figure("diamond", "Diamond Model of Intrusion Analysis"),
+        render_bare=_inline_svg("diamond", "diamond"),
+        resolve=lambda s, nb, md, rep: diamond_service.scoped_diamond_svg(s, nb, md),
+    ),
+    _Embed(
+        "ICEBERGFIGURE",
+        figures_service.FIGURE_TOKEN_RE,
+        has_id=True,
+        render_block=lambda key, r: r.get(
+            key, '<p class="figure-missing">Figure unavailable.</p>'
+        ),
+        render_bare=lambda key, r: r.get(
+            key, '<span class="figure-missing">[figure unavailable]</span>'
+        ),
+        resolve=lambda s, nb, md, rep: figures_service.scoped_figure_html(s, nb, md),
+    ),
+    _Embed(
+        "ICEBERGACH",
+        ach_service.ACH_TOKEN_RE,
+        has_id=True,
+        render_block=_wrapped_figure("ach", "Analysis of Competing Hypotheses"),
+        render_bare=_inline_svg("ach", "ACH"),
+        resolve=lambda s, nb, md, rep: ach_service.scoped_ach_svg(s, nb, md),
+    ),
+    _Embed(
+        "ICEBERGATTACK",
+        attack_service.ATTACK_TOKEN_RE,
+        has_id=False,
+        render_block=lambda key, svg: (
+            '<figure class="attack-figure"><div class="attack-svg">'
+            f"{svg}</div><figcaption>ATT&CK technique coverage</figcaption></figure>"
+            if svg is not None
+            else '<p class="attack-missing">ATT&CK coverage unavailable — no techniques tagged.</p>'
+        ),
+        render_bare=lambda key, svg: (
+            f'<span class="attack-inline">{svg}</span>'
+            if svg is not None
+            else '<span class="attack-missing">[ATT&CK coverage unavailable]</span>'
+        ),
+        resolve=lambda s, nb, md, rep: _attack_svg_for(rep, md),
+    ),
+]
+
+
+def _to_html(
+    session: Session,
+    notebook_id: int,
+    markdown_text: str,
+    report: Report | None,
+) -> str:
+    """Render a report body to sanitised HTML with every inline embed (diamond
+    diagrams, figures, ACH matrices, ATT&CK coverage) resolved and injected after
+    nh3, driven by the ``_EMBEDS`` registry."""
+    resolved = {e.name: e.resolve(session, notebook_id, markdown_text, report) for e in _EMBEDS}
+    pre = markdown_text or ""
+    for e in _EMBEDS:
+        pre = e.token_re.sub(e._to_sentinel, pre)
+    html = render_markdown(pre)
+    for e in _EMBEDS:
+        r = resolved[e.name]
+        html = e._block_re.sub(lambda m, e=e, r=r: e.render_block(e._key(m), r), html)
+        html = e._bare_re.sub(lambda m, e=e, r=r: e.render_bare(e._key(m), r), html)
+    return html
+
+
 def render_report_body_html(session: Session, report: Report) -> str:
     """A saved report's body as sanitised HTML, diagrams + figures + ACH + the
     ATT&CK coverage matrix inlined."""
-    return _to_html(
-        report.body_md,
-        diamond_svgs=diamond_service.scoped_diamond_svg(
-            session, report.notebook_id, report.body_md
-        ),
-        figure_html=figures_service.scoped_figure_html(
-            session, report.notebook_id, report.body_md
-        ),
-        ach_svgs=ach_service.scoped_ach_svg(
-            session, report.notebook_id, report.body_md
-        ),
-        attack_svg=_attack_svg_for(report, report.body_md),
-    )
+    return _to_html(session, report.notebook_id, report.body_md, report)
 
 
 def preview_body_html(
@@ -180,17 +180,7 @@ def preview_body_html(
 ) -> str:
     """Live-preview variant: resolve tokens against a notebook's diamonds/figures/
     ACH; the `[[attack]]` matrix is resolved against ``report``'s saved tags."""
-    return _to_html(
-        markdown_text,
-        diamond_svgs=diamond_service.scoped_diamond_svg(
-            session, notebook_id, markdown_text
-        ),
-        figure_html=figures_service.scoped_figure_html(
-            session, notebook_id, markdown_text
-        ),
-        ach_svgs=ach_service.scoped_ach_svg(session, notebook_id, markdown_text),
-        attack_svg=_attack_svg_for(report, markdown_text),
-    )
+    return _to_html(session, notebook_id, markdown_text, report)
 
 
 # --------------------------------------------------------------------------- #

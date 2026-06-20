@@ -14,21 +14,12 @@ All dynamic text is XML-escaped when the SVG is built, so an author can never
 inject markup through a vertex field.
 """
 
-import re
-from xml.sax.saxutils import escape  # nosec B406 — used only to escape text for SVG output, never to parse XML
-
 from fastapi import HTTPException, status
 from sqlmodel import Session, col, select
 
+from ..embeds import DIAMOND_TOKEN_RE  # noqa: F401 — re-exported for callers
 from ..models import DiamondConfidence, DiamondModel, Notebook, Report, utcnow
-
-# --------------------------------------------------------------------------- #
-# Token grammar (the one place that knows the `[[diamond:ID]]` syntax). The
-# Typst path re-declares an equivalent literal in rendering/typst.py to keep the
-# rendering layer free of a service import; the web/preview pipeline lives in
-# services/product_html.py (it injects the SVG after nh3 sanitisation).
-# --------------------------------------------------------------------------- #
-DIAMOND_TOKEN_RE = re.compile(r"\[\[diamond:(\d+)\]\]")
+from ..rendering.svg import MONO as _MONO, SANS as _SANS, escape, wrap_lines as _wrap_lines
 
 
 def referenced_ids(text: str) -> list[int]:
@@ -135,9 +126,6 @@ def scoped_diamond_svg(
 # --------------------------------------------------------------------------- #
 # SVG diagram
 # --------------------------------------------------------------------------- #
-_SANS = "Archivo, 'Helvetica Neue', Arial, sans-serif"
-_MONO = "'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace"
-
 # Confidence is rendered as an ORDINAL meter (count of filled pips on a single
 # ink hue) — deliberately NOT a fourth red/amber/green stamp competing with the
 # TLP and report-status markings already on the page. Level is read by count.
@@ -160,36 +148,6 @@ _VERTICES = [
 ]
 _NODE_W = 224
 _NODE_H = 104
-
-
-def _wrap_lines(text: str, *, max_chars: int = 28, max_lines: int = 3) -> list[str]:
-    """Greedy word-wrap with hard-truncation + ellipsis when overflowing."""
-    raw = " ".join((text or "").split())
-    if not raw:
-        return []
-    words = raw.split(" ")
-    lines: list[str] = []
-    cur = ""
-    i = 0
-    while i < len(words) and len(lines) < max_lines:
-        word = words[i]
-        if len(word) > max_chars:
-            word = word[: max_chars - 1] + "…"
-        candidate = (cur + " " + word).strip()
-        if len(candidate) <= max_chars or cur == "":
-            cur = candidate
-            i += 1
-        else:
-            lines.append(cur)
-            cur = ""
-    if cur and len(lines) < max_lines:
-        lines.append(cur)
-    if i < len(words) and lines:  # ran out of room — mark truncation
-        last = lines[-1]
-        if not last.endswith("…"):
-            trimmed = last[: max_chars - 2].rstrip()
-            lines[-1] = trimmed + " …"
-    return lines
 
 
 def _node(kind_label: str, content: str, colour: str, cx: int, cy: int) -> str:

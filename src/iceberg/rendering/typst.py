@@ -20,6 +20,12 @@ from datetime import date
 from pathlib import Path
 
 from ..config import get_settings
+from ..embeds import (
+    ACH_TOKEN_RE as _ACH_TOKEN_RE,
+    ATTACK_TOKEN_RE as _ATTACK_TOKEN_RE,
+    DIAMOND_TOKEN_RE as _DIAMOND_TOKEN_RE,
+    FIGURE_TOKEN_RE as _FIGURE_TOKEN_RE,
+)
 from ..models import (
     Attachment,
     ProductFormat,
@@ -34,21 +40,9 @@ from ..models import (
 
 _TEMPLATE = Path(__file__).resolve().parent.parent / "typst" / "product.typ"
 
-# Mirror of services.diamond.DIAMOND_TOKEN_RE — kept local so the rendering layer
-# needn't import a service. An analyst writes `[[diamond:ID]]` in the body; here
-# it is rewritten to a markdown image that cmarker turns into a Typst `image()`,
-# resolving against the per-render SVG files written into the temp `--root`.
-_DIAMOND_TOKEN_RE = re.compile(r"\[\[diamond:(\d+)\]\]")
-# Mirror of services.figures.FIGURE_TOKEN_RE — same rationale as the diamond one:
-# `[[figure:ID]]` is rewritten to a markdown image that cmarker turns into a Typst
-# `image()`, resolving against the per-render image files in the temp `--root`.
-_FIGURE_TOKEN_RE = re.compile(r"\[\[figure:(\d+)\]\]")
-# Mirror of services.ach.ACH_TOKEN_RE — `[[ach:ID]]` rewritten to a markdown image
-# resolving against the per-render ACH SVG files written into the temp `--root`.
-_ACH_TOKEN_RE = re.compile(r"\[\[ach:(\d+)\]\]")
-# Mirror of services.attack.ATTACK_TOKEN_RE — the bare `[[attack]]` token rewritten
-# to a markdown image resolving against the per-render attack.svg in the temp root.
-_ATTACK_TOKEN_RE = re.compile(r"\[\[attack\]\]")
+# Each inline-embed token (grammar in ``embeds.py``) is rewritten here to a
+# markdown image that cmarker turns into a Typst `image()`, resolving against the
+# per-render SVG / image files written into the temp `--root`.
 
 
 def _rewrite_diamond_tokens(body: str, diamonds: list[tuple[int, str, str]]) -> str:
