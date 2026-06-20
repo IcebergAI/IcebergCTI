@@ -18,7 +18,9 @@ actor / campaign / malware / ATT&CK technique / sector / topic), move through a 
 workflow, and can be rendered to branded PDF products.
 Everything is **searchable** — full-text + faceted across the report library — and the
 ATT&CK techniques tagged across reports drive a **coverage heatmap** and downloadable
-**ATT&CK Navigator layers** (per report and per actor/malware/campaign entity).
+**ATT&CK Navigator layers** (per report and per actor/malware/campaign entity). A writer-only
+**program maturity dashboard** rolls the same data up into CTI-CMM-style program-health
+indicators.
 
 > **Status:** Milestones 1–4 are implemented — the full vision plus a knowledge layer:
 > the analyst authoring loop, stakeholder requirement intake + tasking board + traceability,
@@ -217,6 +219,17 @@ a browsable look at what the other roles do, and a glossary of the intelligence 
 4. Embed a report's *own* coverage matrix inline with the bare `[[attack]]` token (see
    *Embed the report's ATT&CK coverage matrix* above) so the heatmap appears in the finished
    product itself.
+
+### Gauge program maturity & effectiveness
+1. Open **Maturity** (left rail, `/maturity`) — a writer-only, leadership-facing dashboard that
+   derives program-health indicators purely from existing data: production (publish velocity,
+   time-to-publish, reviewer engagement), requirement coverage across all kinds (PIR/GIR/RFI),
+   dissemination reach (stakeholders reached, feed read-rate, TLP-withheld), and tradecraft
+   adoption (share of published reports using source grading, structured judgements, analytic
+   confidence, embedded analytic models and ATT&CK tags).
+2. The page tops it with an **indicative [CTI-CMM](https://cti-cmm.org/) maturity rollup** —
+   four capability dimensions scored CTI0 (Pre-foundational) → CTI3 (Leading) by thresholds.
+   It is evidence to inform a self-assessment, **not a substitute** for a formal one.
 
 The starter taxonomy is bundled as data (`src/iceberg/data/starter_tags.json`) and imported
 automatically on first boot. To (re-)import explicitly — e.g. after enriching the catalog or

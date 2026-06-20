@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% block title %}Program maturity · {{ app_name }}{% endblock %}
+{% block crumb %}Program maturity{% endblock %}
+
+{% macro distbar(key, count, peak) %}
+  <div class="distbar">
+    <span class="distbar-key">{{ key }}</span>
+    <div class="distbar-track"><span style="width:{{ (100 * count / (peak or 1)) | round }}%"></span></div>
+    <span class="distbar-val">{{ count }}</span>
+  </div>
+{% endmacro %}
+
+{% macro pctbar(key, rate, suffix='') %}
+  <div class="distbar">
+    <span class="distbar-key">{{ key }}</span>
+    <div class="distbar-track"><span style="width:{{ (100 * rate) | round }}%"></span></div>
+    <span class="distbar-val">{{ (100 * rate) | round }}%{{ suffix }}</span>
+  </div>
+{% endmacro %}
+
+{% block content %}
+{% set prod = m.production %}
+{% set reqs = m.requirements %}
+{% set diss = m.dissemination %}
+{% set trade = m.tradecraft %}
+{% set mat = m.maturity %}
+
+<div class="head-row mb-5">
+  <div>
+    <div class="eyebrow eyebrow-accent">Analytics</div>
+    <h1 class="page-title mt-1">CTI program maturity &amp; effectiveness</h1>
+    <p class="text-sm mt-2" style="color:var(--muted);max-width:62ch;">
+      Program-health indicators derived from current Iceberg data — production, requirement
+      coverage, dissemination reach and tradecraft adoption — with an indicative
+      <a href="https://cti-cmm.org/" class="btn-link" target="_blank" rel="noopener">CTI-CMM</a>
+      maturity rollup.
+    </p>
+    <a href="/help#program-maturity" class="help-hint mt-2">How the maturity rollup is derived →</a>
+  </div>
+</div>
+
+<!-- Headline KPIs -->
+<section class="stat-grid mb-7" aria-label="Headline metrics">
+  <div class="stat">
+    <div class="stat-label">Published (30d)</div>
+    <div class="stat-row">
+      <span class="stat-num">{{ prod.published_30d }}</span>
+      <span class="stat-delta">{{ prod.published_90d }} in 90d</span>
+    </div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Requirement coverage</div>
+    <div class="stat-row">
+      <span class="stat-num">{{ (100 * reqs.coverage_rate) | round }}%</span>
+      <span class="stat-delta">{{ reqs.linked_active }}/{{ reqs.active_total }} active linked</span>
+    </div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Feed read-rate</div>
+    <div class="stat-row">
+      <span class="stat-num">{{ (100 * diss.read_rate) | round }}%</span>
+      <span class="stat-delta">{{ diss.read_count }}/{{ diss.events_total }} opened</span>
+    </div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Tradecraft adoption</div>
+    <div class="stat-row">
+      <span class="stat-num">{{ (100 * trade.adoption_share) | round }}%</span>
+      <span class="stat-delta">over {{ trade.published_total }} published</span>
+    </div>
+  </div>
+</section>
+
+<!-- CTI-CMM rollup -->
+<section class="mb-7">
+  <div class="head-row mb-4">
+    <h2 class="section-title">Maturity rollup</h2>
+    <span class="lvl-chip lvl-{{ mat.overall.level }}">Overall · CTI{{ mat.overall.level }} {{ mat.overall.label }}</span>
+  </div>
+  <div class="maturity-rollup">
+    {% for d in mat.dimensions %}
+      <div class="mdim">
+        <div class="mdim-head">
+          <span class="mdim-name">{{ d.dimension }}</span>
+          <span class="lvl-chip lvl-{{ d.level }}">CTI{{ d.level }} · {{ d.label }}</span>
+        </div>
+        <div class="mbar lvl-{{ d.level }}"><span style="width:{{ d.metric_pct }}%"></span></div>
+        <div class="mbar-foot"><span class="eyebrow">{{ d.metric_pct }}%</span></div>
+        <p class="mdim-blurb">{{ d.blurb }}</p>
+      </div>
+    {% endfor %}
+  </div>
+  <p class="maturity-disclaimer">{{ mat.disclaimer }}</p>
+</section>
+
+<div class="grid lg:grid-cols-2 gap-7">
+  <!-- Production -->
+  <section class="card card-pad">
+    <div class="head-row mb-3">
+      <h2 class="section-title">Production</h2>
+      <span class="eyebrow">{{ prod.total }} report{{ '' if prod.total == 1 else 's' }}</span>
+    </div>
+    {% set peak = prod.by_status | map(attribute='count') | max %}
+    {% for s in prod.by_status %}
+      {{ distbar(s.status | replace('_', ' ') | title, s.count, peak) }}
+    {% endfor %}
+    <div class="stat-grid mt-4" style="grid-template-columns:repeat(2,1fr);">
+      <div class="stat">
+        <div class="stat-label">In flight</div>
+        <div class="stat-row"><span class="stat-num">{{ prod.in_flight }}</span></div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Median days to publish</div>
+        <div class="stat-row"><span class="stat-num">{{ prod.median_days_to_publish if prod.median_days_to_publish is not none else '—' }}</span></div>
+      </div>
+    </div>
+    {{ pctbar('Reviewer engagement', prod.reviewer_engagement) }}
+    <div class="mt-3 eyebrow">Published by level</div>
+    {% set lvl_peak = prod.by_intel_level | map(attribute='count') | max %}
+    {% for lv in prod.by_intel_level %}
+      {{ distbar(lv.level | title, lv.count, lvl_peak) }}
+    {% endfor %}
+  </section>
+
+  <!-- Requirement coverage -->
+  <section class="card card-pad">
+    <div class="head-row mb-3">
+      <h2 class="section-title">Requirement coverage</h2>
+      <span class="eyebrow">{{ reqs.total }} total</span>
+    </div>
+    {{ pctbar('Coverage (active linked)', reqs.coverage_rate) }}
+    {{ pctbar('Satisfaction (live)', reqs.satisfaction_rate) }}
+    <div class="mt-3 eyebrow">By kind</div>
+    {% set kpeak = reqs.by_kind | map(attribute='count') | max %}
+    {% for k in reqs.by_kind %}
+      {{ distbar(k.kind, k.count, kpeak) }}
+    {% endfor %}
+    {% if reqs.pir_gaps or reqs.pir_overdue %}
+      <div class="status-note mt-4">
+        <strong>PIR attention:</strong>
+        {{ reqs.pir_gaps }} collection gap{{ '' if reqs.pir_gaps == 1 else 's' }},
+        {{ reqs.pir_overdue }} overdue —
+        <a href="/requirements" class="btn-link">open the tasking board →</a>
+      </div>
+    {% endif %}
+  </section>
+
+  <!-- Dissemination reach -->
+  <section class="card card-pad">
+    <div class="head-row mb-3">
+      <h2 class="section-title">Dissemination reach</h2>
+      <span class="eyebrow">{{ diss.events_total }} deliver{{ 'y' if diss.events_total == 1 else 'ies' }}</span>
+    </div>
+    <div class="stat-grid" style="grid-template-columns:repeat(2,1fr);">
+      <div class="stat">
+        <div class="stat-label">Stakeholders reached</div>
+        <div class="stat-row"><span class="stat-num">{{ diss.stakeholders_reached }}</span></div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Median delivery lag (days)</div>
+        <div class="stat-row"><span class="stat-num">{{ diss.median_lag_days if diss.median_lag_days is not none else '—' }}</span></div>
+      </div>
+    </div>
+    {{ pctbar('Feed read-rate', diss.read_rate) }}
+    {{ pctbar('Withheld by TLP ceiling', diss.withheld_rate) }}
+    <p class="text-sm mt-2" style="color:var(--muted);">
+      {{ diss.withheld_count }} published report{{ '' if diss.withheld_count == 1 else 's' }} held above
+      the {{ diss.max_tlp_label }} broadcast ceiling.
+    </p>
+  </section>
+
+  <!-- Tradecraft adoption -->
+  <section class="card card-pad">
+    <div class="head-row mb-3">
+      <h2 class="section-title">Tradecraft adoption</h2>
+      <span class="eyebrow">{{ trade.published_total }} published</span>
+    </div>
+    {% if trade.published_total %}
+      {% for mt in trade.metrics %}
+        {{ pctbar(mt.label, mt.rate) }}
+      {% endfor %}
+    {% else %}
+      <div class="well card-pad text-center"><p class="empty">No published reports yet — tradecraft adoption appears once products are published.</p></div>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}
