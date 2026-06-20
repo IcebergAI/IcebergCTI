@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% block title %}Audit log · {{ app_name }}{% endblock %}
+{% block content %}
+
+<div class="head-row mb-7">
+  <div>
+    <div class="eyebrow eyebrow-accent">Administration</div>
+    <h1 class="page-title mt-2">Security audit log</h1>
+    <div class="title-rule"></div>
+    <p class="text-sm mt-3" style="color:var(--muted);max-width:60ch;">Security-relevant events are recorded locally and emitted to your SIEM as structured JSON (OWASP application-logging shape). Choose how events are forwarded below; the HTTP/HEC token is read from the environment and is never stored here.</p>
+  </div>
+  <div class="counter-stack">
+    <span class="counter-num">{{ events | length }}</span>
+    <span class="counter-lbl">recent events</span>
+  </div>
+</div>
+
+<!-- SIEM emit configuration -->
+<section class="card card-pad-lg mb-5">
+  <h2 class="section-title mb-4">SIEM forwarding</h2>
+  <form method="post" action="/admin/audit/settings" class="add-form">
+    <label class="chip-check mb-4" style="font-weight:600;">
+      <input type="checkbox" name="enabled" {% if settings.enabled %}checked{% endif %}>
+      <span>Auditing enabled</span>
+    </label>
+
+    <div class="field-label mb-2">Emit methods</div>
+    <div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:16px;">
+      {% for method in methods %}
+      <label class="chip-check">
+        <input type="checkbox" name="methods" value="{{ method }}"
+               {% if method in settings.methods %}checked{% endif %}>
+        <span class="mono">{{ method }}</span>
+      </label>
+      {% endfor %}
+    </div>
+
+    <div class="add-grid">
+      <label class="field-wrap">
+        <span class="field-label">Minimum severity</span>
+        <select name="min_severity" class="field">
+          {% for s in severities %}
+          <option value="{{ s.value }}" {% if settings.min_severity == s %}selected{% endif %}>{{ s.value }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="field-wrap" style="flex:2;">
+        <span class="field-label">File path <span class="opt">stdout method; blank = logger only</span></span>
+        <input name="file_path" class="field mono" value="{{ settings.file_path }}" placeholder="/var/log/iceberg/audit.jsonl">
+      </label>
+    </div>
+
+    <div class="add-grid">
+      <label class="field-wrap">
+        <span class="field-label">Syslog host</span>
+        <input name="syslog_host" class="field mono" value="{{ settings.syslog_host }}">
+      </label>
+      <label class="field-wrap">
+        <span class="field-label">Syslog port</span>
+        <input name="syslog_port" type="number" class="field mono" value="{{ settings.syslog_port }}">
+      </label>
+      <label class="field-wrap">
+        <span class="field-label">Protocol</span>
+        <select name="syslog_protocol" class="field">
+          <option value="UDP" {% if settings.syslog_protocol == 'UDP' %}selected{% endif %}>UDP</option>
+          <option value="TCP" {% if settings.syslog_protocol == 'TCP' %}selected{% endif %}>TCP</option>
+        </select>
+      </label>
+      <label class="field-wrap">
+        <span class="field-label">Facility</span>
+        <input name="syslog_facility" type="number" class="field mono" value="{{ settings.syslog_facility }}">
+      </label>
+    </div>
+
+    <div class="add-grid">
+      <label class="field-wrap" style="flex:2;">
+        <span class="field-label">HTTP endpoint <span class="opt">Splunk HEC / Elastic / webhook</span></span>
+        <input name="http_endpoint" class="field mono" value="{{ settings.http_endpoint }}" placeholder="https://siem.example.com/services/collector">
+      </label>
+      <label class="chip-check" style="align-self:flex-end;padding-bottom:9px;">
+        <input type="checkbox" name="http_verify_tls" {% if settings.http_verify_tls %}checked{% endif %}>
+        <span>Verify TLS</span>
+      </label>
+    </div>
+
+    <div style="display:flex;gap:10px;margin-top:8px;">
+      <button class="btn btn--primary" type="submit">Save configuration</button>
+    </div>
+  </form>
+
+  <form method="post" action="/admin/audit/test" style="margin-top:12px;">
+    <button class="btn btn--ghost btn--sm" type="submit">Send test event</button>
+    <span class="text-sm" style="color:var(--muted);margin-left:8px;">Emits a synthetic event through the enabled methods to verify connectivity.</span>
+  </form>
+</section>
+
+<!-- Event trail -->
+<section class="card card-pad-lg">
+  <h2 class="section-title mb-4">Recent events</h2>
+
+  <form method="get" action="/admin/audit" class="add-grid mb-4">
+    <label class="field-wrap">
+      <span class="field-label">Action</span>
+      <select name="action" class="field">
+        <option value="">Any</option>
+        {% for a in actions %}
+        <option value="{{ a.value }}" {% if filters.action == a.value %}selected{% endif %}>{{ a.value }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field-wrap">
+      <span class="field-label">Severity</span>
+      <select name="severity" class="field">
+        <option value="">Any</option>
+        {% for s in severities %}
+        <option value="{{ s.value }}" {% if filters.severity == s.value %}selected{% endif %}>{{ s.value }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field-wrap">
+      <span class="field-label">Outcome</span>
+      <select name="outcome" class="field">
+        <option value="">Any</option>
+        {% for o in outcomes %}
+        <option value="{{ o.value }}" {% if filters.outcome == o.value %}selected{% endif %}>{{ o.value }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field-wrap">
+      <span class="field-label">Actor email</span>
+      <input name="actor" class="field" value="{{ filters.actor }}" placeholder="contains…">
+    </label>
+    <div class="field-wrap" style="align-self:flex-end;">
+      <button class="btn btn--ghost btn--sm" type="submit">Filter</button>
+    </div>
+  </form>
+
+  {% if events %}
+  <div class="audit-log">
+    {% for e in events %}
+    {% set sev_color = 'var(--c-crit)' if e.severity == 'CRITICAL' else ('var(--c-warn)' if e.severity == 'WARNING' else 'var(--muted)') %}
+    <div class="audit-line">
+      <span class="audit-sev" style="background:{{ sev_color }};" title="{{ e.severity }}"></span>
+      <time class="mono audit-when">{{ e.occurred_at.strftime('%Y-%m-%d %H:%M:%S') }}</time>
+      <div class="audit-body">
+        <div class="audit-head">
+          <span class="mono audit-action">{{ e.action }}</span>
+          <span class="audit-outcome" style="color:{{ 'var(--c-crit)' if e.outcome == 'FAILURE' else 'var(--muted)' }};">{{ e.outcome }}</span>
+        </div>
+        <div class="audit-desc">{{ e.description }}</div>
+        <div class="audit-meta">
+          <span>{{ e.actor_email or 'anonymous' }}{% if e.actor_role %} ({{ e.actor_role }}){% endif %}</span>
+          <span class="mono">{{ e.source_ip or '—' }}</span>
+          {% if e.resource_type %}<span>{{ e.resource_type }}{% if e.resource_id %} #{{ e.resource_id }}{% endif %}</span>{% endif %}
+          {% if e.request_path %}<span class="mono">{{ e.request_method }} {{ e.request_path }}</span>{% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="text-sm" style="color:var(--muted);">No audit events recorded yet.</p>
+  {% endif %}
+</section>
+
+{% endblock %}

@@ -3,13 +3,15 @@
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse
 from sqlmodel import Session, select
 
 from ..auth.dependencies import CurrentUser, require_role
 from ..db import get_session
 from ..models import (
+    AuditCategory,
+    AuditSeverity,
     RenderedProduct,
     Report,
     ReportStatus,
@@ -27,7 +29,7 @@ from ..schemas import (
     TransitionRequest,
 )
 from ..rendering.typst import TypstNotAvailable, TypstRenderError
-from ..services import dissemination, lifecycle
+from ..services import audit, dissemination, lifecycle
 from ..services.attachments import set_report_attachments
 from ..services.reports import (
     create_report as create_report_record,
@@ -167,16 +169,44 @@ def transition_report(
     session: SessionDep,
     user: CurrentUser,
     background_tasks: BackgroundTasks,
+    request: Request,
 ) -> Report:
     report = _get_report(session, report_id)
     try:
         report = lifecycle.transition(session, report, body.target, actor=user)
     except lifecycle.LifecycleError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc))
+    recipients = None
     if report.status == ReportStatus.PUBLISHED:
-        dissemination.queue_dissemination(session, report, background_tasks)
+        recipients = dissemination.queue_dissemination(session, report, background_tasks)
         session.refresh(report)  # dissemination's commit expires the instance
+    _audit_transition(session, report, user, request, background_tasks, recipients)
+    session.refresh(report)  # the audit commit also expires the instance
     return report
+
+
+def _audit_transition(session, report, user, request, background_tasks, recipients):
+    """Record the lifecycle change as an audit event (publish is elevated)."""
+    action = audit.lifecycle_action(report.status)
+    if action is None:
+        return
+    detail = {"title": report.title, "tlp": str(report.tlp), "status": str(report.status)}
+    severity = AuditSeverity.INFO
+    if report.status == ReportStatus.PUBLISHED:
+        severity = AuditSeverity.WARNING
+        detail["recipients"] = recipients
+    audit.record_and_emit(
+        session,
+        background_tasks=background_tasks,
+        action=action,
+        category=AuditCategory.LIFECYCLE,
+        severity=severity,
+        actor=user,
+        request=request,
+        resource_type="report",
+        resource_id=report.id,
+        detail=detail,
+    )
 
 
 @router.get("/{report_id}/products")

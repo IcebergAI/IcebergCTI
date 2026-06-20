@@ -545,6 +545,28 @@ a.row:hover, .row-hover:hover { background: var(--surface-2); }
 .row-title { font-weight: 600; color: var(--ink); }
 .row-sub { font-size: 12.5px; color: var(--muted); }
 
+/* Audit log — one block per security event (admin console) */
+.audit-log { display: flex; flex-direction: column; }
+.audit-line {
+  display: grid;
+  grid-template-columns: 4px auto 1fr;
+  align-items: start; gap: 12px;
+  padding: 11px 4px;
+  border-top: 1px solid var(--line);
+}
+.audit-log > .audit-line:first-child { border-top: 0; }
+.audit-sev { width: 4px; align-self: stretch; border-radius: 2px; }
+.audit-when { font-size: 12px; color: var(--muted); white-space: nowrap; padding-top: 1px; }
+.audit-body { min-width: 0; }
+.audit-head { display: flex; align-items: baseline; gap: 10px; }
+.audit-action { font-size: 12.5px; font-weight: 600; color: var(--ink); letter-spacing: 0.01em; }
+.audit-outcome { font-size: 11px; font-weight: 600; text-transform: lowercase; }
+.audit-desc { font-size: 13px; color: var(--ink-soft); margin-top: 2px; }
+.audit-meta {
+  display: flex; flex-wrap: wrap; gap: 4px 14px;
+  margin-top: 4px; font-size: 12px; color: var(--muted);
+}
+
 /* Card grid tile (notebooks etc.) */
 .tile {
   display: block; background: var(--surface);

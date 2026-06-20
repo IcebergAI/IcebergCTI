@@ -4,6 +4,7 @@ from sqlmodel import Session
 from typing import Annotated
 
 from fastapi import (
+    BackgroundTasks,
     Form,
     HTTPException,
     Query,
@@ -13,6 +14,8 @@ from fastapi import (
 
 from ..auth.dependencies import CurrentUser
 from ..models import (
+    AuditAction,
+    AuditCategory,
     IntelLevel,
     Motivation,
     ReportStatus,
@@ -22,6 +25,7 @@ from ..models import (
 )
 from ..services import (
     attack as attack_service,
+    audit,
     maturity as maturity_service,
     search as search_service,
     tags as tag_service,
@@ -200,10 +204,26 @@ def admin_tags_view(request: Request, session: SessionDep, user: CurrentUser):
     )
 
 
+def _audit_tag(session, background_tasks, request, user, action, tag):
+    audit.record_and_emit(
+        session,
+        background_tasks=background_tasks,
+        action=action,
+        category=AuditCategory.ADMIN,
+        actor=user,
+        request=request,
+        resource_type="tag",
+        resource_id=tag.id,
+        detail={"kind": str(tag.kind), "label": tag.label, "active": tag.active},
+    )
+
+
 @router.post("/admin/tags")
 def admin_tag_create(
+    request: Request,
     session: SessionDep,
     user: CurrentUser,
+    background_tasks: BackgroundTasks,
     kind: Annotated[TagKind, Form()],
     label: Annotated[str, Form()],
     external_id: Annotated[str, Form()] = "",
@@ -215,7 +235,7 @@ def admin_tag_create(
     last_seen: Annotated[str, Form()] = "",
 ):
     _require_admin(user)
-    tag_service.create_tag(
+    tag = tag_service.create_tag(
         session,
         kind=kind,
         label=label,
@@ -227,6 +247,7 @@ def admin_tag_create(
         first_seen=first_seen,
         last_seen=last_seen,
     )
+    _audit_tag(session, background_tasks, request, user, AuditAction.TAG_CREATED, tag)
     return _redirect("/admin/tags")
 
 
@@ -240,8 +261,10 @@ def _get_tag(session: Session, tag_id: int) -> Tag:
 @router.post("/admin/tags/{tag_id}")
 def admin_tag_update(
     tag_id: int,
+    request: Request,
     session: SessionDep,
     user: CurrentUser,
+    background_tasks: BackgroundTasks,
     label: Annotated[str, Form()] = "",
     external_id: Annotated[str, Form()] = "",
     description: Annotated[str, Form()] = "",
@@ -254,7 +277,7 @@ def admin_tag_update(
 ):
     _require_admin(user)
     tag = _get_tag(session, tag_id)
-    tag_service.update_tag(
+    tag = tag_service.update_tag(
         session,
         tag,
         label=label or None,
@@ -267,12 +290,20 @@ def admin_tag_update(
         last_seen=last_seen,
         active=active,
     )
+    _audit_tag(session, background_tasks, request, user, AuditAction.TAG_UPDATED, tag)
     return _redirect("/admin/tags")
 
 
 @router.post("/admin/tags/{tag_id}/delete")
-def admin_tag_delete(tag_id: int, session: SessionDep, user: CurrentUser):
+def admin_tag_delete(
+    tag_id: int,
+    request: Request,
+    session: SessionDep,
+    user: CurrentUser,
+    background_tasks: BackgroundTasks,
+):
     _require_admin(user)
     tag = _get_tag(session, tag_id)
+    _audit_tag(session, background_tasks, request, user, AuditAction.TAG_DELETED, tag)
     tag_service.delete_tag(session, tag)
     return _redirect("/admin/tags")

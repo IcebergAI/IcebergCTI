@@ -4,10 +4,12 @@ from typing import Annotated
 
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Depends,
     File,
     Form,
     HTTPException,
+    Request,
     UploadFile,
     status,
 )
@@ -19,6 +21,8 @@ from ..db import get_session
 from ..models import (
     ACHModel,
     Attachment,
+    AuditAction,
+    AuditCategory,
     DiamondModel,
     Figure,
     Note,
@@ -42,6 +46,7 @@ from ..schemas import (
 )
 from ..services import ach as ach_service
 from ..services import attachments as attachment_service
+from ..services import audit
 from ..services import diamond as diamond_service
 from ..services import figures as figure_service
 from ..services import notebooks as notebook_service
@@ -209,19 +214,47 @@ def delete_source(
     session.commit()
 
 
+def _audit_file(session, background_tasks, request, user, action, *, notebook_id, item):
+    """Record a sensitive-file access (attachment / figure) audit event."""
+    audit.record_and_emit(
+        session,
+        background_tasks=background_tasks,
+        action=action,
+        category=AuditCategory.DATA_ACCESS,
+        actor=user,
+        request=request,
+        resource_type=item.__class__.__name__.lower(),
+        resource_id=item.id,
+        detail={
+            "notebook_id": notebook_id,
+            "filename": item.original_filename,
+            "content_type": item.content_type,
+        },
+    )
+
+
 @router.post("/{notebook_id}/attachments", status_code=status.HTTP_201_CREATED)
 def add_attachment(
     notebook_id: int,
+    request: Request,
     session: SessionDep,
+    user: CurrentUser,
     _w: Writer,
+    background_tasks: BackgroundTasks,
     file: Annotated[UploadFile, File()],
     title: Annotated[str, Form()] = "",
     summary: Annotated[str, Form()] = "",
 ) -> Attachment:
     nb = _get_notebook(session, notebook_id)
-    return attachment_service.save_upload(
+    att = attachment_service.save_upload(
         session, nb, file, title=title, summary=summary
     )
+    _audit_file(
+        session, background_tasks, request, user,
+        AuditAction.ATTACHMENT_UPLOADED, notebook_id=notebook_id, item=att,
+    )
+    session.refresh(att)  # the audit commit expires the instance before serialisation
+    return att
 
 
 def _get_attachment(
@@ -235,12 +268,22 @@ def _get_attachment(
 
 @router.get("/{notebook_id}/attachments/{attachment_id}/download")
 def download_attachment(
-    notebook_id: int, attachment_id: int, session: SessionDep, _w: Writer
+    notebook_id: int,
+    attachment_id: int,
+    request: Request,
+    session: SessionDep,
+    user: CurrentUser,
+    _w: Writer,
+    background_tasks: BackgroundTasks,
 ):
     att = _get_attachment(session, notebook_id, attachment_id)
     path = attachment_service.attachment_path(att)
     if not path.exists():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Stored file missing")
+    _audit_file(
+        session, background_tasks, request, user,
+        AuditAction.ATTACHMENT_DOWNLOADED, notebook_id=notebook_id, item=att,
+    )
     return FileResponse(
         path,
         media_type="application/octet-stream",
@@ -254,9 +297,19 @@ def download_attachment(
     status_code=status.HTTP_204_NO_CONTENT,
 )
 def delete_attachment(
-    notebook_id: int, attachment_id: int, session: SessionDep, _w: Writer
+    notebook_id: int,
+    attachment_id: int,
+    request: Request,
+    session: SessionDep,
+    user: CurrentUser,
+    _w: Writer,
+    background_tasks: BackgroundTasks,
 ):
     att = _get_attachment(session, notebook_id, attachment_id)
+    _audit_file(
+        session, background_tasks, request, user,
+        AuditAction.ATTACHMENT_DELETED, notebook_id=notebook_id, item=att,
+    )
     attachment_service.delete_attachment(session, att)
 
 
@@ -268,13 +321,22 @@ def delete_attachment(
 @router.post("/{notebook_id}/figures", status_code=status.HTTP_201_CREATED)
 def add_figure(
     notebook_id: int,
+    request: Request,
     session: SessionDep,
+    user: CurrentUser,
     _w: Writer,
+    background_tasks: BackgroundTasks,
     file: Annotated[UploadFile, File()],
     title: Annotated[str, Form()] = "",
 ) -> Figure:
     nb = _get_notebook(session, notebook_id)
-    return figure_service.save_upload(session, nb, file, title=title)
+    fig = figure_service.save_upload(session, nb, file, title=title)
+    _audit_file(
+        session, background_tasks, request, user,
+        AuditAction.FIGURE_UPLOADED, notebook_id=notebook_id, item=fig,
+    )
+    session.refresh(fig)  # the audit commit expires the instance before serialisation
+    return fig
 
 
 def _get_figure(session: Session, notebook_id: int, figure_id: int) -> Figure:
@@ -306,9 +368,19 @@ def figure_raw(
     "/{notebook_id}/figures/{figure_id}", status_code=status.HTTP_204_NO_CONTENT
 )
 def delete_figure(
-    notebook_id: int, figure_id: int, session: SessionDep, _w: Writer
+    notebook_id: int,
+    figure_id: int,
+    request: Request,
+    session: SessionDep,
+    user: CurrentUser,
+    _w: Writer,
+    background_tasks: BackgroundTasks,
 ):
     fig = _get_figure(session, notebook_id, figure_id)
+    _audit_file(
+        session, background_tasks, request, user,
+        AuditAction.FIGURE_DELETED, notebook_id=notebook_id, item=fig,
+    )
     figure_service.delete_figure(session, fig)
 
 
