@@ -324,5 +324,14 @@ to commit SHAs** (with a tracking version comment), and [Dependabot](.github/dep
 keeps the Python dependencies and those action pins current. Reproduce the local gates with
 `pip install -e ".[dev]"` then the commands above.
 
+The static gates (`ruff check .`, `bandit -r src/iceberg`, `vulture`) also run automatically on
+every commit via [pre-commit](.pre-commit-config.yaml) — `repo: local` hooks that invoke the same
+pinned dev tools, so local and CI results match. Activate them once per clone:
+```bash
+pip install -e ".[dev]"
+pre-commit install                  # wire the git pre-commit hook
+pre-commit run --all-files          # optional: run them on demand
+```
+
 ## Project layout
 See the structure diagram in [CLAUDE.md](CLAUDE.md).
