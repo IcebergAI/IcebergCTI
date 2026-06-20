@@ -1,0 +1,154 @@
+"""Security audit logging — the local trail + SIEM dispatch.
+
+``record`` persists one :class:`AuditEvent` (the source of truth, surviving a
+SIEM outage). ``record_and_emit`` additionally schedules SIEM emission on a
+background task so the network I/O stays off the response path. Capture sites
+(``auth/audit_middleware.py`` and the explicitly instrumented routes) call into
+here so the OWASP event shape lives in exactly one place.
+
+OWASP discipline: the ``detail`` dict is curated by callers and must never carry
+secrets, tokens, passwords, JWTs or file bytes.
+"""
+
+from typing import TYPE_CHECKING
+
+from sqlmodel import Session
+
+from ..models import (
+    AuditAction,
+    AuditCategory,
+    AuditEvent,
+    AuditOutcome,
+    AuditSeverity,
+    ReportStatus,
+    User,
+)
+from . import audit_settings, siem
+
+# Maps the post-transition report status to the audit action it represents. A
+# transition to DRAFT in this lifecycle is always a reviewer "send back".
+_LIFECYCLE_ACTIONS = {
+    ReportStatus.IN_REVIEW: AuditAction.REPORT_SUBMITTED,
+    ReportStatus.APPROVED: AuditAction.REPORT_APPROVED,
+    ReportStatus.DRAFT: AuditAction.REPORT_SENT_BACK,
+    ReportStatus.PUBLISHED: AuditAction.REPORT_PUBLISHED,
+}
+
+
+def lifecycle_action(status: ReportStatus) -> AuditAction | None:
+    return _LIFECYCLE_ACTIONS.get(ReportStatus(status))
+
+if TYPE_CHECKING:  # avoid importing Starlette/FastAPI types at module load
+    from fastapi import BackgroundTasks
+    from starlette.requests import Request
+
+
+def _request_fields(request: "Request | None") -> dict:
+    if request is None:
+        return {}
+    client = request.client
+    return {
+        "source_ip": client.host if client else "",
+        "user_agent": request.headers.get("user-agent", "")[:512],
+        "request_method": request.method,
+        "request_path": request.url.path,
+    }
+
+
+def record(
+    session: Session,
+    *,
+    action: str,
+    category: AuditCategory = AuditCategory.SYSTEM,
+    severity: AuditSeverity = AuditSeverity.INFO,
+    outcome: AuditOutcome = AuditOutcome.SUCCESS,
+    actor: User | None = None,
+    request: "Request | None" = None,
+    resource_type: str = "",
+    resource_id: str | int | None = None,
+    status_code: int | None = None,
+    correlation_id: str = "",
+    detail: dict | None = None,
+) -> AuditEvent:
+    """Persist a security-relevant event and return it."""
+    if not correlation_id and request is not None:
+        correlation_id = getattr(request.state, "correlation_id", "")
+    event = AuditEvent(
+        action=str(action),
+        category=category,
+        severity=severity,
+        outcome=outcome,
+        actor_id=actor.id if actor else None,
+        actor_email=actor.email if actor else "",
+        actor_role=str(actor.role) if actor else "",
+        resource_type=resource_type,
+        resource_id="" if resource_id is None else str(resource_id),
+        status_code=status_code,
+        correlation_id=correlation_id,
+        detail=detail or {},
+        **_request_fields(request),
+    )
+    session.add(event)
+    session.commit()
+    session.refresh(event)
+    return event
+
+
+def to_owasp_dict(event: AuditEvent) -> dict:
+    """Render an event as the structured-JSON payload sent to the SIEM.
+
+    Follows the OWASP logging vocabulary (when / what / where / who / result).
+    """
+    return {
+        "datetime": event.occurred_at.isoformat(),
+        "appname": "iceberg",
+        "action": event.action,
+        "category": str(event.category),
+        "severity": str(event.severity),
+        "outcome": str(event.outcome),
+        "actor": {
+            "id": event.actor_id,
+            "email": event.actor_email,
+            "role": event.actor_role,
+        },
+        "source_ip": event.source_ip,
+        "user_agent": event.user_agent,
+        "request": {
+            "method": event.request_method,
+            "path": event.request_path,
+            "status_code": event.status_code,
+        },
+        "resource": {"type": event.resource_type, "id": event.resource_id},
+        "correlation_id": event.correlation_id,
+        "detail": event.detail,
+    }
+
+
+def schedule_emit(
+    session: Session,
+    event: AuditEvent,
+    background_tasks: "BackgroundTasks | None" = None,
+) -> None:
+    """Dispatch ``event`` to the SIEM. Resolves settings + builds the payload
+    *now* (while the session is live), then either schedules emission on the
+    given background tasks or emits inline (best-effort)."""
+    payload = to_owasp_dict(event)
+    # Detach the settings from the session so the background task can read its
+    # fields after the request's session is closed.
+    snapshot = audit_settings.get(session).model_copy()
+    if background_tasks is not None:
+        background_tasks.add_task(siem.emit, payload, snapshot)
+    else:
+        siem.emit(payload, snapshot)
+
+
+def record_and_emit(
+    session: Session,
+    *,
+    background_tasks: "BackgroundTasks | None" = None,
+    **kwargs,
+) -> AuditEvent:
+    """Persist an event and dispatch it to the SIEM (convenience for routes)."""
+    event = record(session, **kwargs)
+    schedule_emit(session, event, background_tasks)
+    return event

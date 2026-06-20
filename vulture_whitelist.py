@@ -17,6 +17,8 @@
 #   templates/help.html, which Vulture can't see.
 
 _.dispatch  # unused method (src/iceberg/auth/csrf.py:40)
+_.background  # Starlette response.background (src/iceberg/auth/audit_middleware.py)
+DISSEMINATION  # unused variable (AuditCategory enum, src/iceberg/models.py)
 model_config  # unused variable (src/iceberg/config.py:14)
 TACTICAL  # unused variable (src/iceberg/models.py:31)
 FULL  # unused variable (src/iceberg/models.py:87)

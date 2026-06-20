@@ -187,6 +187,76 @@ class AnalyticConfidence(StrEnum):
     HIGH = "HIGH"
 
 
+class AuditOutcome(StrEnum):
+    """Whether a security-relevant event succeeded or was denied/failed."""
+
+    SUCCESS = "SUCCESS"
+    FAILURE = "FAILURE"
+
+
+class AuditSeverity(StrEnum):
+    """OWASP-style severity for an audit event (ordered low→high)."""
+
+    INFO = "INFO"
+    WARNING = "WARNING"
+    CRITICAL = "CRITICAL"
+
+
+_AUDIT_SEVERITY_RANK = {
+    AuditSeverity.INFO: 0,
+    AuditSeverity.WARNING: 1,
+    AuditSeverity.CRITICAL: 2,
+}
+
+
+def audit_severity_rank(severity: AuditSeverity) -> int:
+    """Sort/threshold key (higher = more severe) for the SIEM min-severity gate."""
+    return _AUDIT_SEVERITY_RANK[AuditSeverity(severity)]
+
+
+class AuditCategory(StrEnum):
+    """Coarse grouping of audit events (OWASP event taxonomy)."""
+
+    AUTHENTICATION = "AUTHENTICATION"
+    AUTHORIZATION = "AUTHORIZATION"
+    LIFECYCLE = "LIFECYCLE"
+    ADMIN = "ADMIN"
+    DATA_ACCESS = "DATA_ACCESS"
+    DISSEMINATION = "DISSEMINATION"
+    SYSTEM = "SYSTEM"
+
+
+class AuditAction(StrEnum):
+    """Controlled vocabulary of security-relevant actions. The ``action`` column
+    is a plain string so callers may record values outside this enum, but the
+    known events live here for one-place discoverability."""
+
+    # Authentication
+    AUTH_LOGIN = "AUTH_LOGIN"
+    AUTH_LOGOUT = "AUTH_LOGOUT"
+    # Authorization (failure outcomes captured centrally)
+    AUTHZ_DENIED = "AUTHZ_DENIED"
+    CSRF_BLOCKED = "CSRF_BLOCKED"
+    # Report lifecycle
+    REPORT_SUBMITTED = "REPORT_SUBMITTED"
+    REPORT_APPROVED = "REPORT_APPROVED"
+    REPORT_SENT_BACK = "REPORT_SENT_BACK"
+    REPORT_PUBLISHED = "REPORT_PUBLISHED"
+    # Admin taxonomy curation
+    TAG_CREATED = "TAG_CREATED"
+    TAG_UPDATED = "TAG_UPDATED"
+    TAG_DELETED = "TAG_DELETED"
+    # Audit configuration (admin)
+    AUDIT_SETTINGS_UPDATED = "AUDIT_SETTINGS_UPDATED"
+    AUDIT_TEST = "AUDIT_TEST"
+    # Sensitive file access
+    ATTACHMENT_UPLOADED = "ATTACHMENT_UPLOADED"
+    ATTACHMENT_DOWNLOADED = "ATTACHMENT_DOWNLOADED"
+    ATTACHMENT_DELETED = "ATTACHMENT_DELETED"
+    FIGURE_UPLOADED = "FIGURE_UPLOADED"
+    FIGURE_DELETED = "FIGURE_DELETED"
+
+
 class SourceReliability(StrEnum):
     """Admiralty/NATO source reliability rating."""
 
@@ -715,3 +785,69 @@ class ProductFeedback(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utcnow)
 
     report: Report = Relationship(back_populates="feedback")
+
+
+class AuditEvent(SQLModel, table=True):
+    """A persisted security-relevant event (the local audit trail).
+
+    Holds the OWASP "when / what / where / who / result" attributes. This is the
+    source of truth and survives a SIEM outage; emission to the SIEM is a
+    best-effort side effect (see ``services/siem.py``). The ``detail`` JSON is
+    deliberately curated by callers — it must **never** carry secrets, tokens,
+    passwords, JWTs or file bytes.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    occurred_at: datetime = Field(default_factory=utcnow, index=True)
+    action: str = Field(index=True)  # an AuditAction value (free-form tolerated)
+    category: AuditCategory = Field(default=AuditCategory.SYSTEM)
+    severity: AuditSeverity = Field(default=AuditSeverity.INFO, index=True)
+    outcome: AuditOutcome = Field(default=AuditOutcome.SUCCESS)
+    # who — actor identity (nullable: anonymous / pre-auth events)
+    actor_id: int | None = Field(
+        default=None, foreign_key="user.id", ondelete="SET NULL", index=True
+    )
+    actor_email: str = ""
+    actor_role: str = ""
+    source_ip: str = ""
+    user_agent: str = ""
+    # where
+    request_method: str = ""
+    request_path: str = ""
+    # result / context
+    status_code: int | None = Field(default=None)
+    resource_type: str = ""
+    resource_id: str = ""
+    correlation_id: str = Field(default="", index=True)
+    detail: dict = Field(
+        default_factory=dict,
+        sa_column=Column(JSON, nullable=False, server_default="{}"),
+    )
+
+
+class AuditSettings(SQLModel, table=True):
+    """Runtime SIEM-emit configuration, admin-editable (single row, id=1).
+
+    Holds only non-secret routing config — the HTTP/HEC token is read from the
+    environment (``ICEBERG_AUDIT_HTTP_TOKEN``) and is never persisted here.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    enabled: bool = Field(default=True)
+    # Enabled emit methods: any of "stdout" / "syslog" / "http".
+    methods: list[str] = Field(
+        default_factory=lambda: ["stdout"],
+        sa_column=Column(JSON, nullable=False, server_default='["stdout"]'),
+    )
+    min_severity: AuditSeverity = Field(default=AuditSeverity.INFO)
+    # stdout/file sink
+    file_path: str = ""  # empty = stdout logger only
+    # syslog sink (RFC 5424)
+    syslog_host: str = "localhost"
+    syslog_port: int = 514
+    syslog_protocol: str = "UDP"  # UDP | TCP
+    syslog_facility: int = 13  # "log audit" facility
+    # http event-collector / webhook sink (token from env)
+    http_endpoint: str = ""
+    http_verify_tls: bool = True
+    updated_at: datetime = Field(default_factory=utcnow)

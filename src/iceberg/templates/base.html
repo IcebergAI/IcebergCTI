@@ -53,6 +53,7 @@
     <symbol id="ic-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
     <symbol id="ic-help" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 4 1.8c0 1.7-2.5 2-2.5 3.2"/><circle cx="12" cy="17" r="0.6" fill="currentColor"/></symbol>
     <symbol id="ic-doc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h8l4 4v14H6z"/><path d="M13 3v5h5"/></symbol>
+    <symbol id="ic-audit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v5c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/><path d="M9 12l2 2 4-4"/></symbol>
   </defs></svg>
 
   {% set path = request.url.path %}
@@ -86,6 +87,7 @@
       {'label': 'ATT&CK matrix', 'href': '/matrix', 'group': 'Discovery'},
       {'label': 'Program maturity', 'href': '/maturity', 'group': 'Discovery'},
       {'label': 'Taxonomy', 'href': '/admin/tags', 'group': 'Administration'},
+      {'label': 'Audit log', 'href': '/admin/audit', 'group': 'Administration'},
       {'label': 'Tasking', 'href': '/requirements', 'group': 'Administration'},
       {'label': 'Help', 'href': '/help', 'group': 'Help'}
     ] %}
@@ -165,6 +167,7 @@
           <div class="rail-group">
             <div class="rail-group-label">Administration</div>
             {{ rail_link('/admin/tags', 'ic-taxonomy', 'Taxonomy', path.startswith('/admin/tags')) }}
+            {{ rail_link('/admin/audit', 'ic-audit', 'Audit log', path.startswith('/admin/audit')) }}
             {{ rail_link('/requirements', 'ic-tasking', 'Tasking', path.startswith('/requirements')) }}
           </div>
         {% else %}

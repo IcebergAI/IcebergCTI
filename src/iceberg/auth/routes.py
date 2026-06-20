@@ -3,17 +3,18 @@
 from typing import Annotated
 
 from authlib.integrations.starlette_client import OAuth, OAuthError
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 from sqlmodel import Session
 
 from ..config import get_settings
 from ..db import get_session
-from ..models import Role
+from ..models import AuditAction, AuditCategory, AuditOutcome, Role, User
+from ..services import audit
 from ..services.users import upsert_user
 from ..templating import templates
-from .dependencies import COOKIE_NAME
-from .tokens import create_access_token
+from .dependencies import COOKIE_NAME, _extract_token
+from .tokens import create_access_token, decode_access_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -93,7 +94,9 @@ def _role_from_claims(claims: dict) -> Role:
 
 @router.get("/callback")
 async def entra_callback(
-    request: Request, session: Annotated[Session, Depends(get_session)]
+    request: Request,
+    session: Annotated[Session, Depends(get_session)],
+    background_tasks: BackgroundTasks,
 ):
     settings = get_settings()
     if not settings.oidc_enabled:
@@ -102,6 +105,15 @@ async def entra_callback(
     try:
         token = await oauth.entra.authorize_access_token(request)
     except OAuthError as exc:
+        audit.record_and_emit(
+            session,
+            background_tasks=background_tasks,
+            action=AuditAction.AUTH_LOGIN,
+            category=AuditCategory.AUTHENTICATION,
+            outcome=AuditOutcome.FAILURE,
+            request=request,
+            detail={"method": "oidc", "error": str(exc)},
+        )
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(exc))
 
     claims = token.get("userinfo") or {}
@@ -115,6 +127,15 @@ async def entra_callback(
     app_token = create_access_token(
         user_id=user.id, email=user.email, role=user.role.value, name=user.display_name
     )
+    audit.record_and_emit(
+        session,
+        background_tasks=background_tasks,
+        action=AuditAction.AUTH_LOGIN,
+        category=AuditCategory.AUTHENTICATION,
+        actor=user,
+        request=request,
+        detail={"method": "oidc"},
+    )
     response = RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)
     _set_session_cookie(response, app_token)
     return response
@@ -122,7 +143,9 @@ async def entra_callback(
 
 @router.post("/dev-login")
 def dev_login(
+    request: Request,
     session: Annotated[Session, Depends(get_session)],
+    background_tasks: BackgroundTasks,
     email: Annotated[str, Form()] = "",
     name: Annotated[str, Form()] = "",
     role: Annotated[str, Form()] = "",
@@ -144,15 +167,51 @@ def dev_login(
     app_token = create_access_token(
         user_id=user.id, email=user.email, role=user.role.value, name=user.display_name
     )
+    audit.record_and_emit(
+        session,
+        background_tasks=background_tasks,
+        action=AuditAction.AUTH_LOGIN,
+        category=AuditCategory.AUTHENTICATION,
+        actor=user,
+        request=request,
+        detail={"method": "dev"},
+    )
     response = RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)
     _set_session_cookie(response, app_token)
     return response
 
 
 @router.post("/logout")
-def logout():
+def logout(
+    request: Request,
+    session: Annotated[Session, Depends(get_session)],
+    background_tasks: BackgroundTasks,
+):
     # POST (not GET) so logout can't be triggered cross-site by a stray link or
     # prefetch; the nav posts a small same-origin form.
+    actor = _user_from_cookie(request, session)
+    audit.record_and_emit(
+        session,
+        background_tasks=background_tasks,
+        action=AuditAction.AUTH_LOGOUT,
+        category=AuditCategory.AUTHENTICATION,
+        actor=actor,
+        request=request,
+    )
     response = RedirectResponse("/auth/login", status_code=status.HTTP_303_SEE_OTHER)
     response.delete_cookie(COOKIE_NAME)
     return response
+
+
+def _user_from_cookie(request: Request, session: Session) -> User | None:
+    """Best-effort actor resolution for logout (no auth dependency on the route)."""
+    import jwt
+
+    token = _extract_token(request)
+    if not token:
+        return None
+    try:
+        payload = decode_access_token(token)
+        return session.get(User, int(payload["sub"]))
+    except (jwt.PyJWTError, KeyError, ValueError):
+        return None

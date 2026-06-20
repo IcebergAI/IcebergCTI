@@ -89,6 +89,25 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_starttls: bool = False
 
+    # Security audit logging → SIEM. Runtime routing config lives in the DB
+    # (AuditSettings, admin-editable at /admin/audit); these env values are the
+    # boot default and the secret. ``audit_enabled`` is the master kill switch
+    # used until the DB settings row exists. The HTTP/HEC token is a secret and
+    # is read only from the environment — never written to the DB.
+    audit_enabled: bool = True
+    audit_http_token: str = ""
+    # Seed defaults for the initial AuditSettings row.
+    audit_methods: str = "stdout"  # comma-separated: stdout,syslog,http
+    audit_file_path: str = ""  # empty = stdout logger only
+    audit_syslog_host: str = "localhost"
+    audit_syslog_port: int = 514
+    audit_syslog_protocol: str = "UDP"  # UDP | TCP
+    audit_http_endpoint: str = ""
+
+    @property
+    def audit_default_methods(self) -> list[str]:
+        return [m.strip().lower() for m in self.audit_methods.split(",") if m.strip()]
+
     @property
     def max_attachment_bytes(self) -> int:
         return self.attachment_max_mb * 1024 * 1024

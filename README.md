@@ -20,7 +20,9 @@ Everything is **searchable** — full-text + faceted across the report library �
 ATT&CK techniques tagged across reports drive a **coverage heatmap** and downloadable
 **ATT&CK Navigator layers** (per report and per actor/malware/campaign entity). A writer-only
 **program maturity dashboard** rolls the same data up into CTI-CMM-style program-health
-indicators.
+indicators. Security-relevant events are captured to a **structured-JSON audit log** (OWASP
+application-logging shape) and can be **forwarded to a SIEM** (stdout/file, syslog, or HTTP
+event collector) — configurable in the admin console.
 
 > **Status:** Milestones 1–4 are implemented — the full vision plus a knowledge layer:
 > the analyst authoring loop, stakeholder requirement intake + tasking board + traceability,
@@ -245,6 +247,19 @@ a browsable look at what the other roles do, and a glossary of the intelligence 
    four capability dimensions scored CTI0 (Pre-foundational) → CTI3 (Leading) by thresholds.
    It is evidence to inform a self-assessment, **not a substitute** for a formal one.
 
+### Forward security events to your SIEM
+1. Sign in as **ADMIN** and open **Audit log** (left rail, `/admin/audit`). Security-relevant
+   events — logins/logouts, authorization denials and CSRF blocks, report lifecycle transitions,
+   admin taxonomy edits, and sensitive-file access — are recorded to a local trail **and** emitted
+   as structured JSON (OWASP application-logging shape).
+2. Choose one or more **emit methods** — `stdout`/file (for a sidecar shipper), **syslog** (RFC 5424
+   over UDP/TCP), or an **HTTP event collector** (Splunk HEC / Elastic / webhook) — set the endpoints
+   and a minimum severity, and **Save**. The HTTP/HEC token is read from `ICEBERG_AUDIT_HTTP_TOKEN`
+   and is never stored in the database.
+3. Click **Send test event** to verify connectivity end-to-end, then watch the filterable event
+   trail on the same page. A failing/unreachable SIEM never blocks a request — events still persist
+   locally and forward off the response path.
+
 The starter taxonomy is bundled as data (`src/iceberg/data/starter_tags.json`) and imported
 automatically on first boot. To (re-)import explicitly — e.g. after enriching the catalog or
 to load your own vocabulary — run the idempotent import step:
@@ -271,6 +286,9 @@ All settings use the `ICEBERG_` env prefix and can live in `.env` (see
 | `ICEBERG_DISSEMINATION_MAX_TLP` | Broadcast ceiling (default `AMBER`; RED/AMBER_STRICT withheld) |
 | `ICEBERG_EMAIL_BACKEND` + `ICEBERG_SMTP_*` | `console` (dev) or `smtp`; SMTP server settings |
 | `ICEBERG_PORTAL_BASE_URL` | Base URL used in notification email links |
+| `ICEBERG_AUDIT_ENABLED` + `ICEBERG_AUDIT_METHODS` | Master switch + default SIEM emit methods (`stdout`/`syslog`/`http`); editable live at `/admin/audit` |
+| `ICEBERG_AUDIT_SYSLOG_*` / `ICEBERG_AUDIT_HTTP_ENDPOINT` | syslog (RFC 5424) host/port/protocol + HTTP event-collector endpoint defaults |
+| `ICEBERG_AUDIT_HTTP_TOKEN` | **Secret** HEC/bearer token for the HTTP SIEM method (env-only — never stored in the DB) |
 
 ### Source reliability grading
 Notebook sources carry Admiralty/NATO-style grades: source reliability (`A-F`) plus

@@ -18,6 +18,8 @@ from .. import help_content
 from ..auth.dependencies import CurrentUser, ensure_role
 from ..models import (
     AnalyticConfidence,
+    AuditCategory,
+    AuditSeverity,
     IntelLevel,
     Notebook,
     ProductFormat,
@@ -34,6 +36,7 @@ from ..rendering.typst import TypstNotAvailable, TypstRenderError, typst_availab
 from ..services import (
     ach as ach_service,
     attachments as attachment_service,
+    audit,
     diamond as diamond_service,
     dissemination,
     feedback as feedback_service,
@@ -250,6 +253,7 @@ def report_citations(
 @router.post("/reports/{report_id}/transition")
 def report_transition(
     report_id: int,
+    request: Request,
     session: SessionDep,
     user: CurrentUser,
     background_tasks: BackgroundTasks,
@@ -260,9 +264,34 @@ def report_transition(
         report = lifecycle.transition(session, report, target, actor=user)
     except lifecycle.LifecycleError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc))
+    recipients = None
     if report.status == ReportStatus.PUBLISHED:
-        dissemination.queue_dissemination(session, report, background_tasks)
+        recipients = dissemination.queue_dissemination(session, report, background_tasks)
+    _audit_transition(session, report, user, request, background_tasks, recipients)
     return _redirect(f"/reports/{report_id}/edit")
+
+
+def _audit_transition(session, report, user, request, background_tasks, recipients):
+    action = audit.lifecycle_action(report.status)
+    if action is None:
+        return
+    detail = {"title": report.title, "tlp": str(report.tlp), "status": str(report.status)}
+    severity = AuditSeverity.INFO
+    if report.status == ReportStatus.PUBLISHED:
+        severity = AuditSeverity.WARNING
+        detail["recipients"] = recipients
+    audit.record_and_emit(
+        session,
+        background_tasks=background_tasks,
+        action=action,
+        category=AuditCategory.LIFECYCLE,
+        severity=severity,
+        actor=user,
+        request=request,
+        resource_type="report",
+        resource_id=report.id,
+        detail=detail,
+    )
 
 
 @router.post("/reports/{report_id}/render")

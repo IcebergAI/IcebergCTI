@@ -13,6 +13,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware
 
 from .api import api_router
+from .auth.audit_middleware import AuditMiddleware
 from .auth.csrf import SameOriginCSRFMiddleware
 from .auth.routes import router as auth_router
 from .config import get_settings
@@ -35,6 +36,10 @@ def create_app() -> FastAPI:
     app.add_middleware(SameOriginCSRFMiddleware)
     # Used by Authlib for the OIDC state/nonce during the code flow.
     app.add_middleware(SessionMiddleware, secret_key=settings.secret_key)
+    # Security audit capture. Added last so it is the OUTERMOST middleware and
+    # observes the final response — including the 403 produced by the CSRF
+    # middleware and role-guard denials raised deep in the app.
+    app.add_middleware(AuditMiddleware)
 
     app.include_router(auth_router)
     app.include_router(api_router, prefix="/api")
