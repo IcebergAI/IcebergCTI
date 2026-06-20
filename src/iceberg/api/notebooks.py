@@ -4,7 +4,6 @@ from typing import Annotated
 
 from fastapi import (
     APIRouter,
-    BackgroundTasks,
     Depends,
     File,
     Form,
@@ -130,7 +129,6 @@ def add_source(
     notebook_id: int,
     body: SourceCreate,
     session: SessionDep,
-    background_tasks: BackgroundTasks,
     _w: Writer,
 ) -> Source:
     nb = _get_notebook(session, notebook_id)
@@ -143,7 +141,6 @@ def add_source(
         reliability=body.reliability,
         credibility=body.credibility,
         grading_rationale=body.grading_rationale,
-        background_tasks=background_tasks,
     )
 
 

@@ -1,7 +1,7 @@
 """Notebook collection-material persistence shared by the JSON API and the
 portal, so the two presentation layers create rows through one code path."""
 
-from fastapi import BackgroundTasks, HTTPException, status
+from fastapi import HTTPException, status
 from sqlmodel import Session
 
 from ..models import (
@@ -9,7 +9,6 @@ from ..models import (
     Notebook,
     Source,
     SourceCredibility,
-    SourceGradingOrigin,
     SourceReliability,
 )
 from . import source_grading
@@ -42,31 +41,23 @@ def add_source(
     reliability: SourceReliability | None = None,
     credibility: SourceCredibility | None = None,
     grading_rationale: str = "",
-    background_tasks: BackgroundTasks | None = None,
 ) -> Source:
     source = Source(
         notebook_id=notebook.id, title=title, reference=reference, summary=summary
     )
     if reliability or credibility:
-        # Manual grade: applied inline (no network).
         source_grading.set_manual_grade(
             source,
             reliability=reliability,
             credibility=credibility,
             rationale=grading_rationale,
         )
-    elif background_tasks is not None and source_grading.needs_online_grading(source):
-        # Auto-grade that would fetch a page / call an LLM: defer past the
-        # response so creating a source never blocks on external network I/O.
-        source.grading_origin = SourceGradingOrigin.PENDING
     else:
-        # Offline heuristic (or off-request caller): grade inline — it's instant.
+        # Offline heuristic grade — instant, no network.
         source_grading.auto_grade(source)
     session.add(source)
     session.commit()
     session.refresh(source)
-    if source.grading_origin == SourceGradingOrigin.PENDING and background_tasks is not None:
-        background_tasks.add_task(source_grading.grade_source_async, source.id)
     return source
 
 

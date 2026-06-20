@@ -207,8 +207,7 @@ def _tradecraft(reports: list[Report]) -> dict:
 
     def _has_graded_source(r: Report) -> bool:
         return any(
-            SourceGradingOrigin(s.grading_origin)
-            not in (SourceGradingOrigin.UNGRADED, SourceGradingOrigin.PENDING)
+            SourceGradingOrigin(s.grading_origin) != SourceGradingOrigin.UNGRADED
             for s in r.cited_sources
         )
 
