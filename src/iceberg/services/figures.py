@@ -20,7 +20,6 @@ caption/alt text is HTML-escaped at render time so it can never inject markup.
 
 import base64
 import html
-import re
 import uuid
 from pathlib import Path
 
@@ -28,6 +27,7 @@ from fastapi import HTTPException, UploadFile, status
 from sqlmodel import Session, col, select
 
 from ..config import get_settings
+from ..embeds import FIGURE_TOKEN_RE  # noqa: F401 — re-exported for callers
 from ..models import Figure, Notebook, Report
 
 # Canonical MIME -> allowed file extensions. PNG/JPEG/GIF only (browser data-URI
@@ -43,14 +43,6 @@ _CHUNK = 1024 * 1024  # 1 MiB streaming reads
 
 class _TooLarge(Exception):
     """Internal sentinel: upload exceeded the configured size cap mid-stream."""
-
-
-# --------------------------------------------------------------------------- #
-# Token grammar (the one place that knows the `[[figure:ID]]` syntax). The Typst
-# path re-declares an equivalent literal in rendering/typst.py to keep the
-# rendering layer free of a service import.
-# --------------------------------------------------------------------------- #
-FIGURE_TOKEN_RE = re.compile(r"\[\[figure:(\d+)\]\]")
 
 
 def referenced_ids(text: str) -> list[int]:

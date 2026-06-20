@@ -20,21 +20,13 @@ hypotheses / evidence as rows with **stable string ids** and ``ratings`` keyed
 ``"{hid}:{eid}"`` so deleting a row never silently re-keys the matrix.
 """
 
-import re
-from xml.sax.saxutils import escape  # nosec B406 — escapes text for SVG output, never parses XML
-
 from fastapi import HTTPException, status
 from sqlmodel import Session, col, select
 
+from ..embeds import ACH_TOKEN_RE  # noqa: F401 — re-exported for callers
 from ..models import ACHCellRating, ACHModel, Notebook, Report, utcnow
-
-# --------------------------------------------------------------------------- #
-# Token grammar (the one place that knows the `[[ach:ID]]` syntax). The Typst
-# path re-declares an equivalent literal in rendering/typst.py to keep the
-# rendering layer free of a service import; the web/preview pipeline lives in
-# services/product_html.py (it injects the SVG after nh3 sanitisation).
-# --------------------------------------------------------------------------- #
-ACH_TOKEN_RE = re.compile(r"\[\[ach:(\d+)\]\]")
+from ..rendering.svg import MONO as _MONO, SANS as _SANS, escape, wrap_lines as _wrap_lines
+from ..rendering.svg import placard as _svg_placard
 
 
 def referenced_ids(text: str) -> list[int]:
@@ -237,9 +229,6 @@ def scoped_ach_svg(session: Session, notebook_id: int, text: str) -> dict[int, s
 # --------------------------------------------------------------------------- #
 # SVG matrix
 # --------------------------------------------------------------------------- #
-_SANS = "Archivo, 'Helvetica Neue', Arial, sans-serif"
-_MONO = "'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace"
-
 # Glyph + fill + ink per rating. Both the glyph AND the colour encode the rating
 # (never colour alone) — same accessibility discipline as the diamond confidence
 # pip-meter. Consistency reads cool/supportive, inconsistency warm/caution.
@@ -267,48 +256,13 @@ _SUMMARY_H = 56
 _FOOTER = 30
 
 
-def _wrap_lines(text: str, *, max_chars: int = 30, max_lines: int = 3) -> list[str]:
-    """Greedy word-wrap with hard-truncation + ellipsis when overflowing."""
-    raw = " ".join((text or "").split())
-    if not raw:
-        return []
-    words = raw.split(" ")
-    lines: list[str] = []
-    cur = ""
-    i = 0
-    while i < len(words) and len(lines) < max_lines:
-        word = words[i]
-        if len(word) > max_chars:
-            word = word[: max_chars - 1] + "…"
-        candidate = (cur + " " + word).strip()
-        if len(candidate) <= max_chars or cur == "":
-            cur = candidate
-            i += 1
-        else:
-            lines.append(cur)
-            cur = ""
-    if cur and len(lines) < max_lines:
-        lines.append(cur)
-    if i < len(words) and lines:
-        last = lines[-1]
-        if not last.endswith("…"):
-            lines[-1] = last[: max_chars - 2].rstrip() + " …"
-    return lines
-
-
 def _placard(message: str) -> str:
     """An empty-matrix SVG — meaningful when there are no hypotheses/evidence yet."""
-    return (
-        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 200" '
-        'width="600" height="200" role="img" aria-label="Empty ACH matrix">'
-        '<rect x="1" y="1" width="598" height="198" rx="14" ry="14" '
-        'fill="#fbfdfe" stroke="#e3e9ef" stroke-width="1.5"/>'
-        f'<text x="30" y="36" font-family="{_MONO}" font-size="10.5" '
-        'font-weight="700" letter-spacing="1.6" fill="#1f6f93">'
-        "ANALYSIS OF COMPETING HYPOTHESES</text>"
-        f'<text x="300" y="115" text-anchor="middle" font-family="{_SANS}" '
-        f'font-size="14" font-style="italic" fill="#a6aeb8">{escape(message)}</text>'
-        "</svg>"
+    return _svg_placard(
+        "ANALYSIS OF COMPETING HYPOTHESES",
+        message,
+        height=200,
+        aria_label="Empty ACH matrix",
     )
 
 
