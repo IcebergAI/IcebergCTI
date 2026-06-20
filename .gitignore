@@ -13,6 +13,8 @@ htmlcov/
 
 # App data
 *.db
+*.db-wal
+*.db-shm
 /rendered/
 /attachments/
 /figures/
