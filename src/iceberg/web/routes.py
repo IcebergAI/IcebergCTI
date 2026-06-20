@@ -65,6 +65,7 @@ from ..services import (
     dissemination,
     figures as figure_service,
     lifecycle,
+    maturity as maturity_service,
     notebooks as notebook_service,
     product_html as product_html_service,
     relationships as rel_service,
@@ -1322,6 +1323,18 @@ def matrix_view(request: Request, session: SessionDep, user: CurrentUser):
             "matrix": attack_service.coverage_matrix(reports),
             "report_count": len(reports),
         },
+    )
+
+
+@router.get("/maturity")
+def maturity_view(request: Request, session: SessionDep, user: CurrentUser):
+    """Writer-only CTI program maturity & effectiveness dashboard (backlog H):
+    pure aggregation over existing data + an indicative CTI-CMM rollup."""
+    _require_writer(user)
+    return templates.TemplateResponse(
+        request,
+        "maturity.html",
+        {"user": user, "m": maturity_service.program_maturity(session)},
     )
 
 

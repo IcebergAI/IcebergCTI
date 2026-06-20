@@ -326,6 +326,26 @@ CONCEPTS: list[Concept] = [
             "EXEC_BRIEF / ONE_PAGER — Key-Judgements-only (body and caveats omitted).",
         ],
     ),
+    Concept(
+        slug="program-maturity",
+        term="Program maturity & effectiveness (CTI-CMM)",
+        category="Knowledge layer",
+        body=(
+            "The Maturity dashboard (writers only) measures the health of the "
+            "intelligence programme itself, not individual reports — production, "
+            "requirement coverage, dissemination reach, and tradecraft adoption, all "
+            "derived from existing data. On top sits an indicative CTI-CMM-style "
+            "rollup: a few capability dimensions scored CTI0 (Pre-foundational) to "
+            "CTI3 (Leading). It is evidence to inform a formal CTI-CMM "
+            "self-assessment, not a substitute for one."
+        ),
+        points=[
+            "CTI0 Pre-foundational · CTI1 Foundational · CTI2 Advanced · CTI3 Leading.",
+            "Pure aggregation over reports, requirements, dissemination and sources.",
+            "Tradecraft adoption = share of published reports applying the analytic "
+            "standards (source grading, judgements, confidence, analytic models, ATT&CK).",
+        ],
+    ),
 ]
 
 # --------------------------------------------------------------------------- #

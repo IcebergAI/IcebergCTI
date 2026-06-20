@@ -10,7 +10,7 @@ The guiding principle is **respect that identity**. The highest-leverage moves a
 
 This roadmap **prioritises two themes** — *Analytic Tradecraft (ICD 203)* and *Knowledge Graph / Actor Profiles* — and summarises the remaining opportunities as a secondary backlog.
 
-> **Status (2026-06-18).** Both prioritised themes are now **fully shipped** — Priority 1 (1a source grading, 1b estimative language, 1c judgement scaffolding **incl. the ACH stretch**) and Priority 2 (2a aliases, 2b attribution profiles, 2c entity relationships). From the secondary backlog, **A (ATT&CK Navigator export + matrix)** has also shipped. What remains is the secondary backlog **B–F** plus two scoped follow-ups, all tracked as GitHub FRs (referenced inline below). The roadmap's centre of gravity has moved from *analytic rigour / knowledge graph* to **interop (STIX), dissemination/process, and need-to-know governance**.
+> **Status (2026-06-18).** Both prioritised themes are now **fully shipped** — Priority 1 (1a source grading, 1b estimative language, 1c judgement scaffolding **incl. the ACH stretch**) and Priority 2 (2a aliases, 2b attribution profiles, 2c entity relationships). From the secondary backlog, **A (ATT&CK Navigator export + matrix)** has also shipped. What remains is the secondary backlog **B–I** plus two scoped follow-ups, all tracked as GitHub FRs (referenced inline below). The roadmap's centre of gravity has moved from *analytic rigour / knowledge graph* to **interop (STIX), dissemination/process, need-to-know governance, program effectiveness, and inbound collection**.
 
 ## Current-state assessment (grounded in the code)
 
@@ -91,12 +91,14 @@ This roadmap **prioritises two themes** — *Analytic Tradecraft (ICD 203)* and 
 | E | [#32](../../issues/32) | **PAP (Permissible Actions Protocol)** beside TLP | Governs *actions* on intel, complementing TLP's *sharing* marking. | Low / Low |
 | F | [#33](../../issues/33) | **Need-to-know / compartmentation fix** | Stakeholders can currently read all raw notebook material — a handling-discipline gap. | High (security) / Medium |
 | G | [#42](../../issues/42) | **Intelligence-requirement kinds (PIR / GIR / RFI) + PIR coverage** | Splits the single undifferentiated `Requirement` into doctrine kinds — **PIR** (decision-tied, time-bound), **GIR** (standing baseline), **RFI** (ad-hoc) — so intake is classified, PIRs outrank on the tasking board, and a PIR **collection-coverage/gap** view surfaces requirements nothing yet addresses. Additive model extension; no dissemination change. Natural groundwork for D. | Medium / Medium |
+| H | [#49](../../issues/49) ✅ | **CTI program maturity & effectiveness dashboard** — ✅ **implemented** | Writer-only `/maturity` view deriving program-health indicators — requirement coverage (extends `pir_coverage` to all kinds), production metrics, dissemination reach, tradecraft-adoption share — from existing data, plus an **indicative** [CTI-CMM](https://cti-cmm.org/)-style maturity rollup (four capability dimensions scored CTI0–CTI3 by thresholds, framed as evidence for a self-assessment, not a substitute). **Pure aggregation, no schema change** (`services/maturity.py`). Leadership-facing evidence; pairs with D once feedback exists. *Inspired by [zsazsa](https://github.com/cudeso/zsazsa).* | High / Medium — shipped |
+| I | [#50](../../issues/50) | **Inbound collection — external feed ingestion into notebooks** | A pluggable ingestion backend (RSS/Atom first; TAXII / MISP-pull later) landing pulled *reporting* in a writer-only triage inbox, from which an analyst promotes an item into a notebook as a `Source` (auto-grading via the existing path). Optional opt-in LLM relevance triage. Closes the collection half of the cycle — the recurring corporate ask — while staying **IOC-free** (ingests reporting, not indicators). *Inspired by [zsazsa](https://github.com/cudeso/zsazsa)'s MISP-backed collection.* | High / Large |
 
 ---
 
 ## Suggested sequencing
 
-**Done:** ~~A (Navigator export)~~, ~~Priority 1 (1a/1b/1c incl. ACH)~~, ~~Priority 2 (2a/2b/2c)~~ — all ✅.
+**Done:** ~~A (Navigator export)~~, ~~Priority 1 (1a/1b/1c incl. ACH)~~, ~~Priority 2 (2a/2b/2c)~~, ~~H (maturity dashboard)~~ — all ✅.
 
 **What's next, in recommended order:**
 1. **B — STIX 2.1 / TAXII export ([#29](../../issues/29)).** The highest-leverage remaining build: the Priority-2 entity graph (aliases + attribution + STIX-shaped relationships) and backlog A's ATT&CK derivation are exactly the SDO/relationship substrate a STIX `report` export rides on. Turns the finished product into a downstream-consumable artefact without becoming an IOC store.
@@ -113,5 +115,6 @@ When each item is implemented, validate in the style of the existing suite (in-m
 - **2c:** relationship CRUD + scoping tests mirroring the Diamond Model test pattern.
 - **B (STIX export):** schema-conformant SDO/relationship output for a report + its tagged entities (validate against a STIX 2.1 validator or the library's own checks); access-scoped like search.
 - **G (requirement kinds):** kind round-trip (API + portal), PIR-first tasking-board ordering, and the PIR coverage/gap aggregation (uncovered + overdue + empty state), with unchanged ownership/role rules.
+- **H (maturity dashboard):** ✅ done — `program_maturity` aggregation (production/coverage/dissemination/tradecraft counts + rates), the CTI-CMM `_level` band thresholds, empty-DB safety, writer-only route gating (stakeholder → 403), and the template render (`tests/test_maturity.py`).
 - Update **CLAUDE.md** (domain model + roadmap) and **README.md** alongside any implementation, per the repo's maintenance rule.
 
