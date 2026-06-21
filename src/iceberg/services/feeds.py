@@ -34,6 +34,7 @@ from sqlmodel import Session, col, select
 from ..config import get_settings
 from ..models import Feed, FeedItem, Notebook, Source, utcnow
 from . import notebooks as notebook_service
+from . import proxy, proxy_settings
 
 logger = logging.getLogger("iceberg.feeds")
 
@@ -172,12 +173,14 @@ def fetch_feed(session: Session, feed: Feed) -> int:
     "fetch all" loop stay isolated from one bad feed (mirrors the dissemination
     per-recipient pattern)."""
     settings = get_settings()
+    proxy_kwargs = proxy.resolve(proxy_settings.get(session), feed.url)
     try:
         resp = httpx.get(
             feed.url,
             timeout=settings.rss_fetch_timeout or _DEFAULT_TIMEOUT,
             follow_redirects=True,
             headers={"User-Agent": "Iceberg-CTI/feed-fetcher"},
+            **proxy_kwargs,
         )
         resp.raise_for_status()
         parsed = feedparser.parse(resp.content)

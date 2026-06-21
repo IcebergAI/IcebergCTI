@@ -88,6 +88,11 @@ as an auto-graded source. The fetcher is opt-in, timeout-bounded and failure-iso
 content is sanitised, and feed URLs are admin-only (the SSRF-containment boundary). Article bodies
 are retained as the seam for future IOC extraction + summarisation.*
 
+*All outbound HTTP (RSS fetching and the SIEM HTTP sink) can be routed through a **global proxy**
+configured at `/admin/proxy` — honour the **system** proxy (env vars), connect **directly**, or use
+an **explicit** proxy with a no-proxy exclusion list (local domains / IP CIDR ranges). Proxy
+credentials stay in the environment, never the DB.*
+
 ### Full-text + faceted search
 ![Search](docs/images/search.png)
 *Full-text search over the report library (SQLite FTS5, bm25), narrowed by tag / kind /

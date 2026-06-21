@@ -187,6 +187,18 @@ class AnalyticConfidence(StrEnum):
     HIGH = "HIGH"
 
 
+class ProxyMode(StrEnum):
+    """How outbound HTTP connections are routed (global proxy connectivity).
+
+    SYSTEM honours the environment proxy vars (``HTTP(S)_PROXY``/``NO_PROXY``);
+    NONE always connects directly (env ignored); EXPLICIT routes through a
+    configured proxy except for hosts in the no-proxy exclusion list."""
+
+    NONE = "NONE"
+    SYSTEM = "SYSTEM"
+    EXPLICIT = "EXPLICIT"
+
+
 class AuditOutcome(StrEnum):
     """Whether a security-relevant event succeeded or was denied/failed."""
 
@@ -249,6 +261,9 @@ class AuditAction(StrEnum):
     # Audit configuration (admin)
     AUDIT_SETTINGS_UPDATED = "AUDIT_SETTINGS_UPDATED"
     AUDIT_TEST = "AUDIT_TEST"
+    # Outbound proxy configuration (admin)
+    PROXY_SETTINGS_UPDATED = "PROXY_SETTINGS_UPDATED"
+    PROXY_TEST = "PROXY_TEST"
     # Inbound collection — RSS feed configuration (admin)
     FEED_CREATED = "FEED_CREATED"
     FEED_UPDATED = "FEED_UPDATED"
@@ -907,4 +922,21 @@ class AuditSettings(SQLModel, table=True):
     # http event-collector / webhook sink (token from env)
     http_endpoint: str = ""
     http_verify_tls: bool = True
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class ProxySettings(SQLModel, table=True):
+    """Global outbound-proxy configuration, admin-editable (single row, id=1).
+
+    Holds only non-secret routing config — proxy credentials, when needed, are
+    read from the environment (``ICEBERG_PROXY_USERNAME``/``ICEBERG_PROXY_PASSWORD``)
+    and injected at call time, never persisted here. See ``services/proxy.py``.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    mode: ProxyMode = Field(default=ProxyMode.SYSTEM)
+    # EXPLICIT mode: scheme://host:port (no credentials).
+    proxy_url: str = ""
+    # EXPLICIT mode: comma-separated domains/suffixes + CIDR ranges to bypass.
+    no_proxy: str = ""
     updated_at: datetime = Field(default_factory=utcnow)

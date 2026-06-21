@@ -102,6 +102,21 @@ class Settings(BaseSettings):
     rss_max_items_per_feed: int = 100
     rss_allow_private_hosts: bool = False
 
+    # Global outbound proxy connectivity. Routing config (mode/url/no-proxy) is
+    # admin-editable on the ProxySettings DB row; these env values seed that row.
+    # Proxy CREDENTIALS are a secret — read only from the environment, injected
+    # into the proxy URL at call time, and never written to the DB. See
+    # services/proxy.py. Modes: system (honour env proxy vars) | none (direct) |
+    # explicit (use proxy_url, bypassing the no-proxy list).
+    proxy_mode: str = "system"
+    proxy_url: str = ""
+    proxy_no_proxy: str = (
+        "localhost,127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,"
+        "192.168.0.0/16,169.254.0.0/16,::1"
+    )
+    proxy_username: str = ""
+    proxy_password: str = ""
+
     # Security audit logging → SIEM. Runtime routing config lives in the DB
     # (AuditSettings, admin-editable at /admin/audit); these env values are the
     # boot default and the secret. ``audit_enabled`` is the master kill switch

@@ -25,7 +25,8 @@ from datetime import datetime, timezone
 import httpx
 
 from ..config import get_settings
-from ..models import AuditSettings, audit_severity_rank
+from ..models import AuditSettings, ProxySettings, audit_severity_rank
+from . import proxy as proxy_service
 
 logger = logging.getLogger("iceberg.audit")
 
@@ -37,12 +38,17 @@ _HTTP_TIMEOUT = 5.0
 _SOCKET_TIMEOUT = 5.0
 
 
-def emit(event: dict, settings: AuditSettings) -> None:
+def emit(
+    event: dict,
+    settings: AuditSettings,
+    proxy_settings: ProxySettings | None = None,
+) -> None:
     """Dispatch one OWASP-shaped event dict to every enabled method.
 
     No-ops when auditing is disabled or the event is below the configured
     minimum severity. Each method is isolated: one failing sink never stops the
-    others and never propagates.
+    others and never propagates. ``proxy_settings`` (when given) routes the HTTP
+    sink through the global outbound proxy.
     """
     if not settings.enabled:
         return
@@ -57,12 +63,12 @@ def emit(event: dict, settings: AuditSettings) -> None:
     if "syslog" in methods:
         _safe(_emit_syslog, event, settings)
     if "http" in methods:
-        _safe(_emit_http, event, settings)
+        _safe(_emit_http, event, settings, proxy_settings)
 
 
-def _safe(fn, event: dict, settings: AuditSettings) -> None:
+def _safe(fn, *args) -> None:
     try:
-        fn(event, settings)
+        fn(*args)
     except Exception:  # noqa: BLE001 — a failing sink must never break the caller
         logger.exception("audit SIEM emit failed via %s", fn.__name__)
 
@@ -97,18 +103,28 @@ def _emit_syslog(event: dict, settings: AuditSettings) -> None:
             sock.send(data)
 
 
-def _emit_http(event: dict, settings: AuditSettings) -> None:
+def _emit_http(
+    event: dict,
+    settings: AuditSettings,
+    proxy_settings: ProxySettings | None = None,
+) -> None:
     if not settings.http_endpoint:
         return
     token = get_settings().audit_http_token
     headers = {"Content-Type": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
+    proxy_kwargs = (
+        proxy_service.resolve(proxy_settings, settings.http_endpoint)
+        if proxy_settings is not None
+        else {}
+    )
     resp = httpx.post(
         settings.http_endpoint,
         content=json.dumps(event, separators=(",", ":"), sort_keys=True),
         headers=headers,
         timeout=_HTTP_TIMEOUT,
         verify=settings.http_verify_tls,
+        **proxy_kwargs,
     )
     resp.raise_for_status()
