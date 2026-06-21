@@ -82,12 +82,19 @@ the cycle. Feedback surfaces on the report (for authors) and the requirement det
 its response / satisfaction / useful rates roll up into the maturity dashboard.*
 
 ### Inbound collection — RSS feed ingestion
+![Feed reader](docs/images/feed-reader.png)
 *An admin configures external **RSS/Atom feeds**; their articles are polled into a writer-only
 **feed reader** where an analyst **sends an article to a notebook** (existing or new) — capturing it
 as an auto-graded source. The fetcher is opt-in, timeout-bounded and failure-isolated, fetched
 content is sanitised, and feed URLs are admin-only (the SSRF-containment boundary). Article bodies
 are retained as the seam for future IOC extraction + summarisation.*
 
+![Admin — RSS feeds](docs/images/admin-feeds.png)
+*Admins manage the feed list at `/admin/feeds` — add/enable feeds, see last-fetch status, and
+trigger an on-demand fetch.*
+
+### Outbound proxy connectivity
+![Outbound proxy](docs/images/outbound-proxy.png)
 *All outbound HTTP (RSS fetching and the SIEM HTTP sink) can be routed through a **global proxy**
 configured at `/admin/proxy` — honour the **system** proxy (env vars), connect **directly**, or use
 an **explicit** proxy with a no-proxy exclusion list (local domains / IP CIDR ranges). Proxy
