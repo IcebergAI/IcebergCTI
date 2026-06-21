@@ -247,7 +247,12 @@ def prune_rendered_products(
         key = (product.report_id, ProductFormat(product.format))
         seen[key] = seen.get(key, 0) + 1
         too_many = keep and seen[key] > keep
-        too_old = cutoff is not None and product.rendered_at < cutoff
+        rendered_at = product.rendered_at
+        if cutoff is not None and rendered_at.tzinfo is None:
+            # SQLite returns stored datetimes as naive values. Treat those as
+            # UTC so age retention can compare them with utcnow().
+            rendered_at = rendered_at.replace(tzinfo=cutoff.tzinfo)
+        too_old = cutoff is not None and rendered_at < cutoff
         if too_many or too_old:
             stale.append(product)
 

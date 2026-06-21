@@ -343,7 +343,7 @@ def test_render_retention_prunes_old_rows_and_files(engine, tmp_path, monkeypatc
         session.commit()
         settings = report_service.get_settings()
         monkeypatch.setattr(settings, "render_retention_keep", 2)
-        monkeypatch.setattr(settings, "render_retention_days", 0)
+        monkeypatch.setattr(settings, "render_retention_days", 90)
         pruned = report_service.prune_rendered_products(
             session, report_id=report.id, fmt=ProductFormat.FULL
         )
