@@ -236,6 +236,7 @@ def test_send_item_to_notebook_creates_graded_source(engine):
         assert source.reference == "https://example.com/a1"
         # nh3 strips the tags for the notebook source summary.
         assert source.summary == "body"
+        assert source.content_md == "body"
         # Auto-grading ran (offline heuristic) — origin is set, not UNGRADED.
         assert source.grading_origin.value != "UNGRADED"
         session.refresh(item)

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from sqlmodel import Session, select
 
 from ..auth.dependencies import CurrentUser, require_role
@@ -33,9 +33,15 @@ from ..schemas import (
     TransitionRequest,
 )
 from ..rendering.typst import TypstNotAvailable, TypstRenderError
-from ..services import audit, dissemination, lifecycle
-from ..services import misp as misp_service
-from ..services import proxy_settings as proxy_settings_service
+from ..services import (
+    audit,
+    dissemination,
+    lifecycle,
+    misp as misp_service,
+    proxy_settings as proxy_settings_service,
+    related,
+    stix as stix_service,
+)
 from ..services.attachments import set_report_attachments
 from ..services.reports import (
     create_report as create_report_record,
@@ -69,6 +75,13 @@ def list_reports(session: SessionDep, user: CurrentUser) -> list[Report]:
     stmt = select(Report).order_by(Report.updated_at.desc())
     if user.role == Role.STAKEHOLDER:
         stmt = stmt.where(Report.status == ReportStatus.PUBLISHED)
+        visible = []
+        for report in session.exec(stmt).all():
+            try:
+                visible.append(ensure_visible(report, user))
+            except HTTPException:
+                continue
+        return visible
     return list(session.exec(stmt).all())
 
 
@@ -95,6 +108,15 @@ def get_report(report_id: int, session: SessionDep, user: CurrentUser) -> dict:
         "cited_sources": report.cited_sources,
         "cited_attachments": report.cited_attachments,
         "tags": report.tags,
+    }
+
+
+@router.get("/{report_id}/related")
+def related_reports(report_id: int, session: SessionDep, user: CurrentUser) -> dict:
+    report = ensure_visible(_get_report(session, report_id), user)
+    return {
+        "report_id": report.id,
+        "results": related.related_reports(session, report=report, user=user),
     }
 
 
@@ -240,6 +262,7 @@ def transition_report(
     recipients = None
     if report.status == ReportStatus.PUBLISHED:
         recipients = dissemination.queue_dissemination(session, report, background_tasks)
+        related.upsert_report_embedding(session, report)
         session.refresh(report)  # dissemination's commit expires the instance
     _audit_transition(session, report, user, request, background_tasks, recipients)
     session.refresh(report)  # the audit commit also expires the instance
@@ -319,4 +342,16 @@ def download_product(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Rendered file missing")
     return FileResponse(
         path, media_type="application/pdf", filename=path.name
+    )
+
+
+@router.get("/{report_id}/stix")
+def export_stix(report_id: int, session: SessionDep, user: CurrentUser):
+    report = ensure_visible(_get_report(session, report_id), user)
+    bundle = stix_service.report_bundle(report)
+    filename = f"iceberg-report-{report_id}-stix.json"
+    return JSONResponse(
+        bundle,
+        media_type="application/stix+json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

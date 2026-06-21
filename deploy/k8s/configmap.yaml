@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: iceberg-config
+data:
+  ICEBERG_ENVIRONMENT: "prod"
+  ICEBERG_AUTO_MIGRATE: "false"
+  ICEBERG_DATABASE_URL: "sqlite:////data/iceberg.db"
+  ICEBERG_ATTACHMENTS_DIR: "/data/attachments"
+  ICEBERG_FIGURES_DIR: "/data/figures"
+  ICEBERG_RENDER_OUTPUT_DIR: "/data/rendered"
+  ICEBERG_DEV_AUTH: "false"
+  ICEBERG_PORTAL_BASE_URL: "https://iceberg.example.com"

@@ -27,6 +27,7 @@ from ..models import (
     Notebook,
     ProductFormat,
     ProductUsefulness,
+    AudienceGroup,
     RenderedProduct,
     Report,
     ReportStatus,
@@ -49,8 +50,10 @@ from ..services import (
     misp_settings as misp_settings_service,
     product_html as product_html_service,
     proxy_settings as proxy_settings_service,
+    related,
     requirements as req_service,
     tags as tag_service,
+    tradecraft as tradecraft_service,
 )
 from ..services.reports import (
     delete_rendered_product,
@@ -78,7 +81,14 @@ def reports_list(request: Request, session: SessionDep, user: CurrentUser):
     stmt = select(Report).order_by(Report.updated_at.desc())
     if user.role == Role.STAKEHOLDER:
         stmt = stmt.where(Report.status == ReportStatus.PUBLISHED)
-    reports = list(session.exec(stmt).all())
+        reports = []
+        for report in session.exec(stmt).all():
+            try:
+                reports.append(ensure_visible(report, user))
+            except HTTPException:
+                continue
+    else:
+        reports = list(session.exec(stmt).all())
     return templates.TemplateResponse(
         request, "reports_list.html", {"user": user, "reports": reports}
     )
@@ -138,6 +148,7 @@ def report_view(
             "received_feedback": received_feedback,
             "usefulness_options": list(ProductUsefulness),
             "satisfaction_options": list(RfiSatisfaction),
+            "related_reports": related.related_reports(session, report=report, user=user),
         },
     )
 
@@ -201,6 +212,10 @@ def report_edit(
             "preview_html": product_html_service.render_report_product_html(
                 session, report
             ),
+            "preview_warnings": tradecraft_service.hedging_warnings(
+                body_md=report.body_md,
+                key_judgements=report.key_judgements,
+            ),
             "diamonds": list(notebook.diamond_models),
             "diamond_svgs": {
                 d.id: diamond_service.render_diamond_svg(d)
@@ -217,6 +232,8 @@ def report_edit(
             "linked_req_ids": {r.id for r in report.requirements},
             "all_tags": tag_service.offerable_tags(session, report.tags),
             "linked_tag_ids": {t.id for t in report.tags},
+            "all_audience_groups": list(session.exec(select(AudienceGroup).order_by(AudienceGroup.name)).all()),
+            "linked_audience_group_ids": {g.id for g in report.audience_groups},
             "probability_yardstick": help_content.PROBABILITY_YARDSTICK,
             "updated": updated,
         },
@@ -337,6 +354,7 @@ def report_transition(
     recipients = None
     if report.status == ReportStatus.PUBLISHED:
         recipients = dissemination.queue_dissemination(session, report, background_tasks)
+        related.upsert_report_embedding(session, report)
     _audit_transition(session, report, user, request, background_tasks, recipients)
     return _redirect(f"/reports/{report_id}/edit")
 
@@ -462,6 +480,24 @@ def report_tags(
     return _redirect(f"/reports/{report_id}/edit?updated=tags#tags")
 
 
+@router.post("/reports/{report_id}/audience")
+def report_audience(
+    report_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+    group_ids: Annotated[list[int], Form()] = [],
+):
+    ensure_role(user, Role.ADMIN, detail="Admin role required")
+    report = _get_report(session, report_id)
+    groups = [
+        group for gid in group_ids if (group := session.get(AudienceGroup, gid)) is not None
+    ]
+    report.audience_groups = groups
+    session.add(report)
+    session.commit()
+    return _redirect(f"/reports/{report_id}/edit?updated=audience#audience")
+
+
 @router.post("/notebooks/{notebook_id}/requirements")
 def notebook_requirements(
     notebook_id: int,
@@ -475,5 +511,3 @@ def notebook_requirements(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Notebook not found")
     req_service.set_notebook_requirements(session, nb, requirement_ids)
     return _redirect(f"/notebooks/{notebook_id}")
-
-

@@ -23,7 +23,8 @@
 <div class="editor-shell" x-data="reportEditor('report-editor-data')">
   <script type="application/json" id="report-editor-data">
     {{ {'body': report.body_md, 'kj': report.key_judgements, 'ka': report.key_assumptions,
-        'gaps': report.intelligence_gaps, 'previewHtml': preview_html, 'reportId': report.id} | tojson }}
+        'gaps': report.intelligence_gaps, 'previewHtml': preview_html,
+        'warnings': preview_warnings, 'reportId': report.id} | tojson }}
   </script>
 
   <!-- ===== command header ===== -->
@@ -175,6 +176,18 @@
         <span class="pane-label" style="margin:0;"><span class="pip"></span> Finished preview</span>
       </div>
       <div class="editor-pane-scroll">
+        <template x-if="warnings && warnings.length">
+          <div class="inline-notice mb-3" aria-live="polite">
+            <div class="font-medium">Tradecraft lint</div>
+            <template x-for="w in warnings" :key="w.field + ':' + w.term">
+              <div class="text-xs mt-1">
+                <span class="mono" x-text="w.field"></span>
+                <span x-text="w.message"></span>
+                <a :href="w.href" target="_blank" class="btn-link">Yardstick</a>
+              </div>
+            </template>
+          </div>
+        </template>
         <div class="md" x-ref="preview" x-effect="renderPreview()"></div>
       </div>
     </section>
@@ -186,6 +199,9 @@
         <button type="button" class="dock-tab" :class="tab==='cite' ? 'is-active' : ''" @click="tab='cite'">Citations</button>
         <button type="button" class="dock-tab" :class="tab==='tags' ? 'is-active' : ''" @click="tab='tags'">Tags</button>
         <button type="button" class="dock-tab" :class="tab==='req' ? 'is-active' : ''" @click="tab='req'">Reqs</button>
+        {% if user.role == 'ADMIN' %}
+          <button type="button" class="dock-tab" :class="tab==='audience' ? 'is-active' : ''" @click="tab='audience'">Audience</button>
+        {% endif %}
         <button type="button" class="dock-tab" :class="tab==='render' ? 'is-active' : ''" @click="tab='render'">Render</button>
       </div>
       <div class="dock-body">
@@ -387,6 +403,35 @@
             <p class="empty">No open requirements to link.</p>
           {% endif %}
         </div>
+
+        {% if user.role == 'ADMIN' %}
+        <!-- Audience -->
+        <div x-show="tab==='audience'" x-cloak>
+          <h2 class="section-title mb-1">Need-to-know audience</h2>
+          <p class="text-xs mb-3" style="color:var(--muted);">Restrict this published product to selected stakeholder groups. No groups means all authenticated stakeholders can browse it.</p>
+          {% if updated == 'audience' %}<div class="inline-notice mb-3">Audience updated.</div>{% endif %}
+          {% if all_audience_groups %}
+            <form method="post" action="/reports/{{ report.id }}/audience">
+              <div class="grid gap-1">
+                {% for g in all_audience_groups %}
+                  <label class="check">
+                    <input type="checkbox" name="group_ids" value="{{ g.id }}"
+                           {% if g.id in linked_audience_group_ids %}checked{% endif %}>
+                    <span>
+                      <span class="font-medium">{{ g.name }}</span>
+                      {% if g.description %}<span class="text-xs block mt-0.5" style="color:var(--muted);">{{ g.description }}</span>{% endif %}
+                      <span class="mono text-xs block mt-0.5" style="color:var(--faint);">{{ g.members | length }} stakeholder{{ '' if (g.members | length) == 1 else 's' }}</span>
+                    </span>
+                  </label>
+                {% endfor %}
+              </div>
+              <button class="btn btn--ghost btn--sm mt-3">Update audience</button>
+            </form>
+          {% else %}
+            <p class="empty">No audience groups yet. Create them from <a href="/admin/audience" class="btn-link">Audience groups</a>.</p>
+          {% endif %}
+        </div>
+        {% endif %}
 
         <!-- Render -->
         <div x-show="tab==='render'" x-cloak>

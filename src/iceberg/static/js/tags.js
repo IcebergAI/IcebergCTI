@@ -53,7 +53,7 @@ document.addEventListener('alpine:init', () => {
 
   /* ---- Report editor (report_edit.html) ---------------------------------- */
   Alpine.data('reportEditor', (dataId) => ({
-    ...readJSON(dataId),  // body, kj, ka, gaps, previewHtml, reportId
+    ...readJSON(dataId),  // body, kj, ka, gaps, previewHtml, warnings, reportId
     tab: 'cite', insertOpen: false, justSaved: false,
     dirty: false, saving: false, timer: null, saveTimer: null,
     markDirty() { this.dirty = true; this.scheduleSave(); },
@@ -81,7 +81,11 @@ document.addEventListener('alpine:init', () => {
           intelligence_gaps: this.gaps,
         }),
       });
-      if (res.ok) { this.previewHtml = (await res.json()).html; }
+      if (res.ok) {
+        const data = await res.json();
+        this.previewHtml = data.html;
+        this.warnings = data.warnings || [];
+      }
     },
     // The CSP build prohibits x-html; render the (server-sanitised) preview HTML
     // through a ref in native JS instead, re-run reactively by x-effect.

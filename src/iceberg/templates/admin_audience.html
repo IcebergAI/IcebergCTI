@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Audience groups · {{ app_name }}{% endblock %}
+{% block crumb %}Audience groups{% endblock %}
+{% block page_class %}page-wide{% endblock %}
+{% block content %}
+
+<div class="head-row mb-6">
+  <div>
+    <div class="eyebrow eyebrow-accent">Administration</div>
+    <h1 class="page-title mt-1">Audience groups</h1>
+    <p class="lede mt-2">Manage need-to-know stakeholder cohorts for compartmented report access.</p>
+  </div>
+</div>
+
+{% if error %}
+  <div class="inline-notice mb-4">{{ error }}</div>
+{% endif %}
+
+<div class="grid lg:grid-cols-3 gap-6">
+  <section class="card card-pad-lg lg:col-span-2">
+    <h2 class="section-title mb-4">Groups</h2>
+    <div class="space-y-4">
+      {% for g in groups %}
+        <div class="well card-pad-lg">
+          <form method="post" action="/admin/audience/{{ g.id }}" class="space-y-3">
+            <div class="grid md:grid-cols-2 gap-3">
+              <div>
+                <label class="field-label">Name</label>
+                <input name="name" value="{{ g.name }}" class="field" required>
+              </div>
+              <div>
+                <label class="field-label">Description</label>
+                <input name="description" value="{{ g.description }}" class="field">
+              </div>
+            </div>
+            <div>
+              <label class="field-label">Stakeholders</label>
+              <div class="grid md:grid-cols-2 gap-1">
+                {% for s in stakeholders %}
+                  <label class="check">
+                    <input type="checkbox" name="member_user_ids" value="{{ s.id }}"
+                           {% if s in g.members %}checked{% endif %}>
+                    <span>
+                      <span class="font-medium">{{ s.display_name }}</span>
+                      <span class="mono text-xs block mt-0.5" style="color:var(--muted);">{{ s.email }}</span>
+                    </span>
+                  </label>
+                {% else %}
+                  <p class="empty">No stakeholder users exist yet.</p>
+                {% endfor %}
+              </div>
+            </div>
+            <div class="flex gap-2 items-center">
+              <button class="btn btn--ghost btn--sm">Save group</button>
+              <span class="mono text-xs" style="color:var(--faint);">{{ g.slug }}</span>
+            </div>
+          </form>
+          <form method="post" action="/admin/audience/{{ g.id }}/delete" class="mt-3">
+            <button class="btn btn--quiet btn--sm">Delete group</button>
+          </form>
+        </div>
+      {% else %}
+        <p class="empty">No audience groups have been created yet.</p>
+      {% endfor %}
+    </div>
+  </section>
+
+  <aside class="card card-pad-lg">
+    <h2 class="section-title mb-4">Create group</h2>
+    <form method="post" action="/admin/audience" class="space-y-3">
+      <div>
+        <label class="field-label">Name</label>
+        <input name="name" class="field" required placeholder="Executive stakeholders">
+      </div>
+      <div>
+        <label class="field-label">Description</label>
+        <textarea name="description" rows="3" class="field" placeholder="Who belongs here and why"></textarea>
+      </div>
+      <div>
+        <label class="field-label">Members</label>
+        <div class="grid gap-1">
+          {% for s in stakeholders %}
+            <label class="check">
+              <input type="checkbox" name="member_user_ids" value="{{ s.id }}">
+              <span>
+                <span class="font-medium">{{ s.display_name }}</span>
+                <span class="mono text-xs block mt-0.5" style="color:var(--muted);">{{ s.email }}</span>
+              </span>
+            </label>
+          {% else %}
+            <p class="empty">Stakeholders appear here after first login.</p>
+          {% endfor %}
+        </div>
+      </div>
+      <button class="btn btn--ink" style="width:100%; justify-content:center;">Create audience</button>
+    </form>
+  </aside>
+</div>
+{% endblock %}

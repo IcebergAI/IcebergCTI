@@ -1,5 +1,6 @@
 """Auth routes: login page, Entra OIDC code flow, dev-login bypass, logout."""
 
+import logging
 from typing import Annotated
 
 from authlib.integrations.starlette_client import OAuth, OAuthError
@@ -17,6 +18,7 @@ from .dependencies import COOKIE_NAME, _extract_token
 from .tokens import create_access_token, decode_access_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+logger = logging.getLogger("iceberg.auth")
 
 # Lazily-configured OAuth client for Microsoft Entra ID.
 _oauth: OAuth | None = None
@@ -89,6 +91,10 @@ def _role_from_claims(claims: dict) -> Role:
         if token in valid:
             return Role(token)
     # No recognised role claim -> read-only stakeholder by default.
+    logger.warning(
+        "No recognised OIDC role claim found in %s; defaulting to STAKEHOLDER",
+        get_settings().oidc_role_claim,
+    )
     return Role.STAKEHOLDER
 
 
@@ -117,15 +123,36 @@ async def entra_callback(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(exc))
 
     claims = token.get("userinfo") or {}
+    email = claims.get("email") or claims.get("preferred_username", "")
+    if not email:
+        audit.record_and_emit(
+            session,
+            background_tasks=background_tasks,
+            action=AuditAction.AUTH_LOGIN,
+            category=AuditCategory.AUTHENTICATION,
+            outcome=AuditOutcome.FAILURE,
+            request=request,
+            detail={"method": "oidc", "error": "missing_email_claim"},
+        )
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "OIDC email claim is required")
+
     user = upsert_user(
         session,
         sub=claims.get("sub"),
-        email=claims.get("email") or claims.get("preferred_username", ""),
+        email=email,
         display_name=claims.get("name") or claims.get("email", "User"),
         role=_role_from_claims(claims),
+        department=claims.get(settings.oidc_department_claim, ""),
+        job_title=claims.get(settings.oidc_title_claim, ""),
+        company_name=claims.get(settings.oidc_company_claim, ""),
+        office_location=claims.get(settings.oidc_office_claim, ""),
     )
     app_token = create_access_token(
-        user_id=user.id, email=user.email, role=user.role.value, name=user.display_name
+        user_id=user.id,
+        email=user.email,
+        role=user.role.value,
+        name=user.display_name,
+        token_version=user.token_version,
     )
     audit.record_and_emit(
         session,
@@ -165,7 +192,11 @@ def dev_login(
         session, sub=None, email=email, display_name=name, role=role_enum
     )
     app_token = create_access_token(
-        user_id=user.id, email=user.email, role=user.role.value, name=user.display_name
+        user_id=user.id,
+        email=user.email,
+        role=user.role.value,
+        name=user.display_name,
+        token_version=user.token_version,
     )
     audit.record_and_emit(
         session,
@@ -198,6 +229,10 @@ def logout(
         actor=actor,
         request=request,
     )
+    if actor is not None:
+        actor.token_version += 1
+        session.add(actor)
+        session.commit()
     response = RedirectResponse("/auth/login", status_code=status.HTTP_303_SEE_OTHER)
     response.delete_cookie(COOKIE_NAME)
     return response

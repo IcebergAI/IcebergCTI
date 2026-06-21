@@ -147,6 +147,7 @@ def add_source(
         title=body.title,
         reference=body.reference,
         summary=body.summary,
+        content_md=body.content_md,
         reliability=body.reliability,
         credibility=body.credibility,
         grading_rationale=body.grading_rationale,
@@ -168,6 +169,7 @@ def update_source(
         title=body.title,
         reference=body.reference,
         summary=body.summary,
+        content_md=body.content_md,
     )
 
 

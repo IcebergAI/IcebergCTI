@@ -271,6 +271,7 @@ def send_item_to_notebook(
         title=item.title,
         reference=item.link,
         summary=_to_text(item.summary or item.content),
+        content_md=_to_text(item.content or item.summary),
     )
     item.ingested_at = utcnow()
     session.add(item)

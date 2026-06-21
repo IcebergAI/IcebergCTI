@@ -9,6 +9,7 @@ email notification runs as a background task.
 
 import logging
 
+import httpx
 from fastapi import BackgroundTasks
 from sqlalchemy import or_
 from sqlmodel import Session, col, select
@@ -47,7 +48,18 @@ def matched_stakeholders(session: Session, report: Report) -> list[User]:
             )
         )
     )
-    return list(session.exec(stmt).all())
+    report_tag_ids = {t.id for t in report.tags}
+    report_group_ids = {g.id for g in report.audience_groups}
+    matches: list[User] = []
+    for user in session.exec(stmt).all():
+        subscription_ids = {t.id for t in user.tag_subscriptions}
+        if subscription_ids and not (subscription_ids & report_tag_ids):
+            continue
+        user_group_ids = {g.id for g in user.audience_groups}
+        if report_group_ids and not (report_group_ids & user_group_ids):
+            continue
+        matches.append(user)
+    return matches
 
 
 def disseminate(session: Session, report: Report) -> list[User]:
@@ -97,6 +109,36 @@ def send_notifications(
             )
 
 
+def send_webhook_notification(report_title: str, report_id: int, recipient_count: int) -> None:
+    settings = get_settings()
+    if not settings.webhook_url:
+        return
+    headers = {"Content-Type": "application/json"}
+    if settings.webhook_token:
+        headers["Authorization"] = f"Bearer {settings.webhook_token}"
+    payload = {
+        "event": "report_published",
+        "report_id": report_id,
+        "title": report_title,
+        "url": f"{settings.portal_base_url.rstrip('/')}/reports/{report_id}",
+        "recipient_count": recipient_count,
+    }
+    try:
+        resp = httpx.post(
+            settings.webhook_url,
+            json=payload,
+            headers=headers,
+            timeout=settings.webhook_timeout,
+        )
+        resp.raise_for_status()
+    except Exception:
+        logger.warning(
+            "Failed to send dissemination webhook for report %s",
+            report_id,
+            exc_info=True,
+        )
+
+
 def queue_dissemination(
     session: Session, report: Report, background_tasks: BackgroundTasks
 ) -> int:
@@ -108,4 +150,7 @@ def queue_dissemination(
         background_tasks.add_task(
             send_notifications, payloads, report.title, report.id
         )
+    background_tasks.add_task(
+        send_webhook_notification, report.title, report.id, len(recipients)
+    )
     return len(recipients)

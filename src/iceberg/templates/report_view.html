@@ -83,7 +83,6 @@
   </article>
 
   <aside class="side-rail">
-    {% if products or tech_tags %}
     <div class="side-card">
       <div class="side-card-label">Downloads</div>
       <div class="space-y-2">
@@ -93,6 +92,10 @@
             <span class="btn-link ml-auto">JSON ↓</span>
           </a>
         {% endif %}
+        <a class="file-row" href="/api/reports/{{ report.id }}/stix" style="text-decoration:none; color:inherit;">
+          <span class="file-fmt">STIX 2.1 bundle</span>
+          <span class="btn-link ml-auto">JSON ↓</span>
+        </a>
         {% for p in products %}
           <a class="file-row" href="/reports/{{ report.id }}/products/{{ p.id }}/download" style="text-decoration:none; color:inherit;">
             <span class="file-fmt">{{ p.format.value.replace('_',' ') }}</span>
@@ -100,6 +103,19 @@
           </a>
         {% endfor %}
       </div>
+    </div>
+
+    {% if related_reports %}
+    <div class="side-card">
+      <div class="side-card-label">Related reports</div>
+      <ul class="space-y-2 text-sm" style="list-style:none; padding:0;">
+        {% for item in related_reports %}
+          <li>
+            <a href="/reports/{{ item.report.id }}" class="btn-link">{{ item.report.title }}</a>
+            <span class="mono text-xs block mt-0.5" style="color:var(--faint);">similarity {{ '%.2f'|format(item.score) }}</span>
+          </li>
+        {% endfor %}
+      </ul>
     </div>
     {% endif %}
 

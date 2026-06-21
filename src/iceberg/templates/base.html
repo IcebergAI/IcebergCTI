@@ -69,16 +69,17 @@
     {% set jump_items = [
       {'label': 'Dashboard', 'href': '/', 'group': 'Workspace'},
       {'label': 'Reports', 'href': '/reports', 'group': 'Workspace'},
+      {'label': 'Feed reader', 'href': '/feeds', 'group': 'Collection'},
       {'label': 'Search', 'href': '/search', 'group': 'Discovery'},
       {'label': 'Entities', 'href': '/tags', 'group': 'Discovery'},
       {'label': 'ATT&CK matrix', 'href': '/matrix', 'group': 'Discovery'},
       {'label': 'Program maturity', 'href': '/maturity', 'group': 'Discovery'},
       {'label': 'Taxonomy', 'href': '/admin/tags', 'group': 'Administration'},
+      {'label': 'Audience groups', 'href': '/admin/audience', 'group': 'Administration'},
       {'label': 'Audit log', 'href': '/admin/audit', 'group': 'Administration'},
       {'label': 'RSS feeds', 'href': '/admin/feeds', 'group': 'Administration'},
       {'label': 'Outbound proxy', 'href': '/admin/proxy', 'group': 'Administration'},
       {'label': 'MISP push', 'href': '/admin/misp', 'group': 'Administration'},
-      {'label': 'Feed reader', 'href': '/feeds', 'group': 'Administration'},
       {'label': 'Tasking', 'href': '/requirements', 'group': 'Administration'},
       {'label': 'Help', 'href': '/help', 'group': 'Help'}
     ] %}
@@ -137,6 +138,7 @@
             <div class="rail-group-label">Workspace</div>
             {{ rail_link('/', 'ic-home', 'Dashboard', path == '/') }}
             {{ rail_link('/reports', 'ic-reports', 'Reports', path.startswith('/reports')) }}
+            {{ rail_link('/feeds', 'ic-feed', 'Feed reader', path == '/feeds') }}
           </div>
           <div class="rail-group">
             <div class="rail-group-label">Discovery</div>
@@ -148,11 +150,11 @@
           <div class="rail-group">
             <div class="rail-group-label">Administration</div>
             {{ rail_link('/admin/tags', 'ic-taxonomy', 'Taxonomy', path.startswith('/admin/tags')) }}
+            {{ rail_link('/admin/audience', 'ic-entity', 'Audience', path.startswith('/admin/audience')) }}
             {{ rail_link('/admin/audit', 'ic-audit', 'Audit log', path.startswith('/admin/audit')) }}
             {{ rail_link('/admin/feeds', 'ic-rss', 'RSS feeds', path.startswith('/admin/feeds')) }}
             {{ rail_link('/admin/proxy', 'ic-proxy', 'Outbound proxy', path.startswith('/admin/proxy')) }}
             {{ rail_link('/admin/misp', 'ic-misp', 'MISP push', path.startswith('/admin/misp')) }}
-            {{ rail_link('/feeds', 'ic-feed', 'Feed reader', path == '/feeds') }}
             {{ rail_link('/requirements', 'ic-tasking', 'Tasking', path.startswith('/requirements')) }}
           </div>
         {% else %}

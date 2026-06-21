@@ -38,12 +38,17 @@ def add_source(
     title: str,
     reference: str = "",
     summary: str = "",
+    content_md: str = "",
     reliability: SourceReliability | None = None,
     credibility: SourceCredibility | None = None,
     grading_rationale: str = "",
 ) -> Source:
     source = Source(
-        notebook_id=notebook.id, title=title, reference=reference, summary=summary
+        notebook_id=notebook.id,
+        title=title,
+        reference=reference,
+        summary=summary,
+        content_md=content_md,
     )
     if reliability or credibility:
         source_grading.set_manual_grade(
@@ -75,6 +80,7 @@ def update_source(
     title: str | None = None,
     reference: str | None = None,
     summary: str | None = None,
+    content_md: str | None = None,
 ) -> Source:
     if title is not None:
         source.title = title
@@ -82,6 +88,8 @@ def update_source(
         source.reference = reference
     if summary is not None:
         source.summary = summary
+    if content_md is not None:
+        source.content_md = content_md
     session.add(source)
     session.commit()
     session.refresh(source)

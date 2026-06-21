@@ -14,6 +14,7 @@ so search can't leak unpublished material.
 
 import re
 
+from fastapi import HTTPException
 from sqlalchemy import event, text
 from sqlmodel import Session, col, select
 
@@ -29,6 +30,7 @@ from ..models import (
     User,
 )
 from . import tags as tag_service
+from . import reports as report_service
 
 _FTS_TABLE = "report_fts"
 
@@ -180,5 +182,14 @@ def search_reports(
     if ranked_ids is not None:
         order = {rid: i for i, rid in enumerate(ranked_ids)}
         results.sort(key=lambda r: order.get(r.id, len(order)))
+
+    if user.role == Role.STAKEHOLDER:
+        visible: list[Report] = []
+        for report in results:
+            try:
+                visible.append(report_service.ensure_visible(report, user))
+            except HTTPException:
+                continue
+        results = visible
 
     return results[offset : offset + limit]

@@ -1,0 +1,19 @@
+services:
+  iceberg:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      ICEBERG_ENVIRONMENT: dev
+      ICEBERG_AUTO_MIGRATE: "true"
+      ICEBERG_DATABASE_URL: sqlite:////data/iceberg.db
+      ICEBERG_ATTACHMENTS_DIR: /data/attachments
+      ICEBERG_FIGURES_DIR: /data/figures
+      ICEBERG_RENDER_OUTPUT_DIR: /data/rendered
+    volumes:
+      - iceberg-data:/data
+
+volumes:
+  iceberg-data:

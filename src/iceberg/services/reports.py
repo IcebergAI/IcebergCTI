@@ -6,6 +6,7 @@ from pathlib import Path
 from fastapi import HTTPException, status
 from sqlmodel import Session, col, select
 
+from ..config import get_settings
 from ..models import (
     IOC,
     IntelLevel,
@@ -38,6 +39,11 @@ def ensure_visible(report: Report, user: User) -> Report:
     403 so an unpublished report's existence is not disclosed."""
     if user.role == Role.STAKEHOLDER and report.status != ReportStatus.PUBLISHED:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Report not found")
+    if user.role == Role.STAKEHOLDER and report.audience_groups:
+        user_group_ids = {g.id for g in user.audience_groups}
+        report_group_ids = {g.id for g in report.audience_groups}
+        if not (user_group_ids & report_group_ids):
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Report not found")
     return report
 
 
@@ -194,7 +200,72 @@ def render_report(
     session.add(product)
     session.commit()
     session.refresh(product)
+    prune_rendered_products(session, report_id=report.id, fmt=fmt)
     return product
+
+
+def prune_rendered_products(
+    session: Session,
+    *,
+    report_id: int | None = None,
+    fmt: ProductFormat | None = None,
+) -> int:
+    """Apply rendered-PDF retention and delete old rows/files.
+
+    Retention keeps the latest N renders per ``(report, format)`` and optionally
+    prunes rows older than ``ICEBERG_RENDER_RETENTION_DAYS``. A value <=0 disables
+    the corresponding rule.
+    """
+    settings = get_settings()
+    keep = max(0, settings.render_retention_keep)
+    days = max(0, settings.render_retention_days)
+    products = list(
+        session.exec(
+            select(RenderedProduct).order_by(
+                RenderedProduct.report_id,
+                RenderedProduct.format,
+                RenderedProduct.rendered_at.desc(),
+            )
+        ).all()
+    )
+    if report_id is not None:
+        products = [p for p in products if p.report_id == report_id]
+    if fmt is not None:
+        products = [p for p in products if p.format == fmt]
+
+    cutoff = None
+    if days:
+        from datetime import timedelta
+
+        from ..models import utcnow
+
+        cutoff = utcnow() - timedelta(days=days)
+
+    seen: dict[tuple[int, ProductFormat], int] = {}
+    stale: list[RenderedProduct] = []
+    for product in products:
+        key = (product.report_id, ProductFormat(product.format))
+        seen[key] = seen.get(key, 0) + 1
+        too_many = keep and seen[key] > keep
+        rendered_at = product.rendered_at
+        if cutoff is not None and rendered_at.tzinfo is None:
+            # SQLite returns stored datetimes as naive values. Treat those as
+            # UTC so age retention can compare them with utcnow().
+            rendered_at = rendered_at.replace(tzinfo=cutoff.tzinfo)
+        too_old = cutoff is not None and rendered_at < cutoff
+        if too_many or too_old:
+            stale.append(product)
+
+    for product in stale:
+        path = Path(product.pdf_path)
+        session.delete(product)
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+    if stale:
+        session.commit()
+    return len(stale)
 
 
 def delete_rendered_product(session: Session, product: RenderedProduct) -> None:

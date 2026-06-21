@@ -8,9 +8,8 @@ version = "0.1.0"
 description = "Cyber threat intelligence collection, authoring and dissemination platform"
 requires-python = ">=3.14"
 # Version floors are anchored at the tested baseline so a fresh install can't
-# silently pull an ancient (potentially vulnerable) release. These are NOT a
-# full supply-chain lock — generate a lockfile (uv lock / pip-compile) pinning
-# transitive dependencies before any production deployment.
+# silently pull an ancient (potentially vulnerable) release. The committed
+# uv.lock pins the tested transitive graph for CI and repeatable installs.
 dependencies = [
     "fastapi>=0.136.3",
     "uvicorn>=0.49",
@@ -46,6 +45,8 @@ dev = [
 
 [project.scripts]
 iceberg-seed = "iceberg.seed:main"
+iceberg-prune-renders = "iceberg.maintenance:prune_renders_main"
+iceberg-rebuild-related = "iceberg.maintenance:rebuild_related_main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
