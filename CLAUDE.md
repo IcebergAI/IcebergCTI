@@ -28,7 +28,7 @@ Roles: `ADMIN`, `ANALYST`, `REVIEWER`, `STAKEHOLDER` (read-only).
 
 ### Domain model (`src/iceberg/models.py`)
 - **User** — identity, role, optional `preferred_intel_level`.
-- **Notebook** — topic workspace owned by an analyst; has many sources, notes and reports. Collection material (the notebook, its sources/notes/attachments/diamonds) is **writer-only**: read-only stakeholders never list or open notebooks — they consume only finished products (reports/feed/search). Create/read helpers live in `services/notebooks.py` and are shared by the API and portal.
+- **Notebook** — topic workspace owned by an analyst; has many sources, notes and reports. Collection material (the notebook, its sources/notes/attachments/diamonds) is **writer-only**: read-only stakeholders never list or open notebooks — they consume only finished products (reports/feed/search). Create/read helpers live in `services/notebooks.py` and are shared by the API and portal. **Access is role-wide, not owner-scoped (#65)** — notebooks are a *shared team workspace*: any writer (ANALYST/REVIEWER/ADMIN) may open, edit or delete any notebook and its material, so multiple analysts can collaborate on one topic/request. `Notebook.owner_id` is **provenance/attribution only (who created it), not an access-control boundary** — writer routes gate on `_require_writer` (role), never on ownership. (Distinct from compartmentation of *published products*, #33.)
 - **Source** / **Note** — collected material inside a notebook. Sources carry
   Admiralty/NATO-style grading (`reliability` A-F + `credibility` 1-6), with
   provenance (`UNGRADED` / `AUTO` / `MANUAL`) and a rationale.
