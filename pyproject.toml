@@ -32,14 +32,14 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=9.1.0",
+    "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
     "pytest-xdist>=3.8.0",
-    "ruff>=0.15.17",
+    "ruff>=0.15.18",
     "bandit>=1.9.4",
     "vulture>=2.16",
     "pip-audit>=2.10.1",
-    "pre-commit>=4.4.0",
+    "pre-commit>=4.6.0",
     "djlint>=1.39.2",
 ]
 
