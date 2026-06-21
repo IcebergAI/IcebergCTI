@@ -7,6 +7,8 @@ report's level). Feed delivery is recorded synchronously as DisseminationEvents;
 email notification runs as a background task.
 """
 
+import logging
+
 from fastapi import BackgroundTasks
 from sqlalchemy import or_
 from sqlmodel import Session, col, select
@@ -21,6 +23,8 @@ from ..models import (
     is_disseminable,
 )
 from . import email as email_service
+
+logger = logging.getLogger("iceberg.dissemination")
 
 
 def _max_tlp() -> TLP:
@@ -80,7 +84,17 @@ def send_notifications(
             "published:\n\n"
             f"  {report_title}\n  {url}\n\n— Iceberg"
         )
-        email_service.send_email(to, subject, body)
+        try:
+            email_service.send_email(to, subject, body)
+        except Exception:
+            # Runs as a background task — a failing recipient (bad address,
+            # transient SMTP error) must not skip the remaining recipients.
+            logger.warning(
+                "Failed to send dissemination email to %s for report %s",
+                to,
+                report_id,
+                exc_info=True,
+            )
 
 
 def queue_dissemination(

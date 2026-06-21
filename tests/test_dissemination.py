@@ -3,6 +3,7 @@ read tracking, and preferences."""
 
 import pytest
 
+from iceberg.services import dissemination as dissemination_service
 from iceberg.services import email as email_service
 
 
@@ -147,3 +148,59 @@ def test_portal_feed_flow(client, login):
     feed = client.get("/feed")
     assert feed.status_code == 200 and "Portal brief" in feed.text
     assert "new item" not in client.get("/").text  # banner cleared after viewing
+
+
+# --------------------------------------------------------------------------- #
+# Notification robustness (issue #63)
+# --------------------------------------------------------------------------- #
+def test_failing_recipient_does_not_block_the_rest(monkeypatch, caplog):
+    """A single send_email failure must not skip later recipients (it runs as a
+    fire-and-forget background task, so a raise would silently drop them)."""
+    sent: list[str] = []
+
+    def fake_send_email(to, subject, body):
+        if to == "bad@example.com":
+            raise RuntimeError("transient SMTP error")
+        sent.append(to)
+
+    monkeypatch.setattr(email_service, "send_email", fake_send_email)
+
+    recipients = [
+        ("good1@example.com", "One"),
+        ("bad@example.com", "Bad"),
+        ("good2@example.com", "Two"),
+    ]
+    with caplog.at_level("WARNING"):
+        dissemination_service.send_notifications(recipients, "Brief", 7)
+
+    assert sent == ["good1@example.com", "good2@example.com"]
+    assert any("bad@example.com" in r.message for r in caplog.records)
+
+
+def test_smtp_backend_uses_configured_timeout(monkeypatch):
+    """The SMTP backend must bound the connection with a timeout."""
+    captured: dict = {}
+
+    class FakeSMTP:
+        def __init__(self, host, port, timeout=None):
+            captured["timeout"] = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def send_message(self, msg):
+            pass
+
+    settings = email_service.get_settings()
+    monkeypatch.setattr(settings, "email_backend", "smtp")
+    monkeypatch.setattr(settings, "smtp_starttls", False)
+    monkeypatch.setattr(settings, "smtp_user", "")
+    monkeypatch.setattr(settings, "smtp_timeout", 3.5)
+    monkeypatch.setattr(email_service.smtplib, "SMTP", FakeSMTP)
+
+    email_service.send_email("to@example.com", "Subj", "Body")
+
+    assert captured["timeout"] == 3.5
