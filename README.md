@@ -128,6 +128,12 @@ Open <http://localhost:8000>. With `ICEBERG_DEV_AUTH=true` (the default) you'll 
 **dev login** on the sign-in page — pick a role (e.g. `ANALYST`) and continue. The schema is
 created automatically on first boot (`ICEBERG_AUTO_MIGRATE=true` runs migrations for you).
 
+**Health probes.** Two unauthenticated endpoints back container liveness/readiness probes:
+`GET /healthz` (liveness — process up, no DB touch, always `200`) and `GET /readyz` (readiness —
+a cheap query against a core table, `200` when the database is reachable **and** migrated, else
+`503`). In a prod deploy that runs migrations separately (`ICEBERG_AUTO_MIGRATE=false`),
+`/readyz` only reports ready once the schema is in place.
+
 **Get oriented:** open **Help** in the nav (`/help`) for a guide to your role's workflow,
 a browsable look at what the other roles do, and a glossary of the intelligence concepts
 (TLP, intel levels, source grading, the Diamond Model, ACH, ICD 203 judgements, dissemination).

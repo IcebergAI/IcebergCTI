@@ -16,6 +16,8 @@ The session cookie is `SameSite=Lax` + `HttpOnly` (and `Secure` in prod); as def
 
 **Security response headers (`auth/security_headers.py`).** A `SecurityHeadersMiddleware` (registered **outermost** in `main.py`, after `AuditMiddleware`, so it stamps every response including middleware-level 401/403s) sets the standard set on every response: a **strict Content-Security-Policy** (`default-src 'self'`; `script-src 'self'` with **no `'unsafe-inline'`/`'unsafe-eval'`**; `img-src 'self' data:` for the base64 figure embeds; `object-src 'none'`; `base-uri`/`form-action 'self'`; `frame-ancestors 'none'`; `upgrade-insecure-requests` in prod), plus `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy` (deny camera/mic/geo/usb/…), `Cross-Origin-Opener-Policy`, and **HSTS only in prod** (`is_prod`-gated — the app behind a TLS-terminating proxy can't key off the request scheme). `style-src` keeps `'unsafe-inline'` deliberately (dynamic inline `style=` attributes can't be nonced; CSS injection is far lower-risk than script). The strict `script-src` is what makes the portal carry **no inline JavaScript** — see *Self-hosted assets + SRI* for the Alpine CSP build. The header values are a pure function `build_security_headers(settings)` (unit-tested dev vs prod); headers are applied with `setdefault` so a per-route header (e.g. the file-download `nosniff`) is never duplicated.
 
+**Health probes (`health.py`).** Two **unauthenticated** root-level endpoints (registered before the auth/api/web routers, no `/api` prefix, no auth dependency, kept **out of the OpenAPI schema**) back container orchestration: `GET /healthz` (**liveness** — process up, no DB touch, always `200 {"status":"ok"}`; a transient DB blip must not restart the pod) and `GET /readyz` (**readiness** — queries a core table via the shared session, so it reflects *schema* readiness, not just connectivity: `200 {"status":"ready"}` or `503 {"status":"not ready"}`). Readiness queries `user` rather than a bare `SELECT 1` because the prod deploy runs migrations separately (`ICEBERG_AUTO_MIGRATE=false`) — "process up" ≠ "schema ready". GET/200/503 sail past the middleware stack (CSRF exempts GET, `AuditMiddleware` only records 401/403, the auth-redirect handler only fires on 401).
+
 Roles: `ADMIN`, `ANALYST`, `REVIEWER`, `STAKEHOLDER` (read-only).
 
 ### Technologies
@@ -145,6 +147,7 @@ once.
 ```
 src/iceberg/
   main.py          # app factory: mounts API + portal, session + CSRF mw, auth redirect
+  health.py        # unauthenticated /healthz (liveness) + /readyz (readiness) probes
   config.py        # pydantic-settings (ICEBERG_ env prefix)
   db.py            # SQLite engine/session, FK pragma, Alembic upgrade on boot
   migrations/      # Alembic env + versioned migrations (baseline owns the FTS DDL)
