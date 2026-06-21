@@ -27,11 +27,13 @@ from ..embeds import (
     FIGURE_TOKEN_RE as _FIGURE_TOKEN_RE,
 )
 from ..models import (
+    IOC,
     Attachment,
     ProductFormat,
     Report,
     Source,
     Tag,
+    ioc_type_label,
     source_credibility_label,
     source_grade_label,
     source_reliability_label,
@@ -126,6 +128,7 @@ def _build_data(
     figures: list[tuple[int, str, str, str]],
     ach: list[tuple[int, str, str]],
     attack_svg: str | None,
+    iocs: list[IOC],
 ) -> dict:
     stamp = report.published_at or report.updated_at
     # All inline-embed tokens are rewritten to markdown images here (disjoint
@@ -173,6 +176,14 @@ def _build_data(
             {"kind": t.kind.value, "label": t.label, "external_id": t.external_id}
             for t in tags
         ],
+        "iocs": [
+            {
+                "type": ioc_type_label(i.ioc_type),
+                "value": i.value,
+                "description": i.description,
+            }
+            for i in iocs
+        ],
     }
 
 
@@ -187,6 +198,7 @@ def render_product(
     figures: list[tuple[int, str, str, str]] | None = None,
     ach: list[tuple[int, str, str]] | None = None,
     attack_svg: str | None = None,
+    iocs: list[IOC] | None = None,
     fmt: ProductFormat,
 ) -> Path:
     settings = get_settings()
@@ -218,6 +230,7 @@ def render_product(
                     figures,
                     ach,
                     attack_svg,
+                    iocs or [],
                 )
             ),
             encoding="utf-8",

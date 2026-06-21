@@ -96,9 +96,17 @@ are retained as the seam for future IOC extraction + summarisation.*
 *Admins manage the feed list at `/admin/feeds` — add/enable feeds, see last-fetch status, and
 trigger an on-demand fetch.*
 
+### Light-touch IOCs → MISP push
+*Iceberg is **not** an IOC store — the authoritative store stays external (**MISP**). An analyst
+stages **indicators of compromise** as notebook entities (manual entry; AI auto-extraction is a
+deferred phase), cites a subset into a report's **Indicators appendix** (web view + PDF), and a
+writer **pushes the cited indicators to MISP as one event** from the report. The push is idempotent
+(re-push updates the same event), failure-isolated, proxy-aware, and authenticated with an
+**env-only** API key (`ICEBERG_MISP_API_KEY`). Admins configure the connection at `/admin/misp`.*
+
 ### Outbound proxy connectivity
 ![Outbound proxy](docs/images/outbound-proxy.png)
-*All outbound HTTP (RSS fetching and the SIEM HTTP sink) can be routed through a **global proxy**
+*All outbound HTTP (RSS fetching, the SIEM HTTP sink, and the MISP push) can be routed through a **global proxy**
 configured at `/admin/proxy` — honour the **system** proxy (env vars), connect **directly**, or use
 an **explicit** proxy with a no-proxy exclusion list (local domains / IP CIDR ranges). Proxy
 credentials stay in the environment, never the DB.*

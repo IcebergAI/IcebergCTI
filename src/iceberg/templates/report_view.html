@@ -49,6 +49,24 @@
         </ol>
       {% endif %}
 
+      {% if cited_iocs %}
+        <h2 class="section-title mt-9 mb-3">Indicators</h2>
+        <table class="ioc-table text-sm">
+          <thead>
+            <tr><th>Type</th><th>Indicator</th><th>Context</th></tr>
+          </thead>
+          <tbody>
+            {% for i in cited_iocs %}
+              <tr>
+                <td><span class="tag">{{ ioc_type_label(i.ioc_type) }}</span></td>
+                <td class="mono break-all">{{ i.value }}</td>
+                <td style="color:var(--muted);">{{ i.description }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+
       {% if cited_attachments and user.role != 'STAKEHOLDER' %}
         <h2 class="section-title mt-9 mb-3">Attachments</h2>
         <div class="space-y-2">
@@ -179,6 +197,31 @@
           </li>
         {% endfor %}
       </ul>
+    </div>
+    {% endif %}
+
+    {% if misp_enabled %}
+    <div class="side-card">
+      <div class="side-card-label">MISP</div>
+      {% if cited_iocs %}
+        <form method="post" action="/reports/{{ report.id }}/misp-push">
+          <button type="submit" class="btn btn--sm" style="width:100%; justify-content:center;">
+            {{ 'Re-push to MISP' if misp_event and misp_event.event_uuid else 'Push to MISP' }}
+          </button>
+        </form>
+        <p class="eyebrow mt-2">Pushes {{ cited_iocs | length }} indicator{{ '' if cited_iocs | length == 1 else 's' }} as one event.</p>
+      {% else %}
+        <p class="eyebrow">Cite indicators on the report to push them to MISP.</p>
+      {% endif %}
+      {% if misp_event %}
+        <p class="mono text-xs mt-2" style="color:{{ 'var(--c-crit)' if misp_event.last_status == 'error' else 'var(--muted)' }};">
+          {% if misp_event.last_status == 'ok' %}
+            ✓ Pushed{% if misp_event.event_id %} (event {{ misp_event.event_id }}){% endif %}{% if misp_event.pushed_at %} · {{ misp_event.pushed_at.strftime('%Y-%m-%d %H:%M') }}{% endif %}
+          {% elif misp_event.last_status == 'error' %}
+            ✗ {{ misp_event.error }}
+          {% endif %}
+        </p>
+      {% endif %}
     </div>
     {% endif %}
 

@@ -1,7 +1,7 @@
 """quality roadmap foundation
 
 Revision ID: c8f0a1b2d3e4
-Revises: b2c5de1928db
+Revises: 0e700e26e87f
 Create Date: 2026-06-21 00:00:00.000000
 
 """
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "c8f0a1b2d3e4"
-down_revision: str | Sequence[str] | None = "d38850006560"
+down_revision: str | Sequence[str] | None = "0e700e26e87f"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

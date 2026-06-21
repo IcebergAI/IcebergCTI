@@ -137,6 +137,17 @@ class Settings(BaseSettings):
     proxy_username: str = ""
     proxy_password: str = ""
 
+    # Outbound MISP push (light-touch IOC FR). Routing config (enabled/url/TLS +
+    # event defaults) is admin-editable on the MISPSettings DB row; these env
+    # values seed that row. The API KEY is a secret — read only from the
+    # environment, sent as the Authorization header at call time, never written
+    # to the DB. See services/misp.py.
+    misp_enabled: bool = False
+    misp_url: str = ""
+    misp_api_key: str = ""
+    misp_verify_tls: bool = True
+    misp_timeout: float = 15.0
+
     # Security audit logging → SIEM. Runtime routing config lives in the DB
     # (AuditSettings, admin-editable at /admin/audit); these env values are the
     # boot default and the secret. ``audit_enabled`` is the master kill switch

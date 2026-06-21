@@ -8,6 +8,7 @@ from .models import (
     AnalyticConfidence,
     DiamondConfidence,
     IntelLevel,
+    IOCType,
     Motivation,
     Priority,
     ProductFormat,
@@ -93,6 +94,26 @@ class ReportUpdate(BaseModel):
 
 class CitationsUpdate(BaseModel):
     source_ids: list[int]
+
+
+class IOCCreate(BaseModel):
+    ioc_type: IOCType = IOCType.DOMAIN
+    value: str
+    description: str = ""
+    source_id: int | None = None
+
+
+class IOCUpdate(BaseModel):
+    ioc_type: IOCType | None = None
+    value: str | None = None
+    description: str | None = None
+    source_id: int | None = None
+
+
+class IOCCitationsUpdate(BaseModel):
+    """Set the notebook indicators a report cites (Indicators appendix + MISP)."""
+
+    ioc_ids: list[int]
 
 
 class TransitionRequest(BaseModel):

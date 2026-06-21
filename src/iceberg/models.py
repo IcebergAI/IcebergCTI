@@ -187,6 +187,44 @@ class AnalyticConfidence(StrEnum):
     HIGH = "HIGH"
 
 
+class IOCType(StrEnum):
+    """Type of an indicator of compromise. The **enum value is the MISP attribute
+    type string** (so a push maps directly with no lookup table); the display
+    label comes from :func:`ioc_type_label`. A deliberately small curated set —
+    Iceberg only stages indicators; MISP owns the full taxonomy."""
+
+    IP_SRC = "ip-src"
+    IP_DST = "ip-dst"
+    DOMAIN = "domain"
+    HOSTNAME = "hostname"
+    URL = "url"
+    MD5 = "md5"
+    SHA1 = "sha1"
+    SHA256 = "sha256"
+    EMAIL = "email-src"
+    FILENAME = "filename"
+    CVE = "vulnerability"
+
+
+_IOC_TYPE_LABELS = {
+    IOCType.IP_SRC: "IP address (source)",
+    IOCType.IP_DST: "IP address (destination)",
+    IOCType.DOMAIN: "Domain",
+    IOCType.HOSTNAME: "Hostname",
+    IOCType.URL: "URL",
+    IOCType.MD5: "MD5 hash",
+    IOCType.SHA1: "SHA1 hash",
+    IOCType.SHA256: "SHA256 hash",
+    IOCType.EMAIL: "Email address",
+    IOCType.FILENAME: "Filename",
+    IOCType.CVE: "CVE / vulnerability",
+}
+
+
+def ioc_type_label(ioc_type: IOCType) -> str:
+    return _IOC_TYPE_LABELS[IOCType(ioc_type)]
+
+
 class ProxyMode(StrEnum):
     """How outbound HTTP connections are routed (global proxy connectivity).
 
@@ -271,6 +309,14 @@ class AuditAction(StrEnum):
     FEED_UPDATED = "FEED_UPDATED"
     FEED_DELETED = "FEED_DELETED"
     FEED_FETCHED = "FEED_FETCHED"
+    # IOC capture (notebook indicators)
+    IOC_CREATED = "IOC_CREATED"
+    IOC_UPDATED = "IOC_UPDATED"
+    IOC_DELETED = "IOC_DELETED"
+    # MISP push integration (admin config + report event push)
+    MISP_SETTINGS_UPDATED = "MISP_SETTINGS_UPDATED"
+    MISP_TEST = "MISP_TEST"
+    MISP_PUSHED = "MISP_PUSHED"
     # Sensitive file access
     ATTACHMENT_UPLOADED = "ATTACHMENT_UPLOADED"
     ATTACHMENT_DOWNLOADED = "ATTACHMENT_DOWNLOADED"
@@ -353,6 +399,18 @@ class ReportSource(SQLModel, table=True):
     )
     source_id: int | None = Field(
         default=None, foreign_key="source.id", ondelete="CASCADE", primary_key=True
+    )
+
+
+class ReportIOC(SQLModel, table=True):
+    """Indicators from a notebook that a report explicitly cites — rendered in the
+    report's Indicators appendix and pushed to MISP as the event's attributes."""
+
+    report_id: int | None = Field(
+        default=None, foreign_key="report.id", ondelete="CASCADE", primary_key=True
+    )
+    ioc_id: int | None = Field(
+        default=None, foreign_key="ioc.id", ondelete="CASCADE", primary_key=True
     )
 
 
@@ -517,6 +575,9 @@ class Notebook(SQLModel, table=True):
     figures: list["Figure"] = Relationship(
         back_populates="notebook", cascade_delete=True
     )
+    iocs: list["IOC"] = Relationship(
+        back_populates="notebook", cascade_delete=True
+    )
     reports: list["Report"] = Relationship(
         back_populates="notebook", cascade_delete=True
     )
@@ -562,6 +623,35 @@ class Note(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
 
     notebook: Notebook = Relationship(back_populates="notes")
+
+
+class IOC(SQLModel, table=True):
+    """An indicator of compromise captured against a notebook.
+
+    Light-touch, *transient* staging only — the authoritative IOC store is
+    external (MISP). An analyst records indicators manually (the future LLM/AI
+    phase will auto-extract them from sources — see ``services/iocs.py``); a
+    report cites a subset (via the :class:`ReportIOC` link table) for its
+    Indicators appendix, and a writer can push those cited indicators to MISP as
+    one event. ``source_id`` is optional provenance (which source it came from),
+    nulled if that source is later deleted.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    notebook_id: int = Field(
+        foreign_key="notebook.id", ondelete="CASCADE", index=True
+    )
+    ioc_type: IOCType = Field(default=IOCType.DOMAIN)
+    value: str
+    description: str = ""  # optional analyst context / role of the indicator
+    source_id: int | None = Field(
+        default=None, foreign_key="source.id", ondelete="SET NULL", index=True
+    )
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+    notebook: Notebook = Relationship(back_populates="iocs")
+    source: Source | None = Relationship()
 
 
 class DiamondModel(SQLModel, table=True):
@@ -716,6 +806,7 @@ class Report(SQLModel, table=True):
 
     notebook: Notebook = Relationship(back_populates="reports")
     cited_sources: list[Source] = Relationship(link_model=ReportSource)
+    cited_iocs: list["IOC"] = Relationship(link_model=ReportIOC)
     cited_attachments: list["Attachment"] = Relationship(
         back_populates="reports", link_model=ReportAttachment
     )
@@ -884,6 +975,30 @@ class DisseminationEvent(SQLModel, table=True):
     report: Report = Relationship(back_populates="dissemination_events")
 
 
+class ReportMispEvent(SQLModel, table=True):
+    """The MISP event a report's indicators were pushed to (light-touch IOC FR).
+
+    One row per report (unique ``report_id``) recording the external event
+    reference (``event_uuid`` / ``event_id``) and the last push outcome, so a
+    re-push **updates the same MISP event** (idempotent) and the report view can
+    surface success/failure. Kept off the immutable ``Report`` row. Modelled on
+    :class:`DisseminationEvent`."""
+
+    __table_args__ = (
+        UniqueConstraint("report_id", name="uq_mispevent_report"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    report_id: int = Field(foreign_key="report.id", ondelete="CASCADE", index=True)
+    event_uuid: str = ""  # MISP event UUID (the stable cross-instance reference)
+    event_id: str = ""  # MISP numeric event id (per-instance)
+    attribute_count: int = 0  # indicators pushed on the last successful push
+    last_status: str = ""  # "ok" or a short error summary
+    error: str = ""  # last error string (cleared on a successful push)
+    pushed_at: datetime | None = Field(default=None)  # last successful push
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
 class ProductFeedback(SQLModel, table=True):
     """A stakeholder's feedback on a disseminated report — the intelligence-cycle
     feedback loop (backlog D). One row per (report, stakeholder); the submit path
@@ -1042,4 +1157,26 @@ class ProxySettings(SQLModel, table=True):
     proxy_url: str = ""
     # EXPLICIT mode: comma-separated domains/suffixes + CIDR ranges to bypass.
     no_proxy: str = ""
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class MISPSettings(SQLModel, table=True):
+    """Outbound MISP connection configuration, admin-editable (single row, id=1).
+
+    The authoritative IOC store is external — this row only configures the push.
+    Holds only non-secret config — the API key is read from the environment
+    (``ICEBERG_MISP_API_KEY``) and injected at call time, never persisted here
+    (same discipline as the SIEM HTTP token / proxy credentials). See
+    ``services/misp.py``."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    enabled: bool = Field(default=False)
+    # Base URL of the MISP instance (e.g. https://misp.example.org); the event
+    # endpoint is derived from it. No credentials in the URL.
+    url: str = ""
+    verify_tls: bool = True
+    # MISP event defaults applied on push (numeric ids per the MISP API).
+    default_distribution: int = 0  # 0 = your organisation only
+    default_threat_level: int = 4  # 4 = undefined
+    default_published: bool = False  # leave events unpublished for review by default
     updated_at: datetime = Field(default_factory=utcnow)
