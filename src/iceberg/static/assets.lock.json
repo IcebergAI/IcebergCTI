@@ -1,6 +1,6 @@
 {
   "alpine": {
-    "integrity": "sha384-pb6hrQvo4s23cEUFtj0CZkzGE3jyK3pj26RIupXXxhSrrcUA/Cn0lZgcCrGH0t6L",
+    "integrity": "sha384-MKLWq9B+VC0W3U8kDIBEsSu8uCnQ1B0UQpRaB+F7uR5ocXFbymMUKuLRntu5LLdu",
     "path": "js/vendor/alpine.min.js",
     "version": "3.15.12"
   },

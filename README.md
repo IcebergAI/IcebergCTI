@@ -110,6 +110,10 @@ tagged with it).*
 - Auth: **OIDC (Microsoft Entra ID)** with a dev-login bypass for local use; role-based
   access (notebook collection material is writer-only, stakeholders consume finished
   products) with a same-origin CSRF guard on the cookie-authenticated portal
+- **Security response headers** on every response — a **strict Content-Security-Policy**
+  (`script-src 'self'`, no `unsafe-inline`/`unsafe-eval`), HSTS (prod), `X-Frame-Options`,
+  `Referrer-Policy`, `Permissions-Policy`, etc. The portal carries **no inline JavaScript**:
+  Alpine runs from its **CSP build** with all components registered in `static/js/tags.js`
 
 ## Quick start
 ```bash

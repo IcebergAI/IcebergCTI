@@ -20,46 +20,11 @@
   </form>
 {% endmacro %}
 
-<div class="editor-shell" x-data='{
-       body: {{ report.body_md | tojson }},
-       kj: {{ report.key_judgements | tojson }},
-       ka: {{ report.key_assumptions | tojson }},
-       gaps: {{ report.intelligence_gaps | tojson }},
-       previewHtml: {{ preview_html | tojson }},
-       tab: "cite",
-       insertOpen: false,
-       dirty: false,
-       saving: false,
-       timer: null,
-       saveTimer: null,
-       markDirty() { this.dirty = true; this.scheduleSave(); },
-       schedule() { this.dirty = true; clearTimeout(this.timer); this.timer = setTimeout(() => this.refresh(), 350); this.scheduleSave(); },
-       scheduleSave() { clearTimeout(this.saveTimer); this.saveTimer = setTimeout(() => this.autosave(), 1200); },
-       async autosave() {
-         const form = document.getElementById("reportform");
-         if (!form) return;
-         this.saving = true;
-         try {
-           const res = await fetch(form.action, { method: "POST", body: new FormData(form), headers: { "X-Requested-With": "fetch" } });
-           this.dirty = !res.ok;
-         } catch (_e) { /* leave dirty; manual Save remains available */ }
-         this.saving = false;
-       },
-       async refresh() {
-         const res = await fetch("/api/preview/product", {
-           method: "POST",
-           headers: {"Content-Type": "application/json"},
-           body: JSON.stringify({
-             report_id: {{ report.id }},
-             body_md: this.body,
-             key_judgements: this.kj,
-             key_assumptions: this.ka,
-             intelligence_gaps: this.gaps
-           })
-         });
-         if (res.ok) { this.previewHtml = (await res.json()).html; }
-       }
-     }'>
+<div class="editor-shell" x-data="reportEditor('report-editor-data')">
+  <script type="application/json" id="report-editor-data">
+    {{ {'body': report.body_md, 'kj': report.key_judgements, 'ka': report.key_assumptions,
+        'gaps': report.intelligence_gaps, 'previewHtml': preview_html, 'reportId': report.id} | tojson }}
+  </script>
 
   <!-- ===== command header ===== -->
   <header class="editor-head">
@@ -126,14 +91,14 @@
             <button type="button" class="btn btn--ghost btn--sm" @click="insertOpen = !insertOpen">+ Insert ▾</button>
             <div class="insert-menu-pop" x-show="insertOpen" x-cloak>
               <div class="insert-group-label">Analytics</div>
-              <button type="button" class="insert-opt" @click="insertOpen=false" onclick="insertAttack()">
+              <button type="button" class="insert-opt" @click="insertAttack()">
                 <span class="flex-1 truncate">ATT&amp;CK coverage matrix</span>
                 <span class="mono">[[attack]]</span>
               </button>
               {% if diamonds %}
                 <div class="insert-group-label">Diamond models</div>
                 {% for d in diamonds %}
-                  <button type="button" class="insert-opt" @click="insertOpen=false" onclick="insertDiamond({{ d.id }})">
+                  <button type="button" class="insert-opt" @click="insertDiamond({{ d.id }})">
                     <span class="flex-1 truncate">{{ d.title or 'Untitled assessment' }}</span>
                     <span class="mono">[[diamond:{{ d.id }}]]</span>
                   </button>
@@ -142,7 +107,7 @@
               {% if figures %}
                 <div class="insert-group-label">Figures</div>
                 {% for f in figures %}
-                  <button type="button" class="insert-opt" @click="insertOpen=false" onclick="insertFigure({{ f.id }})">
+                  <button type="button" class="insert-opt" @click="insertFigure({{ f.id }})">
                     <span class="flex-1 truncate">{{ f.title or f.original_filename }}</span>
                     <span class="mono">[[figure:{{ f.id }}]]</span>
                   </button>
@@ -151,7 +116,7 @@
               {% if ach_models %}
                 <div class="insert-group-label">ACH analyses</div>
                 {% for a in ach_models %}
-                  <button type="button" class="insert-opt" @click="insertOpen=false" onclick="insertAch({{ a.id }})">
+                  <button type="button" class="insert-opt" @click="insertAch({{ a.id }})">
                     <span class="flex-1 truncate">{{ a.title or 'Untitled analysis' }}</span>
                     <span class="mono">[[ach:{{ a.id }}]]</span>
                   </button>
@@ -198,7 +163,7 @@
             </details>
           </form>
         {% else %}
-          <div class="md" x-html="previewHtml"></div>
+          <div class="md" x-ref="preview" x-effect="renderPreview()"></div>
         {% endif %}
       </div>
     </section>
@@ -210,7 +175,7 @@
         <span class="pane-label" style="margin:0;"><span class="pip"></span> Finished preview</span>
       </div>
       <div class="editor-pane-scroll">
-        <div class="md" x-html="previewHtml"></div>
+        <div class="md" x-ref="preview" x-effect="renderPreview()"></div>
       </div>
     </section>
     {% endif %}
@@ -231,17 +196,7 @@
           <p class="text-xs mb-3" style="color:var(--muted);">Sources drawn from this notebook to back the assessment.</p>
           {% if sources %}
             <form method="post" action="/reports/{{ report.id }}/citations"
-                  x-data="{ error: false, async save() {
-                    this.error = false;
-                    try {
-                      const res = await fetch($el.action, {
-                        method: 'POST',
-                        body: new FormData($el),
-                        headers: { 'X-Requested-With': 'fetch' }
-                      });
-                      this.error = !res.ok;
-                    } catch (_err) { this.error = true; }
-                  } }">
+                  x-data="citationForm()">
               <div class="grid gap-1">
                 {% for s in sources %}
                   <label class="check">
@@ -299,7 +254,6 @@
             </script>
           {% endif %}
           <div x-data="tagPicker({
-                 tags: JSON.parse(document.getElementById('taxonomy-data')?.textContent || '[]'),
                  selectedIds: {{ linked_tag_ids | list | tojson }},
                  canTag: {{ 'true' if can_tag else 'false' }}
                })">
@@ -436,7 +390,7 @@
                   <a class="btn-link" href="/reports/{{ report.id }}/products/{{ p.id }}/download">Download ↓</a>
                   {% if can_edit %}
                     <form method="post" action="/reports/{{ report.id }}/products/{{ p.id }}/delete"
-                          onsubmit="return confirm('Delete this rendered product?');">
+                          x-data="confirmSubmit('Delete this rendered product?')" @submit="check($event)">
                       <button class="icon-action icon-action--danger" type="submit"
                               aria-label="Delete rendered product" title="Delete rendered product"></button>
                     </form>
@@ -487,22 +441,4 @@
     </aside>
   </div>
 </div>
-
-<script>
-  // Insert an embed token at the cursor and notify Alpine's x-model (dispatch
-  // 'input') so the live preview refreshes.
-  function insertToken(token) {
-    const t = document.querySelector('textarea[name="body_md"]');
-    if (!t) return;
-    const before = t.value.slice(0, t.selectionStart);
-    const lead = (before && !before.endsWith('\n')) ? '\n\n' : '';
-    t.setRangeText(lead + token + '\n', t.selectionStart, t.selectionEnd, 'end');
-    t.dispatchEvent(new Event('input', { bubbles: true }));
-    t.focus();
-  }
-  function insertDiamond(id) { insertToken('[[diamond:' + id + ']]'); }
-  function insertFigure(id) { insertToken('[[figure:' + id + ']]'); }
-  function insertAch(id) { insertToken('[[ach:' + id + ']]'); }
-  function insertAttack() { insertToken('[[attack]]'); }
-</script>
 {% endblock %}
