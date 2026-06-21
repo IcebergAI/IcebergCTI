@@ -20,6 +20,7 @@ from .. import help_content
 from ..auth.dependencies import CurrentUser, ensure_role
 from ..models import (
     AnalyticConfidence,
+    AuditAction,
     AuditCategory,
     AuditSeverity,
     IntelLevel,
@@ -42,8 +43,12 @@ from ..services import (
     diamond as diamond_service,
     dissemination,
     feedback as feedback_service,
+    iocs as ioc_service,
     lifecycle,
+    misp as misp_service,
+    misp_settings as misp_settings_service,
     product_html as product_html_service,
+    proxy_settings as proxy_settings_service,
     requirements as req_service,
     tags as tag_service,
 )
@@ -54,6 +59,7 @@ from ..services.reports import (
     ensure_visible,
     render_report,
     set_citations,
+    set_ioc_citations,
 )
 from ..templating import templates
 from .common import (
@@ -104,6 +110,12 @@ def report_view(
     elif user.role in (Role.ANALYST, Role.REVIEWER, Role.ADMIN):
         received_feedback = feedback_service.feedback_for_report(session, report)
 
+    # MISP push is writer-only (the cited indicators leave the org); surface the
+    # last push outcome and whether the integration is configured/enabled.
+    is_writer = user.role in (Role.ANALYST, Role.REVIEWER, Role.ADMIN)
+    misp_enabled = misp_settings_service.get(session).enabled if is_writer else False
+    misp_event = misp_service.get_record(session, report.id) if is_writer else None
+
     return templates.TemplateResponse(
         request,
         "report_view.html",
@@ -114,6 +126,9 @@ def report_view(
                 session, report
             ),
             "cited_sources": list(report.cited_sources),
+            "cited_iocs": list(report.cited_iocs),
+            "misp_enabled": misp_enabled,
+            "misp_event": misp_event,
             "cited_attachments": list(report.cited_attachments),
             "products": list(report.rendered_products),
             "requirements": list(report.requirements),
@@ -196,6 +211,8 @@ def report_edit(
                 a.id: ach_service.render_ach_svg(a) for a in notebook.ach_models
             },
             "figures": list(notebook.figures),
+            "iocs": ioc_service.list_for_notebook(session, notebook.id),
+            "cited_ioc_ids": {i.id for i in report.cited_iocs},
             "all_requirements": _open_requirements(session, report.requirements),
             "linked_req_ids": {r.id for r in report.requirements},
             "all_tags": tag_service.offerable_tags(session, report.tags),
@@ -253,6 +270,54 @@ def report_citations(
     if request.headers.get("x-requested-with") == "fetch":
         return Response(status_code=status.HTTP_204_NO_CONTENT)
     return _redirect(f"/reports/{report_id}/edit?updated=citations#citations")
+
+
+@router.post("/reports/{report_id}/ioc-citations")
+def report_ioc_citations(
+    report_id: int,
+    request: Request,
+    session: SessionDep,
+    user: CurrentUser,
+    ioc_ids: Annotated[list[int], Form()] = [],
+):
+    _require_writer(user)
+    report = ensure_editable(_get_report(session, report_id), user)
+    set_ioc_citations(session, report, ioc_ids)
+    if request.headers.get("x-requested-with") == "fetch":
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    return _redirect(f"/reports/{report_id}/edit?updated=indicators#indicators")
+
+
+@router.post("/reports/{report_id}/misp-push")
+def report_misp_push(
+    report_id: int,
+    request: Request,
+    session: SessionDep,
+    user: CurrentUser,
+    background_tasks: BackgroundTasks,
+):
+    _require_writer(user)
+    report = ensure_author(_get_report(session, report_id), user)
+    record = misp_service.push_report(
+        session, report, proxy_settings=proxy_settings_service.get(session)
+    )
+    audit.record_and_emit(
+        session,
+        background_tasks=background_tasks,
+        action=AuditAction.MISP_PUSHED,
+        category=AuditCategory.DISSEMINATION,
+        severity=AuditSeverity.WARNING,
+        actor=user,
+        request=request,
+        resource_type="report",
+        resource_id=report.id,
+        detail={
+            "result": record.last_status,
+            "attributes": record.attribute_count,
+            "event_uuid": record.event_uuid,
+        },
+    )
+    return _redirect(f"/reports/{report_id}")
 
 
 @router.post("/reports/{report_id}/transition")

@@ -9,6 +9,7 @@ from .config import get_settings
 from .models import (
     AnalyticConfidence,
     IntelLevel,
+    IOCType,
     Priority,
     ProductFormat,
     ReportStatus,
@@ -16,6 +17,7 @@ from .models import (
     RequirementStatus,
     TagKind,
     TLP,
+    ioc_type_label,
     source_credibility_label,
     source_grade_label,
     source_reliability_label,
@@ -46,6 +48,8 @@ templates.env.globals["Priority"] = Priority
 templates.env.globals["RequirementKind"] = RequirementKind
 templates.env.globals["RequirementStatus"] = RequirementStatus
 templates.env.globals["TagKind"] = TagKind
+templates.env.globals["IOCType"] = IOCType
+templates.env.globals["ioc_type_label"] = ioc_type_label
 templates.env.globals["source_grade_label"] = source_grade_label
 templates.env.globals["source_reliability_label"] = source_reliability_label
 templates.env.globals["source_credibility_label"] = source_credibility_label

@@ -11,10 +11,12 @@ from sqlmodel import Session, select
 from ..auth.dependencies import CurrentUser, require_role
 from ..db import get_session
 from ..models import (
+    AuditAction,
     AuditCategory,
     AuditSeverity,
     RenderedProduct,
     Report,
+    ReportMispEvent,
     ReportStatus,
     Role,
     utcnow,
@@ -22,6 +24,7 @@ from ..models import (
 from ..schemas import (
     AttachmentLinks,
     CitationsUpdate,
+    IOCCitationsUpdate,
     RenderRequest,
     ReportCreate,
     ReportUpdate,
@@ -31,6 +34,8 @@ from ..schemas import (
 )
 from ..rendering.typst import TypstNotAvailable, TypstRenderError
 from ..services import audit, dissemination, lifecycle
+from ..services import misp as misp_service
+from ..services import proxy_settings as proxy_settings_service
 from ..services.attachments import set_report_attachments
 from ..services.reports import (
     create_report as create_report_record,
@@ -39,6 +44,7 @@ from ..services.reports import (
     ensure_visible,
     render_report,
     set_citations,
+    set_ioc_citations,
 )
 from ..services.requirements import set_report_requirements
 from ..services.tags import set_report_tags
@@ -122,6 +128,58 @@ def update_citations(
     report = ensure_editable(_get_report(session, report_id), user)
     cited = set_citations(session, report, body.source_ids)
     return {"cited_sources": cited}
+
+
+@router.put("/{report_id}/ioc-citations")
+def update_ioc_citations(
+    report_id: int,
+    body: IOCCitationsUpdate,
+    session: SessionDep,
+    user: CurrentUser,
+    _w: Writer,
+) -> dict:
+    report = ensure_editable(_get_report(session, report_id), user)
+    cited = set_ioc_citations(session, report, body.ioc_ids)
+    return {"cited_iocs": cited}
+
+
+@router.post("/{report_id}/misp-push")
+def push_to_misp(
+    report_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+    background_tasks: BackgroundTasks,
+    request: Request,
+    _w: Writer,
+) -> ReportMispEvent:
+    """Push the report's cited indicators to MISP as one event (create/update).
+
+    Best-effort — the push never raises; the returned :class:`ReportMispEvent`
+    carries the outcome (``last_status`` / ``error``)."""
+    report = ensure_author(_get_report(session, report_id), user)
+    record = misp_service.push_report(
+        session,
+        report,
+        proxy_settings=proxy_settings_service.get(session),
+    )
+    audit.record_and_emit(
+        session,
+        background_tasks=background_tasks,
+        action=AuditAction.MISP_PUSHED,
+        category=AuditCategory.DISSEMINATION,
+        severity=AuditSeverity.WARNING,
+        actor=user,
+        request=request,
+        resource_type="report",
+        resource_id=report.id,
+        detail={
+            "result": record.last_status,
+            "attributes": record.attribute_count,
+            "event_uuid": record.event_uuid,
+        },
+    )
+    session.refresh(record)  # the audit commit expires the instance before serialisation
+    return record
 
 
 @router.put("/{report_id}/requirements")
