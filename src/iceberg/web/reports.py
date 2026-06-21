@@ -1,5 +1,7 @@
 """Report authoring & lifecycle portal routes."""
 
+import logging
+
 from sqlmodel import Session, select
 from pathlib import Path
 from typing import Annotated
@@ -61,6 +63,9 @@ from .common import (
     _require_writer,
     router,
 )
+
+logger = logging.getLogger(__name__)
+
 
 @router.get("/reports")
 def reports_list(request: Request, session: SessionDep, user: CurrentUser):
@@ -312,7 +317,12 @@ def report_render(
     except TypstNotAvailable as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc))
     except TypstRenderError as exc:
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, str(exc))
+        # The exception carries raw Typst stderr (temp paths, internal detail) —
+        # log it server-side but return a generic message to the client.
+        logger.error("PDF render failed for report %s: %s", report_id, exc)
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR, "PDF rendering failed"
+        )
     return _redirect(
         f"/reports/{report_id}/edit?updated=rendered-products#rendered-products"
     )
