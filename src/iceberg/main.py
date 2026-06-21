@@ -19,6 +19,7 @@ from .auth.security_headers import SecurityHeadersMiddleware
 from .auth.routes import router as auth_router
 from .config import get_settings
 from .db import init_db
+from .health import router as health_router
 from .web import web_router
 
 
@@ -46,6 +47,8 @@ def create_app() -> FastAPI:
     # error responses (CSRF 403, auth 401) that never reach a route.
     app.add_middleware(SecurityHeadersMiddleware)
 
+    # Unauthenticated liveness/readiness probes (root-level, no /api prefix).
+    app.include_router(health_router)
     app.include_router(auth_router)
     app.include_router(api_router, prefix="/api")
     app.include_router(web_router)
