@@ -4,7 +4,7 @@
 {% block crumb %}Search{% endblock %}
 {% block content %}
 
-<form method="get" action="/search">
+<form method="get" action="/search" x-data="{}">
   <div class="head-row mb-2">
     <div>
       <div class="eyebrow eyebrow-accent">Discovery</div>
@@ -35,7 +35,7 @@
               <label class="chip-check">
                 <input type="checkbox" name="tag" value="{{ t.id }}"
                        {% if t.id in selected_tags %}checked{% endif %}
-                       onchange="this.form.submit()">
+                       @change="$el.form.submit()">
                 {{ m.tag_chip(t, link=False) }}
               </label>
             {% endfor %}
@@ -45,14 +45,14 @@
 
       <div>
         <label class="field-label">Intel level</label>
-        <select name="intel_level" class="field" onchange="this.form.submit()">
+        <select name="intel_level" class="field" @change="$el.form.submit()">
           <option value="">Any</option>
           {% for lvl in IntelLevel %}<option value="{{ lvl.value }}" {% if intel_level == lvl %}selected{% endif %}>{{ lvl.value }}</option>{% endfor %}
         </select>
       </div>
       <div>
         <label class="field-label">TLP</label>
-        <select name="tlp" class="field" onchange="this.form.submit()">
+        <select name="tlp" class="field" @change="$el.form.submit()">
           <option value="">Any</option>
           {% for t in TLP %}<option value="{{ t.value }}" {% if tlp == t %}selected{% endif %}>{{ tlp_label(t) }}</option>{% endfor %}
         </select>
@@ -60,7 +60,7 @@
       {% if user.role != 'STAKEHOLDER' %}
         <div>
           <label class="field-label">Status</label>
-          <select name="status" class="field" onchange="this.form.submit()">
+          <select name="status" class="field" @change="$el.form.submit()">
             <option value="">Any</option>
             {% for s in ReportStatus %}<option value="{{ s.value }}" {% if status == s %}selected{% endif %}>{{ s.value.replace('_',' ') }}</option>{% endfor %}
           </select>

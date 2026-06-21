@@ -22,8 +22,7 @@
 
 <!-- Add a term (live chip preview via Alpine; posts as a normal form) -->
 <section class="card card-pad-lg mb-5"
-         x-data="{ kind: '{{ (kinds[0].value if kinds else 'ACTOR') }}', label: '', ext: '',
-                   cls: { ACTOR:'k-actor', CAMPAIGN:'k-campaign', MALWARE:'k-malware', TECHNIQUE:'k-technique', SECTOR:'k-sector', TOPIC:'k-topic' } }">
+         x-data="tagAdder({ kind: '{{ (kinds[0].value if kinds else 'ACTOR') }}' })">
   <h2 class="section-title mb-4">Add a term</h2>
   <form method="post" action="/admin/tags" class="add-form">
     <div class="add-grid">
@@ -47,7 +46,7 @@
         <span class="field-label">Description <span class="opt">optional</span></span>
         <input name="description" class="field" placeholder="One-line gloss shown in the picker">
       </label>
-      <label class="field-wrap" style="flex:1;" x-show="['ACTOR','MALWARE','CAMPAIGN'].includes(kind)">
+      <label class="field-wrap" style="flex:1;" x-show="isNamed">
         <span class="field-label">Aliases <span class="opt">comma-separated</span></span>
         <input name="aliases" class="field" placeholder="e.g. Fancy Bear, Sofacy, STRONTIUM">
       </label>
@@ -67,7 +66,7 @@
         </div>
       </div>
     </div>
-    <div class="add-grid-2" x-show="['ACTOR','MALWARE','CAMPAIGN'].includes(kind)" x-cloak>
+    <div class="add-grid-2" x-show="isNamed" x-cloak>
       <label class="field-wrap" style="flex:2;">
         <span class="field-label">Suspected attribution <span class="opt">optional</span></span>
         <input name="suspected_attribution" class="field" placeholder="e.g. Russia (GRU Unit 26165)">
@@ -81,7 +80,7 @@
         <input name="last_seen" class="field" placeholder="present" style="font-family:var(--fs-mono);">
       </label>
     </div>
-    <div x-show="['ACTOR','MALWARE','CAMPAIGN'].includes(kind)" x-cloak>
+    <div x-show="isNamed" x-cloak>
       <span class="field-label">Motivation <span class="opt">optional</span></span>
       <div class="flex gap-3 flex-wrap mt-1">
         {% for mo in motivations %}
@@ -148,14 +147,14 @@
               {% endif %}
               <label class="switch" title="{{ 'Active — offered to analysts' if t.active else 'Retired — hidden from new tagging' }}">
                 <input type="checkbox" name="active" value="true" {% if t.active %}checked{% endif %}
-                       onchange="this.form.requestSubmit()">
+                       @change="$el.form.requestSubmit()">
                 <span class="switch-track"></span>
                 <span class="switch-label">{{ 'Active' if t.active else 'Retired' }}</span>
               </label>
               <button class="btn btn--ghost btn--sm" type="submit">Save</button>
             </form>
             <form method="post" action="/admin/tags/{{ t.id }}/delete"
-                  onsubmit="return confirm('Delete “{{ t.label }}” from the taxonomy? It is removed from any reports using it — retire it instead to keep their classification.');">
+                  x-data="confirmSubmit('Delete “{{ t.label }}” from the taxonomy? It is removed from any reports using it — retire it instead to keep their classification.')" @submit="check($event)">
               <button class="icon-action icon-action--danger" type="submit" aria-label="Delete term" title="Delete term"></button>
             </form>
           </div>

@@ -10,9 +10,10 @@
   <link rel="stylesheet" href="/static/{{ assets.fonts.path }}" integrity="{{ assets.fonts.integrity }}">
   <link rel="stylesheet" href="/static/{{ assets.tailwind.path }}" integrity="{{ assets.tailwind.integrity }}">
   <link rel="stylesheet" href="/static/css/iceberg.css">
-  {# tags.js must define window.tagPicker/taxonomyFilter BEFORE Alpine starts.
-     The Alpine build starts on its own (deferred) execution — already past DOM
-     parse — so a later-deferred script would lose the race. Load it first. #}
+  {# tags.js registers every Alpine component (Alpine.data) on the `alpine:init`
+     event. It MUST run before the Alpine script so the listener is in place when
+     the CSP build dispatches alpine:init on its own (deferred) startup — a
+     later-deferred script would lose the race. Load it first. #}
   <script defer src="/static/js/tags.js"></script>
   <script defer src="/static/{{ assets.alpine.path }}" integrity="{{ assets.alpine.integrity }}"></script>
 </head>
@@ -98,18 +99,7 @@
     </a>
   {%- endmacro -%}
 
-  <div class="app" x-data='{
-         cmdOpen: false, cmdQ: "", cmdItems: {{ jump_items | tojson }}, cmdActive: 0,
-         get cmdResults() {
-           const q = this.cmdQ.trim().toLowerCase();
-           const m = q ? this.cmdItems.filter(i => i.label.toLowerCase().includes(q) || i.group.toLowerCase().includes(q)) : this.cmdItems;
-           if (this.cmdActive >= m.length) this.cmdActive = Math.max(0, m.length - 1);
-           return m;
-         },
-         openCmd() { this.cmdOpen = true; this.cmdQ = ""; this.cmdActive = 0; this.$nextTick(() => this.$refs.cmdInput && this.$refs.cmdInput.focus()); },
-         cmdGo() { const r = this.cmdResults[this.cmdActive]; if (r) window.location.href = r.href; },
-         cmdMove(d) { const n = this.cmdResults.length; if (n) this.cmdActive = (this.cmdActive + d + n) % n; }
-       }'
+  <div class="app" x-data='appShell({{ jump_items | tojson }})'
        @keydown.window.meta.k.prevent="openCmd()"
        @keydown.window.ctrl.k.prevent="openCmd()"
        @keydown.escape.window="cmdOpen = false">

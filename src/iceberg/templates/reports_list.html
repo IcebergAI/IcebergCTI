@@ -15,14 +15,7 @@
 </div>
 
 {% if reports %}
-<div x-data="{
-       q: '', status: '', level: '',
-       ok(r) {
-         return (!this.q || r.t.includes(this.q.toLowerCase()))
-             && (!this.status || r.s === this.status)
-             && (!this.level || r.l === this.level);
-       }
-     }">
+<div x-data="reportsFilter()">
   <div class="filter-bar mb-4">
     <input type="search" class="field filter-search" placeholder="Filter by title…" x-model="q">
     <div class="filter-pills">
@@ -39,7 +32,8 @@
   <div class="rows">
     {% for r in reports %}
       <a href="/reports/{{ r.id }}" class="row"
-         x-show="ok({ t: {{ r.title|lower|tojson }}, s: {{ r.status.value|tojson }}, l: {{ r.intel_level.value|tojson }} })">
+         data-t="{{ r.title|lower }}" data-s="{{ r.status.value }}" data-l="{{ r.intel_level.value }}"
+         x-show="ok($el)">
         <span class="flex-1">
           <span class="row-title">{{ r.title }}</span>
           {% if r.tags %}

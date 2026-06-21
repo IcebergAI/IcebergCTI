@@ -9,7 +9,7 @@
     <div class="eyebrow eyebrow-accent mt-3">Diamond Model · Intrusion Analysis</div>
     <h1 class="page-title mt-2">{{ diamond.title or 'Untitled assessment' }}</h1>
     <div class="mt-3 flex gap-2 items-center flex-wrap"
-         x-data="{ copied: false, copy() { navigator.clipboard.writeText('[[diamond:{{ diamond.id }}]]').then(() => { this.copied = true; setTimeout(() => this.copied = false, 1600); }); } }">
+         x-data="copyToken('[[diamond:{{ diamond.id }}]]')">
       <span class="mono text-xs" style="color:var(--accent-deep);background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:5px;padding:3px 7px;">[[diamond:{{ diamond.id }}]]</span>
       <button type="button" class="btn btn--ghost btn--sm" @click="copy()">
         <span x-text="copied ? '✓ Copied' : '⧉ Copy token'"></span>
@@ -19,28 +19,13 @@
   </div>
 </div>
 
-<div class="editor-grid"
-     x-data='{
-       fields: {
-         title: {{ diamond.title | tojson }},
-         adversary: {{ diamond.adversary | tojson }},
-         capability: {{ diamond.capability | tojson }},
-         infrastructure: {{ diamond.infrastructure | tojson }},
-         victim: {{ diamond.victim | tojson }},
-         confidence: {{ diamond.confidence.value | tojson }}
-       },
-       previewSvg: {{ preview_svg | tojson }},
-       timer: null,
-       schedule() { clearTimeout(this.timer); this.timer = setTimeout(() => this.refresh(), 300); },
-       async refresh() {
-         const res = await fetch("/api/preview/diamond", {
-           method: "POST",
-           headers: {"Content-Type": "application/json"},
-           body: JSON.stringify(this.fields)
-         });
-         if (res.ok) { this.previewSvg = (await res.json()).svg; }
-       }
-     }'>
+<div class="editor-grid" x-data="diamondEditor('diamond-editor-data')">
+  <script type="application/json" id="diamond-editor-data">
+    {{ {'fields': {'title': diamond.title, 'adversary': diamond.adversary,
+        'capability': diamond.capability, 'infrastructure': diamond.infrastructure,
+        'victim': diamond.victim, 'confidence': diamond.confidence.value},
+        'previewSvg': preview_svg} | tojson }}
+  </script>
 
   <!-- Editor -->
   <section class="card card-pad-lg">
@@ -101,14 +86,14 @@
   <!-- Live preview -->
   <section class="card card-pad-lg" style="background:var(--surface-2);">
     <div class="pane-label"><span class="pip"></span> Diagram preview</div>
-    <div class="diamond-svg mt-2" x-html="previewSvg"></div>
+    <div class="diamond-svg mt-2" x-ref="preview" x-effect="renderPreview()"></div>
   </section>
 </div>
 
 {% if can_edit %}
   <div class="flex items-center mt-5">
     <form method="post" action="/notebooks/{{ notebook.id }}/diamonds/{{ diamond.id }}/delete"
-          class="ml-auto" onsubmit="return confirm('Delete this Diamond Model? Any report embedding it will show an “unavailable” notice.');">
+          class="ml-auto" x-data="confirmSubmit('Delete this Diamond Model? Any report embedding it will show an “unavailable” notice.')" @submit="check($event)">
       <button class="btn btn--ghost btn--sm link-danger">Delete assessment</button>
     </form>
   </div>

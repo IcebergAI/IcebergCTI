@@ -1,6 +1,6 @@
 {
   "alpine": {
-    "integrity": "sha384-pb6hrQvo4s23cEUFtj0CZkzGE3jyK3pj26RIupXXxhSrrcUA/Cn0lZgcCrGH0t6L",
+    "integrity": "sha384-MKLWq9B+VC0W3U8kDIBEsSu8uCnQ1B0UQpRaB+F7uR5ocXFbymMUKuLRntu5LLdu",
     "path": "js/vendor/alpine.min.js",
     "version": "3.15.12"
   },
@@ -38,7 +38,7 @@
     "version": "google-fonts"
   },
   "tailwind": {
-    "integrity": "sha384-UiOY2a5ZRHAkFnklU8ZB+STJjSzTd1c9TPUunmg3P9MvKmQqnW4XeaCt0ySXGKQt",
+    "integrity": "sha384-j5V9k9I6NQLQS8W6lnHO99qY4QUuv1RxzQ4eyUMUew9A2eBc2GPDA1hrM6jcZMMI",
     "path": "css/vendor/tailwind.css",
     "version": "4.3.1"
   }

@@ -9,6 +9,7 @@ in CI (re-runs scripts/vendor_assets.py and git-diffs).
 import base64
 import hashlib
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -73,3 +74,38 @@ def test_base_html_uses_first_party_assets_with_sri():
     assert "/static/{{ assets.alpine.path }}" in base
     assert "/static/{{ assets.fonts.path }}" in base
     assert "integrity=" in base
+
+
+# --- Strict-CSP compatibility invariants (script-src 'self', no unsafe-inline) ---
+# These patterns are all blocked by the strict CSP and would silently break the
+# portal, so guard against reintroducing them. See auth/security_headers.py and
+# the @alpinejs/csp build wired in scripts/vendor_assets.py.
+
+_INLINE_HANDLER = re.compile(r"\son[a-z]+\s*=\s*[\"']")  # onclick=, onsubmit=, …
+
+
+def test_no_inline_event_handlers_in_templates():
+    for html in _TEMPLATES.rglob("*.html"):
+        m = _INLINE_HANDLER.search(html.read_text())
+        assert not m, (
+            f"{html.name} has an inline on*= event handler ({m.group().strip()}…) — "
+            "blocked by strict CSP; use an Alpine @-handler bound to a registered "
+            "component method instead"
+        )
+
+
+def test_no_inline_script_blocks_in_templates():
+    # Only same-origin <script src> and <script type="application/json"> islands
+    # are allowed; an executable inline <script> needs 'unsafe-inline'.
+    bad = re.compile(r"<script(?![^>]*\bsrc=)(?![^>]*type=[\"']application/json)[^>]*>")
+    for html in _TEMPLATES.rglob("*.html"):
+        m = bad.search(html.read_text())
+        assert not m, f"{html.name} has an inline <script> block — blocked by strict CSP"
+
+
+def test_no_x_html_directive_in_templates():
+    # x-html is prohibited by the @alpinejs/csp build; render via x-ref + x-effect.
+    for html in _TEMPLATES.rglob("*.html"):
+        assert "x-html" not in html.read_text(), (
+            f"{html.name} uses x-html — prohibited by the Alpine CSP build"
+        )

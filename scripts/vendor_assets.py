@@ -37,6 +37,10 @@ import httpx
 # Pinned versions — bump here, then re-run this script and commit the result.
 # --------------------------------------------------------------------------- #
 TAILWIND_VERSION = "4.3.1"   # latest major; CSS-first config in frontend/input.css
+# The CSP build (@alpinejs/csp): evaluates directive expressions without eval(),
+# so the portal needs no script-src 'unsafe-eval' / 'unsafe-inline'. Its cost is
+# that x-data must name a component registered via Alpine.data() and directive
+# expressions are restricted to property access / method calls (see static/js).
 ALPINE_VERSION = "3.15.12"   # latest major (Alpine has no v4 yet); exact pin
 
 # Google Fonts request mirroring the historical base.html <link>. Only the
@@ -82,7 +86,7 @@ def _get(url: str, **kw) -> httpx.Response:
 # Alpine.js
 # --------------------------------------------------------------------------- #
 def vendor_alpine() -> dict:
-    url = f"https://cdn.jsdelivr.net/npm/alpinejs@{ALPINE_VERSION}/dist/cdn.min.js"
+    url = f"https://cdn.jsdelivr.net/npm/@alpinejs/csp@{ALPINE_VERSION}/dist/cdn.min.js"
     data = _get(url).content
     rel = "js/vendor/alpine.min.js"
     _write(STATIC / rel, data)

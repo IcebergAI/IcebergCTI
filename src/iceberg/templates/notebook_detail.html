@@ -246,7 +246,7 @@
           <a class="btn-link ml-auto" href="/notebooks/{{ notebook.id }}/attachments/{{ a.id }}/download">Download ↓</a>
           {% if can_write %}
             <form method="post" action="/notebooks/{{ notebook.id }}/attachments/{{ a.id }}/delete"
-                  class="ml-3" onsubmit="return confirm('Delete this attachment?');">
+                  class="ml-3" x-data="confirmSubmit('Delete this attachment?')" @submit="check($event)">
               <button class="link-danger" style="background:none;border:0;cursor:pointer;">Delete</button>
             </form>
           {% endif %}
@@ -289,7 +289,7 @@
             {% if can_write %}
               <div class="file-row-actions mt-2">
                 <form method="post" action="/notebooks/{{ notebook.id }}/figures/{{ f.id }}/delete"
-                      onsubmit="return confirm('Delete this figure?');">
+                      x-data="confirmSubmit('Delete this figure?')" @submit="check($event)">
                   <button class="link-danger" style="background:none;border:0;cursor:pointer;">Delete</button>
                 </form>
               </div>
@@ -332,7 +332,7 @@
               <div class="file-row-actions mt-2">
                 <a class="btn btn--ghost btn--sm" href="/notebooks/{{ notebook.id }}/diamonds/{{ d.id }}/edit">Edit</a>
                 <form method="post" action="/notebooks/{{ notebook.id }}/diamonds/{{ d.id }}/delete"
-                      onsubmit="return confirm('Delete this Diamond Model?');">
+                      x-data="confirmSubmit('Delete this Diamond Model?')" @submit="check($event)">
                   <button class="link-danger" style="background:none;border:0;cursor:pointer;">Delete</button>
                 </form>
               </div>
@@ -394,7 +394,7 @@
               <div class="file-row-actions mt-2">
                 <a class="btn btn--ghost btn--sm" href="/notebooks/{{ notebook.id }}/ach/{{ a.id }}/edit">Edit</a>
                 <form method="post" action="/notebooks/{{ notebook.id }}/ach/{{ a.id }}/delete"
-                      onsubmit="return confirm('Delete this ACH analysis?');">
+                      x-data="confirmSubmit('Delete this ACH analysis?')" @submit="check($event)">
                   <button class="link-danger" style="background:none;border:0;cursor:pointer;">Delete</button>
                 </form>
               </div>

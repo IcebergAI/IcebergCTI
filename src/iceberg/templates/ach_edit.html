@@ -19,7 +19,7 @@
     </div>
     <h1 class="page-title mt-2">{{ ach.title or 'Untitled analysis' }}</h1>
     <div class="mt-3 flex gap-2 items-center flex-wrap"
-         x-data="{ copied: false, copy() { navigator.clipboard.writeText('[[ach:{{ ach.id }}]]').then(() => { this.copied = true; setTimeout(() => this.copied = false, 1600); }); } }">
+         x-data="copyToken('[[ach:{{ ach.id }}]]')">
       <span class="mono text-xs" style="color:var(--accent-deep);background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:5px;padding:3px 7px;">[[ach:{{ ach.id }}]]</span>
       <button type="button" class="btn btn--ghost btn--sm" @click="copy()">
         <span x-text="copied ? '✓ Copied' : '⧉ Copy token'"></span>
@@ -29,58 +29,11 @@
   </div>
 </div>
 
-<div class="editor-grid"
-     x-data='{
-       title: {{ ach.title | tojson }},
-       question: {{ ach.question | tojson }},
-       hypotheses: {{ ach.hypotheses | tojson }},
-       evidence: {{ ach.evidence | tojson }},
-       ratings: {{ ach.ratings | tojson }},
-       previewSvg: {{ preview_svg | tojson }},
-       timer: null,
-       nextId(prefix, rows) {
-         let max = 0;
-         rows.forEach(r => {
-           if (typeof r.id === "string" && r.id[0] === prefix) {
-             const n = parseInt(r.id.slice(1), 10);
-             if (!isNaN(n)) max = Math.max(max, n);
-           }
-         });
-         return prefix + (max + 1);
-       },
-       addHypothesis() { this.hypotheses.push({ id: this.nextId("h", this.hypotheses), text: "" }); this.schedule(); },
-       addEvidence() { this.evidence.push({ id: this.nextId("e", this.evidence), text: "" }); this.schedule(); },
-       removeHypothesis(j) {
-         const hid = this.hypotheses[j].id;
-         this.hypotheses.splice(j, 1);
-         Object.keys(this.ratings).forEach(k => { if (k.split(":")[0] === hid) delete this.ratings[k]; });
-         this.schedule();
-       },
-       removeEvidence(i) {
-         const eid = this.evidence[i].id;
-         this.evidence.splice(i, 1);
-         Object.keys(this.ratings).forEach(k => { if (k.split(":")[1] === eid) delete this.ratings[k]; });
-         this.schedule();
-       },
-       rating(hid, eid) { return this.ratings[hid + ":" + eid] || "NEUTRAL"; },
-       setRating(hid, eid, value) {
-         if (value === "NEUTRAL") { delete this.ratings[hid + ":" + eid]; }
-         else { this.ratings[hid + ":" + eid] = value; }
-         this.schedule();
-       },
-       serialize() {
-         this.$refs.matrix.value = JSON.stringify({ hypotheses: this.hypotheses, evidence: this.evidence, ratings: this.ratings });
-       },
-       schedule() { clearTimeout(this.timer); this.timer = setTimeout(() => this.refresh(), 300); },
-       async refresh() {
-         const res = await fetch("/api/preview/ach", {
-           method: "POST",
-           headers: {"Content-Type": "application/json"},
-           body: JSON.stringify({ title: this.title, question: this.question, hypotheses: this.hypotheses, evidence: this.evidence, ratings: this.ratings })
-         });
-         if (res.ok) { this.previewSvg = (await res.json()).svg; }
-       }
-     }'>
+<div class="editor-grid" x-data="achEditor('ach-editor-data')">
+  <script type="application/json" id="ach-editor-data">
+    {{ {'title': ach.title, 'question': ach.question, 'hypotheses': ach.hypotheses,
+        'evidence': ach.evidence, 'ratings': ach.ratings, 'previewSvg': preview_svg} | tojson }}
+  </script>
 
   <!-- Editor -->
   <section class="card card-pad-lg">
@@ -155,14 +108,14 @@
   <!-- Live preview -->
   <section class="card card-pad-lg" style="background:var(--surface-2);">
     <div class="pane-label"><span class="pip"></span> Matrix preview</div>
-    <div class="ach-svg mt-2" style="overflow-x:auto;" x-html="previewSvg"></div>
+    <div class="ach-svg mt-2" style="overflow-x:auto;" x-ref="preview" x-effect="renderPreview()"></div>
   </section>
 </div>
 
 {% if can_edit %}
   <div class="flex items-center mt-5">
     <form method="post" action="/notebooks/{{ notebook.id }}/ach/{{ ach.id }}/delete"
-          class="ml-auto" onsubmit="return confirm('Delete this ACH analysis? Any report embedding it will show an “unavailable” notice.');">
+          class="ml-auto" x-data="confirmSubmit('Delete this ACH analysis? Any report embedding it will show an “unavailable” notice.')" @submit="check($event)">
       <button class="btn btn--ghost btn--sm link-danger">Delete analysis</button>
     </form>
   </div>
