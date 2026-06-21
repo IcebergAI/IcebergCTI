@@ -2,12 +2,13 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, col, select
 
 from ..auth.dependencies import CurrentUser
 from ..db import get_session
 from ..models import DisseminationEvent, utcnow
+from ..services import reports as report_service
 
 router = APIRouter(tags=["feed"])
 SessionDep = Annotated[Session, Depends(get_session)]
@@ -20,7 +21,13 @@ def get_feed(session: SessionDep, user: CurrentUser) -> list[dict]:
         .where(DisseminationEvent.stakeholder_id == user.id)
         .order_by(DisseminationEvent.created_at.desc())
     ).all()
-    return [{"event": e, "report": e.report} for e in events]
+    items = []
+    for event in events:
+        try:
+            items.append({"event": event, "report": report_service.ensure_visible(event.report, user)})
+        except HTTPException:
+            continue
+    return items
 
 
 @router.post("/feed/read")

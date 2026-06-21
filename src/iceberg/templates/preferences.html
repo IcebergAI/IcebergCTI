@@ -27,6 +27,32 @@
         </label>
       {% endfor %}
     </div>
+
+    <h2 class="section-title mt-6 mb-1">Topic subscriptions</h2>
+    <p class="text-xs mb-4" style="color:var(--muted);">Select taxonomy terms to narrow feed delivery. Leave all unchecked to receive every eligible report at your chosen intelligence level.</p>
+    {% if tags_by_kind %}
+      <div class="grid gap-4">
+        {% for kind, tags in tags_by_kind.items() %}
+          <div>
+            <div class="eyebrow mb-2">{{ kind.value if kind.value is defined else kind }}</div>
+            <div class="grid md:grid-cols-2 gap-1">
+              {% for t in tags %}
+                <label class="check">
+                  <input type="checkbox" name="subscribed_tag_ids" value="{{ t.id }}"
+                         {% if t.id in subscribed_tag_ids %}checked{% endif %}>
+                  <span>
+                    <span class="font-medium">{{ t.label }}</span>
+                    {% if t.external_id %}<span class="mono text-xs ml-1" style="color:var(--muted);">{{ t.external_id }}</span>{% endif %}
+                  </span>
+                </label>
+              {% endfor %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="empty">No taxonomy terms are available yet.</p>
+    {% endif %}
     <div class="mt-5"><button class="btn btn--ink">Save preferences</button></div>
   </form>
 

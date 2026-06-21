@@ -43,12 +43,18 @@ class Settings(BaseSettings):
     oidc_client_secret: str = ""
     oidc_redirect_uri: str = "http://localhost:8000/auth/callback"
     oidc_role_claim: str = "roles"
+    oidc_department_claim: str = "department"
+    oidc_title_claim: str = "jobTitle"
+    oidc_company_claim: str = "companyName"
+    oidc_office_claim: str = "officeLocation"
 
     # Typst rendering
     typst_bin: str = "typst"
     render_output_dir: str = "./rendered"
     cmarker_version: str = "0.1.1"
     typst_timeout: int = 60  # seconds; guards against a runaway compile
+    render_retention_keep: int = 3
+    render_retention_days: int = 90
 
     # Notebook attachments (uploaded reference files)
     attachments_dir: str = "./attachments"
@@ -90,6 +96,24 @@ class Settings(BaseSettings):
     smtp_starttls: bool = False
     # Bounds SMTP connect/send so a stuck server can't hang the background task.
     smtp_timeout: float = 10.0
+    webhook_url: str = ""
+    webhook_token: str = ""
+    webhook_timeout: float = 5.0
+
+    # Governed AI analyst assist. Off by default; every feature routes through
+    # services/ai.py so advisory behavior, TLP egress and audit stay consistent.
+    ai_backend: str = "none"  # none | openai-compatible
+    ai_base_url: str = ""
+    ai_api_key: str = ""
+    ai_model: str = ""
+    ai_timeout: float = 20.0
+    ai_max_tlp: str = "AMBER"
+    ai_embeddings_enabled: bool = False
+    ai_embedding_model: str = ""
+
+    # Inbound reporting ingestion (RSS/Atom v1).
+    ingestion_timeout: float = 10.0
+    ingestion_max_bytes: int = 2 * 1024 * 1024
 
     # Security audit logging → SIEM. Runtime routing config lives in the DB
     # (AuditSettings, admin-editable at /admin/audit); these env values are the

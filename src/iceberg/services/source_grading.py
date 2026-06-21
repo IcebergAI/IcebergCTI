@@ -182,8 +182,8 @@ def _credibility_from_text(category: str, text: str, has_readable_content: bool)
 
 def heuristic_grade(source: Source) -> GradeResult | None:
     category, host = _source_category(source)
-    text = " ".join(part for part in (source.title, source.summary) if part)
-    has_readable_content = bool(source.summary.strip())
+    text = " ".join(part for part in (source.title, source.summary, source.content_md) if part)
+    has_readable_content = bool(source.summary.strip() or source.content_md.strip())
 
     reliability_by_category = {
         "official": SourceReliability.B,
@@ -198,7 +198,7 @@ def heuristic_grade(source: Source) -> GradeResult | None:
         return None
 
     credibility = _credibility_from_text(category, text, has_readable_content)
-    detail = "analyst summary" if has_readable_content else "source identity only"
+    detail = "analyst-provided content" if has_readable_content else "source identity only"
     subject = host or "the source reference"
     rationale = (
         f"Recognized {subject} as {category.replace('_', ' ')}; "

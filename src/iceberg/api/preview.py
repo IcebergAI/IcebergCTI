@@ -22,6 +22,7 @@ from ..schemas import (
 from ..services import ach as ach_service
 from ..services import diamond as diamond_service
 from ..services import product_html as product_html_service
+from ..services import tradecraft as tradecraft_service
 
 router = APIRouter(tags=["preview"])
 
@@ -44,9 +45,13 @@ def preview(
             return PreviewResponse(
                 html=product_html_service.preview_body_html(
                     session, report.notebook_id, body.markdown, report
-                )
+                ),
+                warnings=tradecraft_service.hedging_warnings(body_md=body.markdown),
             )
-    return PreviewResponse(html=render_markdown(body.markdown))
+    return PreviewResponse(
+        html=render_markdown(body.markdown),
+        warnings=tradecraft_service.hedging_warnings(body_md=body.markdown),
+    )
 
 
 @router.post("/preview/product", response_model=PreviewResponse)
@@ -58,7 +63,12 @@ def preview_product(
     report = session.get(Report, body.report_id)
     if report is None:
         # Unknown report — fall back to a notebook-less render (no diamond scope).
-        return PreviewResponse(html=render_markdown(body.body_md))
+        return PreviewResponse(
+            html=render_markdown(body.body_md),
+            warnings=tradecraft_service.hedging_warnings(
+                body_md=body.body_md, key_judgements=body.key_judgements
+            ),
+        )
     return PreviewResponse(
         html=product_html_service.preview_report_product_html(
             session,
@@ -68,7 +78,10 @@ def preview_product(
             key_assumptions=body.key_assumptions,
             intelligence_gaps=body.intelligence_gaps,
             report=report,
-        )
+        ),
+        warnings=tradecraft_service.hedging_warnings(
+            body_md=body.body_md, key_judgements=body.key_judgements
+        ),
     )
 
 

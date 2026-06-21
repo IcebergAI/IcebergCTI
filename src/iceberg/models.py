@@ -246,6 +246,8 @@ class AuditAction(StrEnum):
     TAG_CREATED = "TAG_CREATED"
     TAG_UPDATED = "TAG_UPDATED"
     TAG_DELETED = "TAG_DELETED"
+    # Governed analyst-assist calls (prompt/response bodies are never audited).
+    AI_ASSIST = "AI_ASSIST"
     # Audit configuration (admin)
     AUDIT_SETTINGS_UPDATED = "AUDIT_SETTINGS_UPDATED"
     AUDIT_TEST = "AUDIT_TEST"
@@ -387,6 +389,39 @@ class ReportTag(SQLModel, table=True):
     )
 
 
+class UserTagSubscription(SQLModel, table=True):
+    """A stakeholder subscribes to a taxonomy tag/entity for dissemination."""
+
+    user_id: int | None = Field(
+        default=None, foreign_key="user.id", ondelete="CASCADE", primary_key=True
+    )
+    tag_id: int | None = Field(
+        default=None, foreign_key="tag.id", ondelete="CASCADE", primary_key=True
+    )
+
+
+class UserAudienceGroup(SQLModel, table=True):
+    """Membership of a need-to-know audience group."""
+
+    user_id: int | None = Field(
+        default=None, foreign_key="user.id", ondelete="CASCADE", primary_key=True
+    )
+    group_id: int | None = Field(
+        default=None, foreign_key="audiencegroup.id", ondelete="CASCADE", primary_key=True
+    )
+
+
+class ReportAudienceGroup(SQLModel, table=True):
+    """A published report is limited to the given need-to-know audience group."""
+
+    report_id: int | None = Field(
+        default=None, foreign_key="report.id", ondelete="CASCADE", primary_key=True
+    )
+    group_id: int | None = Field(
+        default=None, foreign_key="audiencegroup.id", ondelete="CASCADE", primary_key=True
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Core tables
 # --------------------------------------------------------------------------- #
@@ -397,7 +432,43 @@ class User(SQLModel, table=True):
     display_name: str
     role: Role = Field(default=Role.ANALYST)
     preferred_intel_level: IntelLevel | None = Field(default=None)
+    token_version: int = Field(default=0)
+    department: str = ""
+    job_title: str = ""
+    company_name: str = ""
+    office_location: str = ""
     created_at: datetime = Field(default_factory=utcnow)
+
+    tag_subscriptions: list["Tag"] = Relationship(
+        back_populates="subscribers", link_model=UserTagSubscription
+    )
+    audience_groups: list["AudienceGroup"] = Relationship(
+        back_populates="members", link_model=UserAudienceGroup
+    )
+
+
+class AudienceGroup(SQLModel, table=True):
+    """Need-to-know group for published products.
+
+    A report with no audience groups keeps the existing broadly visible
+    published-report behavior. A report with groups is visible only to writers or
+    members of at least one assigned group.
+    """
+
+    __table_args__ = (UniqueConstraint("slug", name="uq_audience_group_slug"),)
+
+    id: int | None = Field(default=None, primary_key=True)
+    name: str
+    slug: str = Field(index=True)
+    description: str = ""
+    created_at: datetime = Field(default_factory=utcnow)
+
+    members: list[User] = Relationship(
+        back_populates="audience_groups", link_model=UserAudienceGroup
+    )
+    reports: list["Report"] = Relationship(
+        back_populates="audience_groups", link_model=ReportAudienceGroup
+    )
 
 
 class Notebook(SQLModel, table=True):
@@ -442,6 +513,14 @@ class Source(SQLModel, table=True):
     title: str
     reference: str = ""  # URL or citation reference
     summary: str = ""
+    # Analyst-provided or ingested source text. The app deliberately does not
+    # fetch arbitrary source URLs; AI/source summaries operate only on content
+    # already present here.
+    content_md: str = ""
+    ai_provenance: dict = Field(
+        default_factory=dict,
+        sa_column=Column(JSON, nullable=False, server_default="{}"),
+    )
     reliability: SourceReliability | None = Field(default=None)
     credibility: SourceCredibility | None = Field(default=None)
     grading_origin: SourceGradingOrigin = Field(default=SourceGradingOrigin.UNGRADED)
@@ -602,6 +681,10 @@ class Report(SQLModel, table=True):
     # Kept distinct from the *likelihood* of the assessed event, which analysts
     # express in prose via the probability yardstick.
     analytic_confidence: AnalyticConfidence | None = Field(default=None)
+    ai_provenance: dict = Field(
+        default_factory=dict,
+        sa_column=Column(JSON, nullable=False, server_default="{}"),
+    )
     intel_level: IntelLevel = Field(default=IntelLevel.OPERATIONAL)
     tlp: TLP = Field(default=TLP.AMBER)
     status: ReportStatus = Field(default=ReportStatus.DRAFT)
@@ -624,6 +707,9 @@ class Report(SQLModel, table=True):
     )
     tags: list["Tag"] = Relationship(
         back_populates="reports", link_model=ReportTag
+    )
+    audience_groups: list[AudienceGroup] = Relationship(
+        back_populates="reports", link_model=ReportAudienceGroup
     )
     dissemination_events: list["DisseminationEvent"] = Relationship(
         back_populates="report", cascade_delete=True
@@ -747,6 +833,60 @@ class Tag(SQLModel, table=True):
     reports: list[Report] = Relationship(
         back_populates="tags", link_model=ReportTag
     )
+    subscribers: list[User] = Relationship(
+        back_populates="tag_subscriptions", link_model=UserTagSubscription
+    )
+
+
+class IngestionSource(SQLModel, table=True):
+    """Configured external reporting source for inbound collection."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    name: str
+    url: str
+    active: bool = Field(default=True)
+    created_at: datetime = Field(default_factory=utcnow)
+    last_checked_at: datetime | None = Field(default=None)
+    last_error: str = ""
+    last_status_code: int | None = Field(default=None)
+    last_item_count: int = Field(default=0)
+
+
+class IngestedItem(SQLModel, table=True):
+    """Pulled reporting awaiting analyst triage and promotion to a notebook."""
+
+    __table_args__ = (
+        UniqueConstraint("source_id", "external_id", name="uq_ingested_item_source_external"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    source_id: int | None = Field(
+        default=None, foreign_key="ingestionsource.id", ondelete="SET NULL", index=True
+    )
+    external_id: str = ""
+    title: str
+    url: str = ""
+    summary: str = ""
+    content_md: str = ""
+    published_at: datetime | None = Field(default=None)
+    status: str = Field(default="NEW", index=True)  # NEW | PROMOTED | DISCARDED
+    created_at: datetime = Field(default_factory=utcnow)
+    promoted_notebook_id: int | None = Field(default=None, foreign_key="notebook.id")
+    promoted_source_id: int | None = Field(default=None, foreign_key="source.id")
+
+
+class ReportEmbedding(SQLModel, table=True):
+    """Optional semantic-search vector for a published report."""
+
+    report_id: int | None = Field(
+        default=None, foreign_key="report.id", ondelete="CASCADE", primary_key=True
+    )
+    backend: str = ""
+    vector: list[float] = Field(
+        default_factory=list,
+        sa_column=Column(JSON, nullable=False, server_default="[]"),
+    )
+    updated_at: datetime = Field(default_factory=utcnow)
 
 
 class DisseminationEvent(SQLModel, table=True):

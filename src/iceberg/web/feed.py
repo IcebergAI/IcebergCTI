@@ -5,6 +5,7 @@ from typing import Annotated
 
 from fastapi import (
     Form,
+    HTTPException,
     Query,
     Request,
 )
@@ -15,8 +16,11 @@ from ..models import (
     DisseminationEvent,
     IntelLevel,
     Role,
+    TagKind,
     utcnow,
 )
+from ..services import reports as report_service
+from ..services import tags as tag_service
 from ..templating import templates
 from .common import (
     SessionDep,
@@ -33,8 +37,13 @@ def feed_view(request: Request, session: SessionDep, user: CurrentUser):
             .order_by(DisseminationEvent.created_at.desc())
         ).all()
     )
-    unread_ids = {e.id for e in events if e.read_at is None}
-    items = [{"event": e, "report": e.report} for e in events]
+    items = []
+    for event in events:
+        try:
+            items.append({"event": event, "report": report_service.ensure_visible(event.report, user)})
+        except HTTPException:
+            continue
+    unread_ids = {item["event"].id for item in items if item["event"].read_at is None}
     # Viewing the feed marks everything read.
     for e in events:
         if e.read_at is None:
@@ -51,8 +60,23 @@ def feed_view(request: Request, session: SessionDep, user: CurrentUser):
 @router.get("/preferences")
 def preferences_view(request: Request, session: SessionDep, user: CurrentUser):
     return templates.TemplateResponse(
-        request, "preferences.html", {"user": user}
+        request,
+        "preferences.html",
+        {
+            "user": user,
+            "tags_by_kind": _tags_by_kind(
+                tag_service.list_tags(session, include_inactive=False)
+            ),
+            "subscribed_tag_ids": {t.id for t in user.tag_subscriptions},
+        },
     )
+
+
+def _tags_by_kind(tags) -> dict[TagKind, list]:
+    grouped: dict[TagKind, list] = {k: [] for k in TagKind}
+    for tag in tags:
+        grouped[tag.kind].append(tag)
+    return {k: v for k, v in grouped.items() if v}
 
 
 def _coerce_role(role: str | None, *, default: Role) -> Role:
@@ -91,12 +115,12 @@ def preferences_save(
     session: SessionDep,
     user: CurrentUser,
     preferred_intel_level: Annotated[str, Form()] = "",
+    subscribed_tag_ids: Annotated[list[int], Form()] = [],
 ):
     user.preferred_intel_level = (
         IntelLevel(preferred_intel_level) if preferred_intel_level else None
     )
     session.add(user)
     session.commit()
+    tag_service.set_user_subscriptions(session, user, subscribed_tag_ids)
     return _redirect("/preferences")
-
-

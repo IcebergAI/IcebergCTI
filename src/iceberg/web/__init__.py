@@ -10,6 +10,7 @@ from . import (  # noqa: F401 — imported for their @router route registrations
     analytics,
     discovery,
     feed,
+    ingestion,
     notebooks,
     reports,
     requirements,

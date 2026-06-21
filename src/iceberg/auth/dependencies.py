@@ -37,6 +37,8 @@ def get_optional_user(
     try:
         payload = decode_access_token(token)
         user = session.get(User, int(payload["sub"]))
+        if user is not None and int(payload.get("ver", 0)) != user.token_version:
+            return None
     except (jwt.PyJWTError, KeyError, ValueError):
         # A malformed/expired/forged token (or a non-int subject) means
         # "anonymous"; anything else (e.g. a DB error) should propagate rather

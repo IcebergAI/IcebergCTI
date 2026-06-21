@@ -77,6 +77,21 @@ PROBABILITY_YARDSTICK: list[ProbabilityBand] = [
     ProbabilityBand("Almost certain", 95, 99),
 ]
 
+# Advisory lint terms for vague, unquantified estimative language. The lint is
+# intentionally non-blocking: it nudges analysts toward the probability yardstick
+# without preventing draft save, review, or publish.
+HEDGING_TERMS: tuple[str, ...] = (
+    "could",
+    "might",
+    "possibly",
+    "perhaps",
+    "may",
+    "appears to",
+    "seems to",
+    "suggests",
+    "potentially",
+)
+
 
 # --------------------------------------------------------------------------- #
 # Intelligence-concepts glossary (shared across every role)
@@ -145,10 +160,10 @@ CONCEPTS: list[Concept] = [
         body=(
             "Sources collected in a notebook carry a two-part Admiralty grade shown "
             "as a compact chip (e.g. B2). Grading can be suggested automatically — "
-            "Iceberg safely fetches public URLs and optionally calls a configured LLM, "
-            "falling back to a local heuristic — or set manually by an analyst. A "
-            "source you just added may briefly show a 'Grading…' chip while the "
-            "background grade resolves."
+            "Iceberg uses an offline local heuristic over the source identity, "
+            "analyst summary and pasted source content — or set manually by an "
+            "analyst. The grader does not fetch remote URLs or send source text to "
+            "an external provider."
         ),
         points=[
             "Reliability A–F — A is completely reliable, F means it cannot be judged.",

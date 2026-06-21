@@ -45,6 +45,7 @@
   {% set _crumbs = {
     '': 'Dashboard', 'reports': 'Reports', 'notebooks': 'Notebooks',
     'search': 'Search', 'tags': 'Entities', 'matrix': 'ATT&CK matrix',
+    'ingestion': 'Ingestion',
     'requirements': 'Tasking', 'feed': 'Feed', 'preferences': 'Preferences',
     'maturity': 'Program maturity', 'help': 'Help', 'admin': 'Administration'
   } %}
@@ -66,11 +67,13 @@
     {% set jump_items = [
       {'label': 'Dashboard', 'href': '/', 'group': 'Workspace'},
       {'label': 'Reports', 'href': '/reports', 'group': 'Workspace'},
+      {'label': 'Ingestion', 'href': '/ingestion', 'group': 'Workspace'},
       {'label': 'Search', 'href': '/search', 'group': 'Discovery'},
       {'label': 'Entities', 'href': '/tags', 'group': 'Discovery'},
       {'label': 'ATT&CK matrix', 'href': '/matrix', 'group': 'Discovery'},
       {'label': 'Program maturity', 'href': '/maturity', 'group': 'Discovery'},
       {'label': 'Taxonomy', 'href': '/admin/tags', 'group': 'Administration'},
+      {'label': 'Audience groups', 'href': '/admin/audience', 'group': 'Administration'},
       {'label': 'Audit log', 'href': '/admin/audit', 'group': 'Administration'},
       {'label': 'Tasking', 'href': '/requirements', 'group': 'Administration'},
       {'label': 'Help', 'href': '/help', 'group': 'Help'}
@@ -80,6 +83,7 @@
       {'label': 'Dashboard', 'href': '/', 'group': 'Workspace'},
       {'label': 'Notebooks', 'href': '/notebooks', 'group': 'Workspace'},
       {'label': 'Reports', 'href': '/reports', 'group': 'Workspace'},
+      {'label': 'Ingestion', 'href': '/ingestion', 'group': 'Workspace'},
       {'label': 'Search', 'href': '/search', 'group': 'Discovery'},
       {'label': 'Entities', 'href': '/tags', 'group': 'Discovery'},
       {'label': 'ATT&CK matrix', 'href': '/matrix', 'group': 'Discovery'},
@@ -129,6 +133,7 @@
             <div class="rail-group-label">Workspace</div>
             {{ rail_link('/', 'ic-home', 'Dashboard', path == '/') }}
             {{ rail_link('/reports', 'ic-reports', 'Reports', path.startswith('/reports')) }}
+            {{ rail_link('/ingestion', 'ic-feed', 'Ingestion', path.startswith('/ingestion')) }}
           </div>
           <div class="rail-group">
             <div class="rail-group-label">Discovery</div>
@@ -140,6 +145,7 @@
           <div class="rail-group">
             <div class="rail-group-label">Administration</div>
             {{ rail_link('/admin/tags', 'ic-taxonomy', 'Taxonomy', path.startswith('/admin/tags')) }}
+            {{ rail_link('/admin/audience', 'ic-entity', 'Audience', path.startswith('/admin/audience')) }}
             {{ rail_link('/admin/audit', 'ic-audit', 'Audit log', path.startswith('/admin/audit')) }}
             {{ rail_link('/requirements', 'ic-tasking', 'Tasking', path.startswith('/requirements')) }}
           </div>
@@ -149,6 +155,7 @@
             {{ rail_link('/', 'ic-home', 'Dashboard', path == '/') }}
             {{ rail_link('/notebooks', 'ic-notebook', 'Notebooks', path.startswith('/notebooks')) }}
             {{ rail_link('/reports', 'ic-reports', 'Reports', path.startswith('/reports')) }}
+            {{ rail_link('/ingestion', 'ic-feed', 'Ingestion', path.startswith('/ingestion')) }}
           </div>
           <div class="rail-group">
             <div class="rail-group-label">Discovery</div>

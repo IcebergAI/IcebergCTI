@@ -12,6 +12,10 @@ def upsert_user(
     email: str,
     display_name: str,
     role: Role,
+    department: str = "",
+    job_title: str = "",
+    company_name: str = "",
+    office_location: str = "",
 ) -> User:
     """Find a user by OIDC subject or email, creating/updating as needed.
 
@@ -27,13 +31,26 @@ def upsert_user(
         user = session.exec(select(User).where(User.email == email)).first()
 
     if user is None:
-        user = User(sub=sub, email=email, display_name=display_name, role=role)
+        user = User(
+            sub=sub,
+            email=email,
+            display_name=display_name,
+            role=role,
+            department=department,
+            job_title=job_title,
+            company_name=company_name,
+            office_location=office_location,
+        )
         session.add(user)
     else:
         if sub and not user.sub:
             user.sub = sub
         user.display_name = display_name
         user.role = role
+        user.department = department
+        user.job_title = job_title
+        user.company_name = company_name
+        user.office_location = office_location
         session.add(user)
 
     session.commit()

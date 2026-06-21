@@ -10,11 +10,11 @@
 # - model_config: pydantic-settings configuration attribute.
 # - enum members: controlled-vocabulary values stored in the DB / chosen in forms,
 #   not always referenced by Python name.
-# - model columns (captured_at/file_size/uploaded_at/reviewer_id/grading_*): SQLModel fields
-#   populated and read via the ORM / templates.
+# - model columns / relationships: SQLModel fields populated/read by the ORM,
+#   templates, JSON serialisation or migration-compatible persistence.
+# - script entry points: referenced by pyproject console_scripts.
 # - HTMLParser callbacks: invoked by the stdlib parser.
-# - help_content dataclass fields (href/tagline/.../points): read only in
-#   templates/help.html, which Vulture can't see.
+# - help_content dataclass fields: read only in templates/help.html.
 
 _.dispatch  # unused method (src/iceberg/auth/csrf.py:40)
 _.background  # Starlette response.background (src/iceberg/auth/audit_middleware.py)
@@ -53,6 +53,27 @@ graded_at  # unused variable (src/iceberg/models.py:312)
 file_size  # unused variable (src/iceberg/models.py:334)
 uploaded_at  # unused variable (src/iceberg/models.py:336)
 reviewer_id  # unused variable (src/iceberg/models.py:361)
+group_id  # SQLModel link-table FK (src/iceberg/models.py:409)
+group_id  # SQLModel link-table FK (src/iceberg/models.py:420)
+_.members  # SQLModel relationship / response serialization (src/iceberg/api/audience.py:35)
+members  # SQLModel relationship (src/iceberg/models.py:466)
+subscribers  # SQLModel relationship (src/iceberg/models.py:836)
+last_checked_at  # SQLModel column (src/iceberg/models.py:849)
+last_error  # SQLModel column read in ingestion.html
+last_status_code  # SQLModel column read in ingestion.html
+last_item_count  # SQLModel column read in ingestion.html
+promoted_notebook_id  # SQLModel column (src/iceberg/models.py:871)
+promoted_source_id  # SQLModel column (src/iceberg/models.py:872)
+_.last_checked_at  # SQLModel column assignment (src/iceberg/services/ingestion.py:75)
+_.last_error  # SQLModel column assignment/read in ingestion operations
+_.last_status_code  # SQLModel column assignment/read in ingestion operations
+_.last_item_count  # SQLModel column assignment/read in ingestion operations
+_.promoted_notebook_id  # SQLModel column assignment (src/iceberg/services/ingestion.py:101)
+_.promoted_source_id  # SQLModel column assignment (src/iceberg/services/ingestion.py:102)
+ai_embeddings_enabled  # configuration field reserved for vector backend selection
+ai_embedding_model  # configuration field reserved for vector backend selection
+_.prune_renders_main  # console script entry point (pyproject.toml)
+_.rebuild_related_main  # console script entry point (pyproject.toml)
 _.reviewer_id  # unused attribute (src/iceberg/services/lifecycle.py:50)
 _.reviewer_id  # unused attribute (src/iceberg/services/lifecycle.py:55)
 _.handle_starttag  # unused method (src/iceberg/services/source_grading.py:181)

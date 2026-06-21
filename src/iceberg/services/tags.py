@@ -16,6 +16,7 @@ from fastapi import HTTPException, status
 from sqlmodel import Session, col, select
 
 from ..models import Motivation, Report, ReportTag, Tag, TagKind, utcnow
+from ..models import User, UserTagSubscription
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
@@ -244,6 +245,22 @@ def _tags_by_id(session: Session, ids: list[int]) -> list[Tag]:
     if not ids:
         return []
     return list(session.exec(select(Tag).where(col(Tag.id).in_(ids))).all())
+
+
+def set_user_subscriptions(
+    session: Session, user: User, tag_ids: list[int]
+) -> list[Tag]:
+    """Replace a stakeholder's tag/entity subscriptions."""
+    tags = _tags_by_id(session, tag_ids)
+    for link in session.exec(
+        select(UserTagSubscription).where(UserTagSubscription.user_id == user.id)
+    ).all():
+        session.delete(link)
+    for tag in tags:
+        session.add(UserTagSubscription(user_id=user.id, tag_id=tag.id))
+    session.commit()
+    session.refresh(user)
+    return tags
 
 
 def set_report_tags(

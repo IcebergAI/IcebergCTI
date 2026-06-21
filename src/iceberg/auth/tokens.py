@@ -14,7 +14,9 @@ from ..config import get_settings
 from ..models import utcnow
 
 
-def create_access_token(*, user_id: int, email: str, role: str, name: str) -> str:
+def create_access_token(
+    *, user_id: int, email: str, role: str, name: str, token_version: int = 0
+) -> str:
     settings = get_settings()
     now = utcnow()
     payload = {
@@ -22,6 +24,7 @@ def create_access_token(*, user_id: int, email: str, role: str, name: str) -> st
         "email": email,
         "role": role,
         "name": name,
+        "ver": token_version,
         "iat": now,
         "exp": now + timedelta(minutes=settings.jwt_expire_minutes),
     }

@@ -29,6 +29,9 @@ event collector) — configurable in the admin console.
 > dissemination (on publish, reports are matched to stakeholders by preferred intel level +
 > TLP into a personalized feed, with email notifications) **closed by a stakeholder feedback /
 > RFI-satisfaction loop**, and an admin-curated tag taxonomy with full-text + faceted search.
+> The current branch adds governed AI-assist APIs, STIX export, audience-group need-to-know,
+> tag-subscription/webhook dissemination, RSS/Atom ingestion, related-report indexing,
+> render retention and deployment scaffolding.
 > See [CLAUDE.md](CLAUDE.md).
 
 ## Screenshots
@@ -117,12 +120,10 @@ tagged with it).*
 
 ## Quick start
 ```bash
-python -m venv .venv
-. .venv/bin/activate
-pip install -e ".[dev]"
+uv sync --extra dev
 
 cp .env.example .env        # tweak settings if you like
-uvicorn iceberg.main:app --reload
+uv run uvicorn iceberg.main:app --reload
 ```
 Open <http://localhost:8000>. With `ICEBERG_DEV_AUTH=true` (the default) you'll see a
 **dev login** on the sign-in page — pick a role (e.g. `ANALYST`) and continue. The schema is
@@ -210,6 +211,36 @@ a browsable look at what the other roles do, and a glossary of the intelligence 
 3. Back as the stakeholder, your **Feed** shows the new report (with an unread badge on the
    dashboard); a notification email is recorded by the `console` backend (in-memory outbox).
    Reports marked TLP:RED or AMBER+STRICT are withheld from broadcast.
+4. Stakeholders can subscribe to taxonomy tags from **Preferences**; if they have any
+   subscriptions, publish-time matching requires at least one shared report tag. A generic
+   publication webhook can also be configured with `ICEBERG_WEBHOOK_URL`.
+
+### Need-to-know groups
+`ADMIN`s can use **Audience** (`/admin/audience`) to create named groups, assign stakeholder
+members, and scope reports to one or more groups from the report editor's **Audience** tab.
+Stakeholders outside a scoped report's groups cannot see it in search, feeds, direct report
+reads, or dissemination. Unscoped published reports remain visible to authenticated stakeholders.
+
+### Governed AI assist
+AI assist is off by default (`ICEBERG_AI_BACKEND=none`). When configured for an
+OpenAI-compatible chat endpoint, writer-only API endpoints can draft judgement text, source
+summaries, tag suggestions, Diamond/ACH starts, and analytic challenge notes. Suggestions are
+advisory only; Iceberg records an audit event with metadata, never prompt/response bodies, and
+report content is blocked when its TLP exceeds `ICEBERG_AI_MAX_TLP`.
+
+### Ingest external reporting
+Writer-only **Ingestion** (`/ingestion`) manages RSS/Atom sources, pulls feed items into a
+triage inbox, and promotes selected items into a notebook as `Source` rows. Feed URLs must resolve to public
+HTTP(S) addresses, downloads are size/time bounded, XML is parsed with `defusedxml`, and
+promotion uses the existing source grading path.
+
+### Export and relate products
+Published reports can be exported as STIX 2.1 bundles with `GET /api/reports/{id}/stix`.
+The export maps the report plus controlled taxonomy tags into STIX report, threat-actor,
+malware, campaign, attack-pattern and sector identity objects. `GET /api/reports/{id}/related`
+returns access-scoped related products from a rebuildable local vector table; rebuild it with
+`iceberg-rebuild-related`. The report view exposes both the STIX download and related-product
+panel when related products exist.
 
 ### Try the feedback loop
 1. Before publishing, have the `ANALYST` tick the **Requirements satisfied** so the report addresses
@@ -291,13 +322,18 @@ All settings use the `ICEBERG_` env prefix and can live in `.env` (see
 | `ICEBERG_DATABASE_URL` | SQLite URL, e.g. `sqlite:///./iceberg.db` |
 | `ICEBERG_DEV_AUTH` | Enable the dev-login bypass (auto-off when `ICEBERG_ENVIRONMENT=prod`) |
 | `ICEBERG_OIDC_ENABLED` + `ICEBERG_OIDC_*` | Microsoft Entra ID OIDC settings |
+| `ICEBERG_OIDC_DEPARTMENT_CLAIM` / `ICEBERG_OIDC_TITLE_CLAIM` / `ICEBERG_OIDC_COMPANY_CLAIM` / `ICEBERG_OIDC_OFFICE_CLAIM` | Optional Entra profile claims persisted on users |
 | `ICEBERG_TYPST_BIN` / `ICEBERG_RENDER_OUTPUT_DIR` | Typst binary + PDF output dir |
+| `ICEBERG_RENDER_RETENTION_KEEP` / `ICEBERG_RENDER_RETENTION_DAYS` | Rendered-PDF retention policy; prune manually with `iceberg-prune-renders` |
 | `ICEBERG_ATTACHMENTS_DIR` / `ICEBERG_ATTACHMENT_MAX_MB` | Notebook attachment storage dir + size cap (default 25 MB) |
 | `ICEBERG_ATTACHMENT_ALLOWED_TYPES` | Comma-separated MIME whitelist for uploads (override the default set) |
 | `ICEBERG_FIGURES_DIR` / `ICEBERG_FIGURE_MAX_MB` | Notebook figure (embeddable image) storage dir + size cap (default 10 MB) |
 | `ICEBERG_DISSEMINATION_MAX_TLP` | Broadcast ceiling (default `AMBER`; RED/AMBER_STRICT withheld) |
 | `ICEBERG_EMAIL_BACKEND` + `ICEBERG_SMTP_*` | `console` (dev) or `smtp`; SMTP server settings |
+| `ICEBERG_WEBHOOK_URL` / `ICEBERG_WEBHOOK_TOKEN` | Optional generic report-publication webhook; token is env-only |
 | `ICEBERG_PORTAL_BASE_URL` | Base URL used in notification email links |
+| `ICEBERG_AI_BACKEND` + `ICEBERG_AI_*` | Governed AI assist backend, model, TLP egress ceiling and timeout (off by default) |
+| `ICEBERG_INGESTION_TIMEOUT` / `ICEBERG_INGESTION_MAX_BYTES` | RSS/Atom ingestion timeout and response cap |
 | `ICEBERG_AUDIT_ENABLED` + `ICEBERG_AUDIT_METHODS` | Master switch + default SIEM emit methods (`stdout`/`syslog`/`http`); editable live at `/admin/audit` |
 | `ICEBERG_AUDIT_SYSLOG_*` / `ICEBERG_AUDIT_HTTP_ENDPOINT` | syslog (RFC 5424) host/port/protocol + HTTP event-collector endpoint defaults |
 | `ICEBERG_AUDIT_HTTP_TOKEN` | **Secret** HEC/bearer token for the HTTP SIEM method (env-only — never stored in the DB) |
@@ -307,7 +343,7 @@ Notebook sources carry Admiralty/NATO-style grades: source reliability (`A-F`) p
 information credibility (`1-6`), displayed as chips such as `B2` or `B6`. Grading is a
 **fully offline local heuristic** applied inline when a source is added: reliability is
 inferred from the source identity (recognised publisher domain or named authority) and
-credibility from the analyst's summary. If only the source identity can be judged,
+credibility from the analyst's summary and pasted source content. If only the source identity can be judged,
 credibility is marked `6` ("cannot be judged"). There is no outbound network fetch and no
 external LLM provider — analysts can always manually override, clear, or regrade a source.
 
@@ -316,7 +352,10 @@ Set `ICEBERG_OIDC_ENABLED=true` and fill in `ICEBERG_OIDC_TENANT_ID`,
 `ICEBERG_OIDC_CLIENT_ID`, `ICEBERG_OIDC_CLIENT_SECRET` and
 `ICEBERG_OIDC_REDIRECT_URI`. Iceberg maps the app-role/group claim named by
 `ICEBERG_OIDC_ROLE_CLAIM` to a role (`ADMIN`/`ANALYST`/`REVIEWER`/`STAKEHOLDER`),
-defaulting unknown users to read-only `STAKEHOLDER`.
+defaulting unknown users to read-only `STAKEHOLDER`, and rejects callbacks with no
+email claim. Logout increments the user's token version, invalidating existing Iceberg JWTs.
+Optional department/title/company/office claims are persisted for audience grouping and
+stakeholder administration.
 
 ## PDF rendering (Typst)
 Install the [`typst`](https://github.com/typst/typst) binary and ensure it's on
@@ -336,6 +375,8 @@ of truth. By default `init_db()` runs `alembic upgrade head` on boot — set
 alembic upgrade head                          # apply migrations to ICEBERG_DATABASE_URL
 alembic revision --autogenerate -m "add x"    # create a migration after changing a model
 alembic downgrade -1                          # roll back one revision
+iceberg-prune-renders                         # apply rendered-PDF retention immediately
+iceberg-rebuild-related                       # rebuild related-report vectors
 ```
 The baseline migration also owns the SQLite FTS5 search objects (the `report_fts` virtual
 table + sync triggers). A database created by an older `create_all` build has the right tables
@@ -343,9 +384,9 @@ but no version row — run **`alembic stamp head`** once to mark it current befo
 
 ## Tests
 ```bash
-pytest                              # run the suite (parallel by default via pytest-xdist)
-pytest --cov=iceberg --cov-report=term-missing   # with coverage (CI gates on a floor)
-pytest -n0 tests/test_foo.py       # disable parallelism (for pdb / -s output)
+uv run pytest                              # run the suite (parallel by default via pytest-xdist)
+uv run pytest --cov=iceberg --cov-report=term-missing   # with coverage (CI gates on a floor)
+uv run pytest -n0 tests/test_foo.py       # disable parallelism (for pdb / -s output)
 ```
 The suite runs **in parallel by default** (`-n auto`, set in `addopts`): it's per-test
 setup-bound — each test rebuilds the app (migrations + taxonomy seed + FTS rebuild) — so it
@@ -355,26 +396,33 @@ additionally applies the real migrations to a temp database and checks the model
 drifted from them. The Typst render test skips automatically when the binary isn't present.
 
 ## Continuous integration
-[CI](.github/workflows/ci.yml) runs on every push to `main` and on pull requests: a **test**
-job (`pytest` + coverage, with Typst installed so the PDF-render path is exercised; coverage is
-gated by `fail_under` in `pyproject.toml`) and a **static** job — `ruff check` (lint),
+[CI](.github/workflows/ci.yml) runs on every push to `main` and on pull requests through `uv`
+using the committed `uv.lock`: a **test** job (`pytest` + coverage, with Typst installed so
+the PDF-render path is exercised; coverage is gated by `fail_under` in `pyproject.toml`) and
+a **static** job — `ruff check` (lint),
 `bandit -r src/iceberg` (security), `vulture` (dead code; configured under `[tool.vulture]`
 with `vulture_whitelist.py` for framework false positives), `pip-audit --skip-editable`
-(fails on a known CVE in any installed dependency — the version floors in `pyproject.toml`
-are not a lockfile), plus **frontend lint**: `djlint src/iceberg/templates --lint` (Jinja/HTML
+(fails on a known CVE in any installed dependency), plus **frontend lint**:
+`djlint src/iceberg/templates --lint` (Jinja/HTML
 structure, configured under `[tool.djlint]`) and `biome lint src/iceberg/static` (the
 hand-authored CSS + Alpine component JS, vendored assets excluded; configured in `biome.jsonc`).
 A third **assets** job re-runs `scripts/vendor_assets.py` and fails on any drift, so the
 self-hosted, SRI-protected Tailwind/Alpine/font assets always match their pinned versions.
 Third-party actions are **pinned to commit SHAs** (with a tracking version comment), and
 [Dependabot](.github/dependabot.yml) keeps the Python dependencies and those action pins current.
-Reproduce the local gates with `pip install -e ".[dev]"` then the commands above.
+Reproduce the local gates with `uv sync --extra dev` then the commands above through `uv run`.
+
+## Deployment
+The repo includes a production-oriented `Dockerfile`, `docker-compose.yml`, and starter
+Kubernetes manifests under `deploy/k8s/`. Production deployments should set
+`ICEBERG_AUTO_MIGRATE=false`, run `alembic upgrade head` as a separate job, use persistent
+volumes for `/data`, and provide a unique 32+ byte `ICEBERG_SECRET_KEY`.
 
 The static gates also run automatically on every commit via
 [pre-commit](.pre-commit-config.yaml) — `repo: local` hooks that invoke the same pinned dev
 tools, so local and CI results match. Activate them once per clone:
 ```bash
-pip install -e ".[dev]"
+uv sync --extra dev
 pre-commit install                  # wire the git pre-commit hook
 pre-commit run --all-files          # optional: run them on demand
 ```

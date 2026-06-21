@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Ingestion · {{ app_name }}{% endblock %}
+{% block crumb %}Ingestion{% endblock %}
+{% block page_class %}page-wide{% endblock %}
+{% block content %}
+
+<div class="head-row mb-6">
+  <div>
+    <div class="eyebrow eyebrow-accent">Collection</div>
+    <h1 class="page-title mt-1">Ingestion triage</h1>
+    <p class="lede mt-2">Pull trusted RSS/Atom sources into a review queue, then promote useful items into notebooks.</p>
+  </div>
+  <form method="post" action="/ingestion/pull">
+    <button class="btn btn--ink">Pull active sources</button>
+  </form>
+</div>
+
+{% if error %}
+  <div class="inline-notice mb-4">{{ error }}</div>
+{% endif %}
+
+<div class="grid lg:grid-cols-3 gap-6">
+  <section class="card card-pad-lg">
+    <h2 class="section-title mb-4">Sources</h2>
+    <form method="post" action="/ingestion/sources" class="space-y-3 mb-5">
+      <div>
+        <label class="field-label">Name</label>
+        <input name="name" class="field" required placeholder="Vendor advisories">
+      </div>
+      <div>
+        <label class="field-label">RSS / Atom URL</label>
+        <input name="url" type="url" class="field" required placeholder="https://example.com/feed.xml">
+      </div>
+      <button class="btn btn--ghost btn--sm">Add source</button>
+    </form>
+
+    <div class="space-y-3">
+      {% for s in sources %}
+        <div class="well card-pad-lg">
+          <form method="post" action="/ingestion/sources/{{ s.id }}" class="space-y-2">
+            <input name="name" value="{{ s.name }}" class="field" required>
+            <input name="url" value="{{ s.url }}" class="field" required>
+            <label class="check">
+              <input type="checkbox" name="active" value="true" {% if s.active %}checked{% endif %}>
+              <span>Active</span>
+            </label>
+            <div class="flex gap-2">
+              <button class="btn btn--ghost btn--sm">Save</button>
+              <button formaction="/ingestion/sources/{{ s.id }}/pull" class="btn btn--primary btn--sm">Pull</button>
+            </div>
+          </form>
+          <div class="mono text-xs mt-2" style="color:var(--muted);">
+            {% if s.last_checked_at %}Checked {{ s.last_checked_at.strftime('%Y-%m-%d %H:%M') }} · {% endif %}
+            {{ s.last_item_count }} new item{{ '' if s.last_item_count == 1 else 's' }}
+            {% if s.last_status_code %} · HTTP {{ s.last_status_code }}{% endif %}
+          </div>
+          {% if s.last_error %}<div class="text-xs mt-1" style="color:var(--c-crit);">{{ s.last_error }}</div>{% endif %}
+          <form method="post" action="/ingestion/sources/{{ s.id }}/delete" class="mt-2">
+            <button class="btn btn--quiet btn--sm">Delete</button>
+          </form>
+        </div>
+      {% else %}
+        <p class="empty">No ingestion sources configured.</p>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="card card-pad-lg lg:col-span-2">
+    <div class="head-row mb-4">
+      <h2 class="section-title">Queue</h2>
+      <div class="flex gap-2">
+        {% for state in ['NEW', 'DISCARDED', 'PROMOTED'] %}
+          <a class="btn btn--ghost btn--sm {{ 'is-active' if status_filter == state else '' }}" href="/ingestion?status={{ state }}">{{ state | title }}</a>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="space-y-4">
+      {% for item in items %}
+        <article class="well card-pad-lg">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <h3 class="section-title">{{ item.title }}</h3>
+              <div class="mono text-xs mt-1" style="color:var(--muted);">
+                {{ source_names.get(item.source_id, 'Unknown source') }}
+                {% if item.published_at %} · {{ item.published_at.strftime('%Y-%m-%d') }}{% endif %}
+              </div>
+            </div>
+            <span class="tag">{{ item.status }}</span>
+          </div>
+          {% if item.summary %}<p class="mt-3 text-sm" style="color:var(--ink-soft);">{{ item.summary }}</p>{% endif %}
+          {% if item.url %}<a href="{{ item.url }}" class="btn-link text-sm break-all" rel="noreferrer">{{ item.url }}</a>{% endif %}
+
+          {% if item.status == 'NEW' %}
+            <form method="post" action="/ingestion/items/{{ item.id }}/promote" class="mt-4 flex gap-2 items-center flex-wrap">
+              <select name="notebook_id" class="field" style="width:auto;" required>
+                <option value="">Promote to notebook…</option>
+                {% for n in notebooks %}
+                  <option value="{{ n.id }}">{{ n.title }}</option>
+                {% endfor %}
+              </select>
+              <button class="btn btn--primary btn--sm" {% if not notebooks %}disabled{% endif %}>Promote</button>
+              <button formaction="/ingestion/items/{{ item.id }}/discard" class="btn btn--quiet btn--sm">Discard</button>
+            </form>
+          {% elif item.status == 'DISCARDED' %}
+            <form method="post" action="/ingestion/items/{{ item.id }}/restore" class="mt-4">
+              <button class="btn btn--ghost btn--sm">Restore</button>
+            </form>
+          {% endif %}
+        </article>
+      {% else %}
+        <p class="empty">No {{ status_filter | lower }} items in the ingestion queue.</p>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+{% endblock %}

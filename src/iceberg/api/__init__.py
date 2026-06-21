@@ -3,9 +3,12 @@
 from fastapi import APIRouter
 
 from .account import router as account_router
+from .ai import router as ai_router
 from .attack import router as attack_router
+from .audience import router as audience_router
 from .feedback import router as feedback_router
 from .feed import router as feed_router
+from .ingestion import router as ingestion_router
 from .notebooks import router as notebooks_router
 from .preview import router as preview_router
 from .reports import router as reports_router
@@ -14,11 +17,14 @@ from .search import router as search_router
 from .tags import router as tags_router
 
 api_router = APIRouter()
+api_router.include_router(ai_router)
+api_router.include_router(audience_router)
 api_router.include_router(notebooks_router)
 api_router.include_router(reports_router)
 api_router.include_router(requirements_router)
 api_router.include_router(feed_router)
 api_router.include_router(feedback_router)
+api_router.include_router(ingestion_router)
 api_router.include_router(account_router)
 api_router.include_router(preview_router)
 api_router.include_router(tags_router)

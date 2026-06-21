@@ -1,6 +1,5 @@
 """Search, taxonomy & entity-discovery portal routes."""
 
-from sqlmodel import Session
 from typing import Annotated
 
 from fastapi import (
@@ -11,17 +10,21 @@ from fastapi import (
     Request,
     status,
 )
+from sqlmodel import Session, select
 
 from ..auth.dependencies import CurrentUser
 from ..models import (
+    AudienceGroup,
     AuditAction,
     AuditCategory,
     IntelLevel,
     Motivation,
     ReportStatus,
+    Role,
     Tag,
     TagKind,
     TLP,
+    User,
 )
 from ..services import (
     attack as attack_service,
@@ -202,6 +205,91 @@ def admin_tags_view(request: Request, session: SessionDep, user: CurrentUser):
             "motivations": list(Motivation),
         },
     )
+
+
+@router.get("/admin/audience")
+def admin_audience_view(request: Request, session: SessionDep, user: CurrentUser):
+    _require_admin(user)
+    groups = list(session.exec(select(AudienceGroup).order_by(AudienceGroup.name)).all())
+    stakeholders = list(
+        session.exec(select(User).where(User.role == Role.STAKEHOLDER).order_by(User.display_name)).all()
+    )
+    return templates.TemplateResponse(
+        request,
+        "admin_audience.html",
+        {"user": user, "groups": groups, "stakeholders": stakeholders},
+    )
+
+
+@router.post("/admin/audience")
+def admin_audience_create(
+    session: SessionDep,
+    user: CurrentUser,
+    name: Annotated[str, Form()],
+    description: Annotated[str, Form()] = "",
+    member_user_ids: Annotated[list[int], Form()] = [],
+):
+    _require_admin(user)
+    slug = tag_service.slugify(name)
+    if not slug:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Group name is required")
+    if session.exec(select(AudienceGroup).where(AudienceGroup.slug == slug)).first():
+        raise HTTPException(status.HTTP_409_CONFLICT, "Audience group already exists")
+    group = AudienceGroup(name=name.strip(), slug=slug, description=description.strip())
+    group.members = [
+        stakeholder
+        for uid in member_user_ids
+        if (stakeholder := session.get(User, uid)) is not None and stakeholder.role == Role.STAKEHOLDER
+    ]
+    session.add(group)
+    session.commit()
+    return _redirect("/admin/audience")
+
+
+def _audience_group_or_404(session: Session, group_id: int) -> AudienceGroup:
+    group = session.get(AudienceGroup, group_id)
+    if group is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Audience group not found")
+    return group
+
+
+@router.post("/admin/audience/{group_id}")
+def admin_audience_update(
+    group_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+    name: Annotated[str, Form()],
+    description: Annotated[str, Form()] = "",
+    member_user_ids: Annotated[list[int], Form()] = [],
+):
+    _require_admin(user)
+    group = _audience_group_or_404(session, group_id)
+    slug = tag_service.slugify(name)
+    if not slug:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Group name is required")
+    existing = session.exec(select(AudienceGroup).where(AudienceGroup.slug == slug)).first()
+    if existing is not None and existing.id != group.id:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Audience group already exists")
+    group.name = name.strip()
+    group.slug = slug
+    group.description = description.strip()
+    group.members = [
+        stakeholder
+        for uid in member_user_ids
+        if (stakeholder := session.get(User, uid)) is not None and stakeholder.role == Role.STAKEHOLDER
+    ]
+    session.add(group)
+    session.commit()
+    return _redirect("/admin/audience")
+
+
+@router.post("/admin/audience/{group_id}/delete")
+def admin_audience_delete(group_id: int, session: SessionDep, user: CurrentUser):
+    _require_admin(user)
+    group = _audience_group_or_404(session, group_id)
+    session.delete(group)
+    session.commit()
+    return _redirect("/admin/audience")
 
 
 def _audit_tag(session, background_tasks, request, user, action, tag):

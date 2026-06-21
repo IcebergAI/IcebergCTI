@@ -37,6 +37,7 @@ class SourceCreate(BaseModel):
     title: str
     reference: str = ""
     summary: str = ""
+    content_md: str = ""
     reliability: SourceReliability | None = None
     credibility: SourceCredibility | None = None
     grading_rationale: str = ""
@@ -52,6 +53,7 @@ class SourceUpdate(BaseModel):
     title: str | None = None
     reference: str | None = None
     summary: str | None = None
+    content_md: str | None = None
 
 
 class SourceGradeUpdate(BaseModel):
@@ -110,6 +112,7 @@ class PreviewRequest(BaseModel):
 
 class PreviewResponse(BaseModel):
     html: str
+    warnings: list[dict] = []
 
 
 class ReportPreviewRequest(BaseModel):
@@ -247,6 +250,7 @@ class AttachmentLinks(BaseModel):
 
 class PreferencesUpdate(BaseModel):
     preferred_intel_level: IntelLevel | None = None
+    subscribed_tag_ids: list[int] | None = None
 
 
 class TagCreate(BaseModel):
@@ -277,3 +281,76 @@ class TagLinks(BaseModel):
     """Set the taxonomy tags a report is classified with."""
 
     tag_ids: list[int]
+
+
+class AudienceGroupCreate(BaseModel):
+    name: str
+    description: str = ""
+    member_user_ids: list[int] = []
+
+
+class AudienceGroupUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+
+
+class AudienceMembers(BaseModel):
+    member_user_ids: list[int] = []
+
+
+class AudienceLinks(BaseModel):
+    group_ids: list[int]
+
+
+class IngestionSourceCreate(BaseModel):
+    name: str
+    url: str
+
+
+class IngestionSourceUpdate(BaseModel):
+    name: str | None = None
+    url: str | None = None
+    active: bool | None = None
+
+
+class IngestionPromote(BaseModel):
+    notebook_id: int
+
+
+class AISourceSummaryRequest(BaseModel):
+    source_id: int
+
+
+class AIJudgementsRequest(BaseModel):
+    report_id: int
+
+
+class AITagSuggestRequest(BaseModel):
+    report_id: int
+
+
+class AIDiamondSuggestRequest(BaseModel):
+    notebook_id: int
+
+
+class AIACHSuggestRequest(BaseModel):
+    notebook_id: int
+    question: str = ""
+
+
+class AIChallengeRequest(BaseModel):
+    report_id: int
+
+
+class AIAcceptProvenance(BaseModel):
+    resource_type: str
+    resource_id: int
+    fields: list[str]
+
+
+class AISuggestionResponse(BaseModel):
+    available: bool
+    task: str
+    suggestion: dict = {}
+    message: str = ""
+    provenance: dict = {}
