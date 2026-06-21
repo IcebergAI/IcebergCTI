@@ -21,7 +21,7 @@ dependencies = [
     # httpx (the latter unconditionally, without declaring it); we use both paths.
     "httpx>=0.28.1",
     "pyjwt>=2.13",
-    "pydantic-settings>=2.14.1",
+    "pydantic-settings>=2.14.2",
     "itsdangerous>=2.2",
     "markdown-it-py>=4.2",
     "mdit-py-plugins>=0.6.1",
