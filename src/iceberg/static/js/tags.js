@@ -202,6 +202,11 @@ document.addEventListener('alpine:init', () => {
     renderPreview() { if (this.$refs.preview) this.$refs.preview.innerHTML = this.previewSvg; },
   }));
 
+  /* ---- Feed reader: send-to-notebook picker (feeds_reader.html) ---------- */
+  // Toggles the "new notebook" inputs when the notebook <select> is set to the
+  // empty "create new" option.
+  Alpine.data('sendToNotebook', () => ({ notebookId: '' }));
+
   /* ---- Confirm-before-submit guard (delete forms) ------------------------ */
   Alpine.data('confirmSubmit', (message) => ({
     message,
