@@ -1,5 +1,6 @@
 """Reports (intelligence products): authoring, lifecycle, citations, rendering."""
 
+import logging
 from pathlib import Path
 from typing import Annotated
 
@@ -41,6 +42,8 @@ from ..services.reports import (
 )
 from ..services.requirements import set_report_requirements
 from ..services.tags import set_report_tags
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -237,7 +240,12 @@ def render(
     except TypstNotAvailable as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc))
     except TypstRenderError as exc:
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, str(exc))
+        # The exception carries raw Typst stderr (temp paths, internal detail) —
+        # log it server-side but return a generic message to the client.
+        logger.error("PDF render failed for report %s: %s", report_id, exc)
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR, "PDF rendering failed"
+        )
 
 
 @router.get("/{report_id}/products/{product_id}/download")

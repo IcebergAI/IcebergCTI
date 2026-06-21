@@ -88,6 +88,33 @@ def test_render_unavailable_returns_503(client, login):
     assert resp.status_code == 503
 
 
+def test_render_error_does_not_leak_stderr(client, login, monkeypatch, caplog):
+    """A Typst compile failure must not disclose raw stderr (temp paths, internal
+    detail) to the client; the full detail is logged server-side. Regression for
+    the stderr-leak bug (#67)."""
+    import logging
+
+    from iceberg.api import reports as reports_api
+    from iceberg.rendering.typst import TypstRenderError
+
+    secret = "/tmp/xyz123/product.typ:42:7 error: internal compile detail"
+
+    def _boom(*_args, **_kwargs):
+        raise TypstRenderError(secret)
+
+    monkeypatch.setattr(reports_api, "render_report", _boom)
+    rid = _published_report(client, login)
+
+    with caplog.at_level(logging.ERROR):
+        resp = client.post(f"/api/reports/{rid}/render", json={"format": "FULL"})
+
+    assert resp.status_code == 500
+    assert secret not in resp.text
+    assert resp.json()["detail"] == "PDF rendering failed"
+    # Full detail is logged server-side.
+    assert secret in caplog.text
+
+
 @pytest.mark.skipif(not typst_available(), reason="Typst binary not installed")
 def test_render_produces_pdf(client, login, tmp_path, monkeypatch):
     monkeypatch.setenv("ICEBERG_RENDER_OUTPUT_DIR", str(tmp_path))
