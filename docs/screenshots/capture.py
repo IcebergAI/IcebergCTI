@@ -36,6 +36,9 @@ SHOTS = [
     ("analyst", "/requirements", "tasking-board.png", 1400, None),
     ("admin", "/admin/tags", "taxonomy.png", 1340, 1120),
     ("stakeholder", "/feed", "feed.png", 1180, 600),
+    ("analyst", "/feeds", "feed-reader.png", 1340, None),
+    ("admin", "/admin/feeds", "admin-feeds.png", 1340, None),
+    ("admin", "/admin/proxy", "outbound-proxy.png", 1340, None),
 ]
 
 

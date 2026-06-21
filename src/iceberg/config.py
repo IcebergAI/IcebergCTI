@@ -91,6 +91,32 @@ class Settings(BaseSettings):
     # Bounds SMTP connect/send so a stuck server can't hang the background task.
     smtp_timeout: float = 10.0
 
+    # Inbound collection — RSS feed ingestion (FR #50). The poller is opt-in
+    # (off by default, so tests/dev never reach out to the network); fetches are
+    # bounded and per-feed isolated. Feed URLs are admin-configured only, which is
+    # the SSRF-containment boundary — ``rss_allow_private_hosts`` is the escape
+    # hatch for genuinely-internal feeds. See services/feeds.py.
+    rss_poll_enabled: bool = False
+    rss_poll_interval_minutes: int = 30
+    rss_fetch_timeout: float = 10.0
+    rss_max_items_per_feed: int = 100
+    rss_allow_private_hosts: bool = False
+
+    # Global outbound proxy connectivity. Routing config (mode/url/no-proxy) is
+    # admin-editable on the ProxySettings DB row; these env values seed that row.
+    # Proxy CREDENTIALS are a secret — read only from the environment, injected
+    # into the proxy URL at call time, and never written to the DB. See
+    # services/proxy.py. Modes: system (honour env proxy vars) | none (direct) |
+    # explicit (use proxy_url, bypassing the no-proxy list).
+    proxy_mode: str = "system"
+    proxy_url: str = ""
+    proxy_no_proxy: str = (
+        "localhost,127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,"
+        "192.168.0.0/16,169.254.0.0/16,::1"
+    )
+    proxy_username: str = ""
+    proxy_password: str = ""
+
     # Security audit logging → SIEM. Runtime routing config lives in the DB
     # (AuditSettings, admin-editable at /admin/audit); these env values are the
     # boot default and the secret. ``audit_enabled`` is the master kill switch

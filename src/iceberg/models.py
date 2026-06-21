@@ -187,6 +187,18 @@ class AnalyticConfidence(StrEnum):
     HIGH = "HIGH"
 
 
+class ProxyMode(StrEnum):
+    """How outbound HTTP connections are routed (global proxy connectivity).
+
+    SYSTEM honours the environment proxy vars (``HTTP(S)_PROXY``/``NO_PROXY``);
+    NONE always connects directly (env ignored); EXPLICIT routes through a
+    configured proxy except for hosts in the no-proxy exclusion list."""
+
+    NONE = "NONE"
+    SYSTEM = "SYSTEM"
+    EXPLICIT = "EXPLICIT"
+
+
 class AuditOutcome(StrEnum):
     """Whether a security-relevant event succeeded or was denied/failed."""
 
@@ -249,6 +261,14 @@ class AuditAction(StrEnum):
     # Audit configuration (admin)
     AUDIT_SETTINGS_UPDATED = "AUDIT_SETTINGS_UPDATED"
     AUDIT_TEST = "AUDIT_TEST"
+    # Outbound proxy configuration (admin)
+    PROXY_SETTINGS_UPDATED = "PROXY_SETTINGS_UPDATED"
+    PROXY_TEST = "PROXY_TEST"
+    # Inbound collection — RSS feed configuration (admin)
+    FEED_CREATED = "FEED_CREATED"
+    FEED_UPDATED = "FEED_UPDATED"
+    FEED_DELETED = "FEED_DELETED"
+    FEED_FETCHED = "FEED_FETCHED"
     # Sensitive file access
     ATTACHMENT_UPLOADED = "ATTACHMENT_UPLOADED"
     ATTACHMENT_DOWNLOADED = "ATTACHMENT_DOWNLOADED"
@@ -787,6 +807,55 @@ class ProductFeedback(SQLModel, table=True):
     report: Report = Relationship(back_populates="feedback")
 
 
+class Feed(SQLModel, table=True):
+    """An admin-configured external RSS/Atom feed — the inbound collection
+    channel (FR #50). The poller fetches each enabled feed on an interval and
+    stores its articles as :class:`FeedItem` rows for analysts to browse and
+    "send to notebook". Only an admin ever supplies the ``url`` (analysts never
+    do), which is the SSRF-containment boundary. See ``services/feeds.py``.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    url: str = Field(index=True, unique=True)
+    title: str
+    description: str = ""
+    enabled: bool = Field(default=True)
+    last_fetched_at: datetime | None = Field(default=None)
+    last_status: str = ""  # e.g. "ok: 12 items" — last successful fetch summary
+    fetch_error: str = ""  # last error string (cleared on a successful fetch)
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+    items: list["FeedItem"] = Relationship(
+        back_populates="feed", cascade_delete=True
+    )
+
+
+class FeedItem(SQLModel, table=True):
+    """A single article fetched from a :class:`Feed`. Deduped on ``(feed_id,
+    guid)`` so re-fetching never duplicates. ``content`` retains the sanitised
+    full body as the seam for future IOC extraction / summarisation. An analyst
+    captures one into a notebook as a :class:`Source` (stamps ``ingested_at``)."""
+
+    __table_args__ = (
+        UniqueConstraint("feed_id", "guid", name="uq_feeditem_feed_guid"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    feed_id: int = Field(foreign_key="feed.id", ondelete="CASCADE", index=True)
+    guid: str  # entry id or link — the per-feed dedup key
+    link: str = ""
+    title: str = ""
+    summary: str = ""  # nh3-sanitised short description
+    content: str = ""  # nh3-sanitised full body (future IOC/summarisation seam)
+    author: str = ""
+    published_at: datetime | None = Field(default=None)
+    fetched_at: datetime = Field(default_factory=utcnow)
+    ingested_at: datetime | None = Field(default=None)  # set when sent to a notebook
+
+    feed: Feed = Relationship(back_populates="items")
+
+
 class AuditEvent(SQLModel, table=True):
     """A persisted security-relevant event (the local audit trail).
 
@@ -853,4 +922,21 @@ class AuditSettings(SQLModel, table=True):
     # http event-collector / webhook sink (token from env)
     http_endpoint: str = ""
     http_verify_tls: bool = True
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class ProxySettings(SQLModel, table=True):
+    """Global outbound-proxy configuration, admin-editable (single row, id=1).
+
+    Holds only non-secret routing config — proxy credentials, when needed, are
+    read from the environment (``ICEBERG_PROXY_USERNAME``/``ICEBERG_PROXY_PASSWORD``)
+    and injected at call time, never persisted here. See ``services/proxy.py``.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    mode: ProxyMode = Field(default=ProxyMode.SYSTEM)
+    # EXPLICIT mode: scheme://host:port (no credentials).
+    proxy_url: str = ""
+    # EXPLICIT mode: comma-separated domains/suffixes + CIDR ranges to bypass.
+    no_proxy: str = ""
     updated_at: datetime = Field(default_factory=utcnow)
