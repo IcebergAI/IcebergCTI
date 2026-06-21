@@ -382,8 +382,9 @@
 //  Appendices (FULL only): cited sources, then cited attachments
 // =============================================================================
 #let attachments = data.at("attachments", default: ())
+#let iocs = data.at("iocs", default: ())
 
-#if fmt == "FULL" and (data.sources.len() > 0 or attachments.len() > 0) {
+#if fmt == "FULL" and (data.sources.len() > 0 or attachments.len() > 0 or iocs.len() > 0) {
   pagebreak()
 
   if data.sources.len() > 0 {
@@ -441,5 +442,26 @@
         )
       ]
     }
+  }
+
+  if iocs.len() > 0 {
+    if data.sources.len() > 0 or attachments.len() > 0 { v(28pt) }
+    appendix-heading("Indicators")
+    table(
+      columns: (auto, 1fr, auto),
+      inset: (x: 8pt, y: 6pt),
+      stroke: 0.5pt + c-line,
+      align: (left + top, left + top, left + top),
+      table.header(
+        text(font: f-mono, size: 8.5pt, weight: 700, fill: c-muted)[TYPE],
+        text(font: f-mono, size: 8.5pt, weight: 700, fill: c-muted)[INDICATOR],
+        text(font: f-mono, size: 8.5pt, weight: 700, fill: c-muted)[CONTEXT],
+      ),
+      ..iocs.map(i => (
+        text(font: f-sans, size: 9.5pt, fill: c-ink-soft)[#i.type],
+        text(font: f-mono, size: 9.5pt, fill: c-ink)[#i.value],
+        text(font: f-serif, size: 9.5pt, fill: c-ink-soft)[#i.description],
+      )).flatten()
+    )
   }
 }

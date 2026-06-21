@@ -43,6 +43,11 @@
     <strong>{{ figures | length }}</strong>
     <span>Embeddable images</span>
   </a>
+  <a href="#indicators" class="collection-step {{ 'is-done' if iocs else '' }}">
+    <span class="step-kicker">Indicators</span>
+    <strong>{{ iocs | length }}</strong>
+    <span>IOCs for MISP</span>
+  </a>
   <a href="#products" class="collection-step {{ 'is-done' if reports else '' }}">
     <span class="step-kicker">Products</span>
     <strong>{{ reports | length }}</strong>
@@ -307,6 +312,65 @@
       <input type="file" name="file" accept="image/png,image/jpeg,image/gif" required class="field">
       <input name="title" placeholder="Caption (optional — defaults to filename)" class="field">
       <button class="btn btn--ghost btn--sm">Upload figure</button>
+    </form>
+  {% endif %}
+</section>
+
+<!-- Indicators of compromise -->
+<section id="indicators" class="card card-pad-lg mb-6">
+  <div class="head-row mb-4">
+    <h2 class="section-title">Indicators</h2>
+    <span class="eyebrow">{{ iocs | length }}</span>
+  </div>
+  <p class="text-xs mb-4" style="color:var(--muted);">Indicators of compromise staged against this collection. Cite them in a report to list them in its Indicators appendix and push them to MISP as one event. The authoritative IOC store stays external (MISP).</p>
+  {% if updated == 'ioc-added' %}<div class="inline-notice mb-3">Indicator added.</div>{% endif %}
+  {% if iocs %}
+    <table class="ioc-table text-sm mb-4">
+      <thead>
+        <tr><th>Type</th><th>Indicator</th><th>Context</th>{% if can_write %}<th></th>{% endif %}</tr>
+      </thead>
+      <tbody>
+        {% for i in iocs %}
+          <tr>
+            <td><span class="tag">{{ ioc_type_label(i.ioc_type) }}</span></td>
+            <td class="mono break-all">{{ i.value }}</td>
+            <td style="color:var(--muted);">{{ i.description }}</td>
+            {% if can_write %}
+              <td>
+                <form method="post" action="/notebooks/{{ notebook.id }}/iocs/{{ i.id }}/delete"
+                      x-data="confirmSubmit('Delete this indicator?')" @submit="check($event)">
+                  <button class="link-danger" style="background:none;border:0;cursor:pointer;">Delete</button>
+                </form>
+              </td>
+            {% endif %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty">No indicators yet. Add IPs, domains, hashes or URLs observed in your sources.</p>
+  {% endif %}
+  {% if can_write %}
+    <form method="post" action="/notebooks/{{ notebook.id }}/iocs"
+          class="space-y-2.5 mt-2 pt-5 border-t border-line">
+      <div class="flex gap-2 flex-wrap">
+        <select name="ioc_type" class="field" style="max-width:200px;">
+          {% for t in ioc_types %}
+            <option value="{{ t.value }}">{{ ioc_type_label(t) }}</option>
+          {% endfor %}
+        </select>
+        <input name="value" placeholder="Indicator value (e.g. 198.51.100.4)" required class="field mono" style="flex:1;min-width:220px;">
+      </div>
+      <input name="description" placeholder="Context (optional — e.g. C2 server)" class="field">
+      {% if sources %}
+        <select name="source_id" class="field">
+          <option value="">— Provenance source (optional)</option>
+          {% for s in sources %}
+            <option value="{{ s.id }}">{{ s.title }}</option>
+          {% endfor %}
+        </select>
+      {% endif %}
+      <button class="btn btn--ghost btn--sm">Add indicator</button>
     </form>
   {% endif %}
 </section>

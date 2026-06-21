@@ -25,6 +25,7 @@ from ..models import (
     AuditCategory,
     DiamondModel,
     Figure,
+    IOC,
     Note,
     Notebook,
     Role,
@@ -36,6 +37,8 @@ from ..schemas import (
     ACHUpdate,
     DiamondCreate,
     DiamondUpdate,
+    IOCCreate,
+    IOCUpdate,
     NoteCreate,
     NotebookCreate,
     NotebookUpdate,
@@ -49,6 +52,7 @@ from ..services import attachments as attachment_service
 from ..services import audit
 from ..services import diamond as diamond_service
 from ..services import figures as figure_service
+from ..services import iocs as ioc_service
 from ..services import notebooks as notebook_service
 from ..services import source_grading
 from ..services.requirements import set_notebook_requirements
@@ -517,3 +521,91 @@ def ach_matrix(notebook_id: int, ach_id: int, session: SessionDep, _w: Writer):
 def delete_ach(notebook_id: int, ach_id: int, session: SessionDep, _w: Writer):
     ach = ach_service.get_scoped(session, notebook_id, ach_id)
     ach_service.delete_ach(session, ach)
+
+
+# --------------------------------------------------------------------------- #
+# Indicators of compromise (light-touch IOC staging; pushed to MISP via a report)
+# --------------------------------------------------------------------------- #
+def _audit_ioc(session, background_tasks, request, user, action, *, ioc):
+    audit.record_and_emit(
+        session,
+        background_tasks=background_tasks,
+        action=action,
+        category=AuditCategory.DATA_ACCESS,
+        actor=user,
+        request=request,
+        resource_type="ioc",
+        resource_id=ioc.id,
+        detail={"notebook_id": ioc.notebook_id, "ioc_type": str(ioc.ioc_type)},
+    )
+
+
+@router.get("/{notebook_id}/iocs")
+def list_iocs(notebook_id: int, session: SessionDep, _w: Writer) -> list[IOC]:
+    _get_notebook(session, notebook_id)
+    return ioc_service.list_for_notebook(session, notebook_id)
+
+
+@router.post("/{notebook_id}/iocs", status_code=status.HTTP_201_CREATED)
+def add_ioc(
+    notebook_id: int,
+    body: IOCCreate,
+    request: Request,
+    session: SessionDep,
+    user: CurrentUser,
+    _w: Writer,
+    background_tasks: BackgroundTasks,
+) -> IOC:
+    nb = _get_notebook(session, notebook_id)
+    ioc = ioc_service.create_ioc(
+        session,
+        nb,
+        ioc_type=body.ioc_type,
+        value=body.value,
+        description=body.description,
+        source_id=body.source_id,
+    )
+    _audit_ioc(
+        session, background_tasks, request, user, AuditAction.IOC_CREATED, ioc=ioc
+    )
+    session.refresh(ioc)  # the audit commit expires the instance before serialisation
+    return ioc
+
+
+@router.patch("/{notebook_id}/iocs/{ioc_id}")
+def update_ioc(
+    notebook_id: int,
+    ioc_id: int,
+    body: IOCUpdate,
+    request: Request,
+    session: SessionDep,
+    user: CurrentUser,
+    _w: Writer,
+    background_tasks: BackgroundTasks,
+) -> IOC:
+    ioc = ioc_service.get_scoped(session, notebook_id, ioc_id)
+    ioc = ioc_service.update_ioc(session, ioc, **body.model_dump(exclude_unset=True))
+    _audit_ioc(
+        session, background_tasks, request, user, AuditAction.IOC_UPDATED, ioc=ioc
+    )
+    session.refresh(ioc)
+    return ioc
+
+
+@router.delete(
+    "/{notebook_id}/iocs/{ioc_id}", status_code=status.HTTP_204_NO_CONTENT
+)
+def delete_ioc(
+    notebook_id: int,
+    ioc_id: int,
+    request: Request,
+    session: SessionDep,
+    user: CurrentUser,
+    _w: Writer,
+    background_tasks: BackgroundTasks,
+):
+    ioc = ioc_service.get_scoped(session, notebook_id, ioc_id)
+    _audit_ioc(
+        session, background_tasks, request, user, AuditAction.IOC_DELETED, ioc=ioc
+    )
+    ioc_service.delete_ioc(session, ioc)

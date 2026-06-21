@@ -75,3 +75,11 @@ key_screens  # unused variable (src/iceberg/help_content.py:37)
 concepts  # unused variable (src/iceberg/help_content.py:38)
 term  # unused variable (src/iceberg/help_content.py:46)
 points  # unused variable (src/iceberg/help_content.py:49)
+
+# ReportMispEvent fields — read only in templates (report_view.html) + tests.
+event_id  # unused variable (src/iceberg/models.py)
+pushed_at  # unused variable (src/iceberg/models.py)
+_.event_id  # unused attribute (src/iceberg/services/misp.py)
+_.pushed_at  # unused attribute (src/iceberg/services/misp.py)
+# Future LLM/AI phase seam — IOC auto-extraction (not wired yet).
+extract  # unused function (src/iceberg/services/iocs.py)

@@ -20,6 +20,7 @@ from ..models import (
     DiamondConfidence,
     DisseminationEvent,
     Figure,
+    IOCType,
     Notebook,
     Report,
     ReportStatus,
@@ -35,6 +36,7 @@ from ..services import (
     attachments as attachment_service,
     diamond as diamond_service,
     figures as figure_service,
+    iocs as ioc_service,
     notebooks as notebook_service,
     source_grading,
 )
@@ -190,6 +192,8 @@ def notebook_detail(
             "notes": list(nb.notes),
             "attachments": list(nb.attachments),
             "figures": list(nb.figures),
+            "iocs": ioc_service.list_for_notebook(session, nb.id),
+            "ioc_types": list(IOCType),
             "reports": list(nb.reports),
             "diamonds": diamonds,
             "diamond_svgs": {d.id: diamond_service.render_diamond_svg(d) for d in diamonds},
@@ -324,6 +328,39 @@ def add_note(
     nb = _get_notebook(session, notebook_id)
     notebook_service.add_note(session, nb, body_md=body_md)
     return _redirect(f"/notebooks/{notebook_id}")
+
+
+@router.post("/notebooks/{notebook_id}/iocs")
+def add_ioc(
+    notebook_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+    value: Annotated[str, Form()],
+    ioc_type: Annotated[IOCType, Form()] = IOCType.DOMAIN,
+    description: Annotated[str, Form()] = "",
+    source_id: Annotated[str, Form()] = "",
+):
+    _require_writer(user)
+    nb = _get_notebook(session, notebook_id)
+    ioc_service.create_ioc(
+        session,
+        nb,
+        ioc_type=ioc_type,
+        value=value,
+        description=description,
+        source_id=int(source_id) if source_id.strip() else None,
+    )
+    return _redirect(f"/notebooks/{notebook_id}?updated=ioc-added#indicators")
+
+
+@router.post("/notebooks/{notebook_id}/iocs/{ioc_id}/delete")
+def delete_ioc(
+    notebook_id: int, ioc_id: int, session: SessionDep, user: CurrentUser
+):
+    _require_writer(user)
+    ioc = ioc_service.get_scoped(session, notebook_id, ioc_id)
+    ioc_service.delete_ioc(session, ioc)
+    return _redirect(f"/notebooks/{notebook_id}#indicators")
 
 
 def _get_attachment(session: Session, notebook_id: int, attachment_id: int):

@@ -244,6 +244,30 @@
             <p class="empty">No attachments in this notebook to cite yet.
               <a href="/notebooks/{{ notebook.id }}#attachments" class="btn-link">Upload reference files</a> first.</p>
           {% endif %}
+
+          <h2 class="section-title mt-6 mb-1">Indicators cited</h2>
+          <p class="text-xs mb-3" style="color:var(--muted);">Indicators from this notebook listed in the product's Indicators appendix and pushed to MISP.</p>
+          {% if updated == 'indicators' %}<div class="inline-notice mb-3">Indicator citations updated.</div>{% endif %}
+          {% if iocs %}
+            <form method="post" action="/reports/{{ report.id }}/ioc-citations">
+              <div class="grid gap-1">
+                {% for i in iocs %}
+                  <label class="check">
+                    <input type="checkbox" name="ioc_ids" value="{{ i.id }}"
+                           {% if i.id in cited_ioc_ids %}checked{% endif %} {% if not can_edit %}disabled{% endif %}>
+                    <span>
+                      <span class="tag">{{ ioc_type_label(i.ioc_type) }}</span>
+                      <span class="mono text-xs ml-1 break-all" style="color:var(--accent-deep);">{{ i.value }}</span>
+                    </span>
+                  </label>
+                {% endfor %}
+              </div>
+              {% if can_edit %}<button class="btn btn--ghost btn--sm mt-3">Update indicators</button>{% endif %}
+            </form>
+          {% else %}
+            <p class="empty">No indicators in this notebook to cite yet.
+              <a href="/notebooks/{{ notebook.id }}#indicators" class="btn-link">Add indicators</a> first.</p>
+          {% endif %}
         </div>
 
         <!-- Tags -->

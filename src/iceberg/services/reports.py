@@ -7,11 +7,13 @@ from fastapi import HTTPException, status
 from sqlmodel import Session, col, select
 
 from ..models import (
+    IOC,
     IntelLevel,
     Notebook,
     ProductFormat,
     RenderedProduct,
     Report,
+    ReportIOC,
     ReportSource,
     ReportStatus,
     Role,
@@ -111,6 +113,34 @@ def set_citations(
     return list(valid)
 
 
+def set_ioc_citations(
+    session: Session, report: Report, ioc_ids: list[int]
+) -> list[IOC]:
+    """Replace a report's cited indicators (its Indicators appendix + MISP push
+    set). Only IOCs from the report's own notebook are accepted."""
+
+    valid = (
+        session.exec(
+            select(IOC).where(
+                IOC.notebook_id == report.notebook_id,
+                col(IOC.id).in_(ioc_ids or [-1]),
+            )
+        ).all()
+        if ioc_ids
+        else []
+    )
+    for link in session.exec(
+        select(ReportIOC).where(ReportIOC.report_id == report.id)
+    ).all():
+        session.delete(link)
+    for ioc in valid:
+        session.add(ReportIOC(report_id=report.id, ioc_id=ioc.id))
+    session.commit()
+    for ioc in valid:
+        session.refresh(ioc)  # commit expires the instances before serialisation
+    return list(valid)
+
+
 def render_report(
     session: Session, report: Report, fmt: ProductFormat
 ) -> RenderedProduct:
@@ -157,6 +187,7 @@ def render_report(
         figures=figures,
         ach=ach,
         attack_svg=attack_svg,
+        iocs=list(report.cited_iocs),
         fmt=fmt,
     )
     product = RenderedProduct(report_id=report.id, format=fmt, pdf_path=str(path))
