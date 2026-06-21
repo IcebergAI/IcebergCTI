@@ -88,6 +88,8 @@ class Settings(BaseSettings):
     smtp_user: str = ""
     smtp_password: str = ""
     smtp_starttls: bool = False
+    # Bounds SMTP connect/send so a stuck server can't hang the background task.
+    smtp_timeout: float = 10.0
 
     # Security audit logging → SIEM. Runtime routing config lives in the DB
     # (AuditSettings, admin-editable at /admin/audit); these env values are the
