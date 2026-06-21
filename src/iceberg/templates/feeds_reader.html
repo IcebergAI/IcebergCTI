@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Feed reader · {{ app_name }}{% endblock %}
+{% block crumb %}Feed reader{% endblock %}
+{% block content %}
+
+<div class="head-row mb-7">
+  <div>
+    <div class="eyebrow eyebrow-accent">Collection</div>
+    <h1 class="page-title mt-1">Inbound feed reader</h1>
+    <p class="text-sm mt-2" style="color:var(--muted);max-width:64ch;">Articles fetched from the configured RSS feeds. Send any article to a notebook to capture it as a graded source.</p>
+  </div>
+  <span class="eyebrow">{{ items | length }} articles</span>
+</div>
+
+<!-- Filters -->
+<form method="get" action="/feeds" class="add-grid mb-5">
+  <label class="field-wrap">
+    <span class="field-label">Feed</span>
+    <select name="feed" class="field">
+      <option value="">All feeds</option>
+      {% for f in feeds %}
+      <option value="{{ f.id }}" {% if active_feed == f.id %}selected{% endif %}>{{ f.title }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="chip-check" style="align-self:flex-end;padding-bottom:9px;">
+    <input type="checkbox" name="only_unsent" value="true" {% if only_unsent %}checked{% endif %}>
+    <span>Not yet sent</span>
+  </label>
+  <div class="field-wrap" style="align-self:flex-end;">
+    <button class="btn btn--ghost btn--sm" type="submit">Apply</button>
+  </div>
+</form>
+
+{% if not feeds %}
+  <div class="well card-pad text-center">
+    <p class="empty">No feeds are configured. An admin can add RSS feeds under Administration → RSS feeds.</p>
+  </div>
+{% elif items %}
+  <div class="stack-list">
+    {% for item in items %}
+    <article class="card card-pad mb-3">
+      <div class="flex items-start gap-2">
+        <div style="flex:1;">
+          <h2 class="tile-title" style="margin:0;">
+            {% if item.link %}<a href="{{ item.link }}" target="_blank" rel="noopener noreferrer">{{ item.title }}</a>{% else %}{{ item.title }}{% endif %}
+          </h2>
+          <div class="audit-meta" style="margin-top:4px;">
+            <span class="mono">{{ feed_titles.get(item.feed_id, 'Feed') }}</span>
+            {% if item.published_at %}<span>{{ item.published_at.strftime('%Y-%m-%d') }}</span>{% endif %}
+            {% if item.author %}<span>{{ item.author }}</span>{% endif %}
+          </div>
+        </div>
+        {% if item.ingested_at %}<span class="tag" style="white-space:nowrap;">✓ Sent</span>{% endif %}
+      </div>
+
+      {% if item.summary %}<div class="md text-sm mt-3" style="color:var(--muted);">{{ item.summary | safe }}</div>{% endif %}
+
+      <details class="source-inline-editor mt-3" x-data="sendToNotebook">
+        <summary class="btn btn--ghost btn--sm">Send to notebook</summary>
+        <div class="source-inline-editor-panel">
+          <form method="post" action="/feeds/items/{{ item.id }}/send" class="add-form">
+            <label class="field-wrap">
+              <span class="field-label">Notebook</span>
+              <select name="notebook_id" class="field" x-model="notebookId">
+                <option value="">— Create a new notebook —</option>
+                {% for nb in notebooks %}
+                <option value="{{ nb.id }}">{{ nb.title }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <div class="add-grid" x-show="!notebookId">
+              <label class="field-wrap" style="flex:2;">
+                <span class="field-label">New notebook title</span>
+                <input name="new_title" class="field" value="{{ item.title }}">
+              </label>
+              <label class="field-wrap">
+                <span class="field-label">Topic <span class="opt">optional</span></span>
+                <input name="new_topic" class="field" placeholder="Focus area">
+              </label>
+            </div>
+            <div style="margin-top:10px;">
+              <button class="btn btn--primary btn--sm" type="submit">Send to notebook</button>
+            </div>
+          </form>
+        </div>
+      </details>
+    </article>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="well card-pad text-center">
+    <p class="empty">No articles yet. An admin can trigger a fetch from Administration → RSS feeds.</p>
+  </div>
+{% endif %}
+
+{% endblock %}

@@ -302,21 +302,6 @@ class AudienceLinks(BaseModel):
     group_ids: list[int]
 
 
-class IngestionSourceCreate(BaseModel):
-    name: str
-    url: str
-
-
-class IngestionSourceUpdate(BaseModel):
-    name: str | None = None
-    url: str | None = None
-    active: bool | None = None
-
-
-class IngestionPromote(BaseModel):
-    notebook_id: int
-
-
 class AISourceSummaryRequest(BaseModel):
     source_id: int
 

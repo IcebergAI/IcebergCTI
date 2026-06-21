@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}RSS feeds · {{ app_name }}{% endblock %}
+{% block crumb %}RSS feeds{% endblock %}
+{% block content %}
+
+<div class="head-row mb-7">
+  <div>
+    <div class="eyebrow eyebrow-accent">Administration</div>
+    <h1 class="page-title mt-2">Inbound RSS feeds</h1>
+    <div class="title-rule"></div>
+    <p class="text-sm mt-3" style="color:var(--muted);max-width:64ch;">Configure the external RSS/Atom feeds whose articles appear in the analyst feed reader. Feeds are polled on a schedule (when the poller is enabled) and on demand below. Only configured feed URLs are ever fetched.</p>
+  </div>
+  <div class="counter-stack">
+    <span class="counter-num">{{ feeds | length }}</span>
+    <span class="counter-lbl">configured feeds</span>
+  </div>
+</div>
+
+<!-- Add a feed -->
+<section class="card card-pad-lg mb-5">
+  <h2 class="section-title mb-4">Add a feed</h2>
+  <form method="post" action="/admin/feeds" class="add-form">
+    <div class="add-grid">
+      <label class="field-wrap" style="flex:2;">
+        <span class="field-label">Feed URL</span>
+        <input name="url" required class="field mono" placeholder="https://www.cisa.gov/cybersecurity-advisories/all.xml">
+      </label>
+      <label class="field-wrap" style="flex:2;">
+        <span class="field-label">Title <span class="opt">defaults to the URL</span></span>
+        <input name="title" class="field" placeholder="CISA advisories">
+      </label>
+    </div>
+    <label class="field-wrap">
+      <span class="field-label">Description <span class="opt">optional</span></span>
+      <input name="description" class="field" placeholder="Short note for analysts">
+    </label>
+    <label class="chip-check mt-3" style="font-weight:600;">
+      <input type="checkbox" name="enabled" checked>
+      <span>Enabled (included in polling)</span>
+    </label>
+    <div style="margin-top:12px;">
+      <button class="btn btn--primary" type="submit">Add feed</button>
+    </div>
+  </form>
+</section>
+
+<!-- Configured feeds -->
+<section class="card card-pad-lg">
+  <div class="head-row mb-4">
+    <h2 class="section-title">Configured feeds</h2>
+    <form method="post" action="/admin/feeds/fetch">
+      <button class="btn btn--ghost btn--sm" type="submit">Fetch all now</button>
+    </form>
+  </div>
+
+  {% if feeds %}
+  <div class="stack-list">
+    {% for feed in feeds %}
+    <div class="card card-pad mb-3">
+      <form method="post" action="/admin/feeds/{{ feed.id }}" class="add-form">
+        <div class="add-grid">
+          <label class="field-wrap" style="flex:2;">
+            <span class="field-label">Title</span>
+            <input name="title" class="field" value="{{ feed.title }}">
+          </label>
+          <label class="field-wrap" style="flex:3;">
+            <span class="field-label">URL</span>
+            <input name="url" class="field mono" value="{{ feed.url }}">
+          </label>
+        </div>
+        <label class="field-wrap">
+          <span class="field-label">Description</span>
+          <input name="description" class="field" value="{{ feed.description }}">
+        </label>
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:10px;">
+          <label class="chip-check" style="font-weight:600;">
+            <input type="checkbox" name="enabled" {% if feed.enabled %}checked{% endif %}>
+            <span>Enabled</span>
+          </label>
+          <button class="btn btn--ghost btn--sm" type="submit">Save</button>
+        </div>
+      </form>
+
+      <div class="audit-meta" style="margin-top:10px;">
+        {% if feed.last_fetched_at %}
+        <span>Last fetched {{ feed.last_fetched_at.strftime('%Y-%m-%d %H:%M') }}</span>
+        {% else %}
+        <span>Never fetched</span>
+        {% endif %}
+        {% if feed.last_status %}<span class="mono">{{ feed.last_status }}</span>{% endif %}
+        {% if feed.fetch_error %}<span style="color:var(--c-crit);">⚠ {{ feed.fetch_error }}</span>{% endif %}
+      </div>
+
+      <form method="post" action="/admin/feeds/{{ feed.id }}/delete" class="mt-2"
+            x-data="confirmSubmit('Delete this feed and all its fetched items?')" @submit="check($event)">
+        <button class="link-danger" style="background:none;border:0;cursor:pointer;">Delete feed</button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="text-sm" style="color:var(--muted);">No feeds configured yet. Add one above.</p>
+  {% endif %}
+</section>
+
+{% endblock %}

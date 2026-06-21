@@ -103,7 +103,7 @@ This roadmap **prioritises two themes** — *Analytic Tradecraft (ICD 203)* and 
 2. **TAXII and richer STIX.** The STIX bundle endpoint is useful now; TAXII serving, validation tooling, richer external references and optional relationship/SRO enrichment are the interop follow-ups.
 3. **PAP marking ([#32](../../issues/32))** and handling-policy automation are still small, useful governance additions.
 
-**Loose follow-ups:** full ATT&CK import, tag merge/rename tooling, durable background jobs for notifications/webhooks/ingestion, and a semantic embedding backend for related reports.
+**Loose follow-ups:** full ATT&CK import, tag merge/rename tooling, durable background jobs for notifications, webhooks and RSS polling, and a semantic embedding backend for related reports.
 
 ## Validation approach (when these are built)
 

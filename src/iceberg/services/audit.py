@@ -27,7 +27,7 @@ from ..models import (
     User,
     utcnow,
 )
-from . import audit_settings, siem
+from . import audit_settings, proxy_settings, siem
 
 # Static deployment identity for the OWASP "Where" attributes — resolved once.
 APP_NAME = "iceberg"
@@ -184,13 +184,15 @@ def schedule_emit(
     *now* (while the session is live), then either schedules emission on the
     given background tasks or emits inline (best-effort)."""
     payload = to_owasp_dict(event)
-    # Detach the settings from the session so the background task can read its
-    # fields after the request's session is closed.
+    # Detach the settings from the session so the background task can read their
+    # fields after the request's session is closed. The proxy snapshot is
+    # resolved here too (live session) so siem stays off the DB in its task.
     snapshot = audit_settings.get(session).model_copy()
+    proxy_snapshot = proxy_settings.get(session).model_copy()
     if background_tasks is not None:
-        background_tasks.add_task(siem.emit, payload, snapshot)
+        background_tasks.add_task(siem.emit, payload, snapshot, proxy_snapshot)
     else:
-        siem.emit(payload, snapshot)
+        siem.emit(payload, snapshot, proxy_snapshot)
 
 
 def record_and_emit(

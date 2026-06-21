@@ -84,6 +84,25 @@ A **Met** verdict from the owning stakeholder auto-advances that requirement to 
 the cycle. Feedback surfaces on the report (for authors) and the requirement detail (for analysts), and
 its response / satisfaction / useful rates roll up into the maturity dashboard.*
 
+### Inbound collection — RSS feed ingestion
+![Feed reader](docs/images/feed-reader.png)
+*An admin configures external **RSS/Atom feeds**; their articles are polled into a writer-only
+**feed reader** where an analyst **sends an article to a notebook** (existing or new) — capturing it
+as an auto-graded source. The fetcher is opt-in, timeout-bounded and failure-isolated, fetched
+content is sanitised, and feed URLs are admin-only (the SSRF-containment boundary). Article bodies
+are retained as the seam for future IOC extraction + summarisation.*
+
+![Admin — RSS feeds](docs/images/admin-feeds.png)
+*Admins manage the feed list at `/admin/feeds` — add/enable feeds, see last-fetch status, and
+trigger an on-demand fetch.*
+
+### Outbound proxy connectivity
+![Outbound proxy](docs/images/outbound-proxy.png)
+*All outbound HTTP (RSS fetching and the SIEM HTTP sink) can be routed through a **global proxy**
+configured at `/admin/proxy` — honour the **system** proxy (env vars), connect **directly**, or use
+an **explicit** proxy with a no-proxy exclusion list (local domains / IP CIDR ranges). Proxy
+credentials stay in the environment, never the DB.*
+
 ### Full-text + faceted search
 ![Search](docs/images/search.png)
 *Full-text search over the report library (SQLite FTS5, bm25), narrowed by tag / kind /
@@ -108,6 +127,7 @@ tagged with it).*
   regenerate with `python scripts/vendor_assets.py` (Tailwind's theme/sources live in `frontend/input.css`)
 - **markdown-it-py + nh3** for the live markdown preview
 - **SQLite FTS5** (bm25) for full-text report search
+- **feedparser + httpx** for inbound RSS/Atom feed ingestion (opt-in poller)
 - **Typst** for PDF rendering
 - **PyTest** for tests
 - Auth: **OIDC (Microsoft Entra ID)** with a dev-login bypass for local use; role-based
@@ -229,10 +249,11 @@ advisory only; Iceberg records an audit event with metadata, never prompt/respon
 report content is blocked when its TLP exceeds `ICEBERG_AI_MAX_TLP`.
 
 ### Ingest external reporting
-Writer-only **Ingestion** (`/ingestion`) manages RSS/Atom sources, pulls feed items into a
-triage inbox, and promotes selected items into a notebook as `Source` rows. Feed URLs must resolve to public
-HTTP(S) addresses, downloads are size/time bounded, XML is parsed with `defusedxml`, and
-promotion uses the existing source grading path.
+Admins configure RSS/Atom sources at `/admin/feeds`; writers browse the resulting
+articles at `/feeds` and send selected items into an existing or new notebook as
+`Source` rows. Feed URLs are admin-only, downloads are size/time bounded and
+failure-isolated, article HTML is sanitised, and promotion uses the existing
+source grading path.
 
 ### Export and relate products
 Published reports can be exported as STIX 2.1 bundles with `GET /api/reports/{id}/stix`.
@@ -250,6 +271,15 @@ panel when related products exist.
    straight to **Satisfied** — the cycle is closed.
 3. As the `ANALYST`/`REVIEWER`, the report view shows a **Product feedback** panel and the
    requirement detail shows the verdict; **Maturity** picks up the new response / satisfaction rates.
+
+### Try inbound RSS collection
+1. Sign in as an `ADMIN` → **RSS feeds** (`/admin/feeds`) and add a feed URL (e.g. a vendor or
+   CISA advisories RSS), then click **Fetch all now**. *(For a real schedule, set
+   `ICEBERG_RSS_POLL_ENABLED=true`.)*
+2. Sign in as an `ANALYST` → **Feed reader** (`/feeds`) to browse the fetched articles; filter by
+   feed or "not yet sent".
+3. On an article, open **Send to notebook**, pick an existing notebook (or create a new one), and
+   send — it's captured as an auto-graded **source** in that notebook.
 
 ### Try tagging & search
 1. Sign in as an `ADMIN` → **Taxonomy** (`/admin/tags`). A starter taxonomy (~94 tags: CISA
@@ -333,7 +363,9 @@ All settings use the `ICEBERG_` env prefix and can live in `.env` (see
 | `ICEBERG_WEBHOOK_URL` / `ICEBERG_WEBHOOK_TOKEN` | Optional generic report-publication webhook; token is env-only |
 | `ICEBERG_PORTAL_BASE_URL` | Base URL used in notification email links |
 | `ICEBERG_AI_BACKEND` + `ICEBERG_AI_*` | Governed AI assist backend, model, TLP egress ceiling and timeout (off by default) |
-| `ICEBERG_INGESTION_TIMEOUT` / `ICEBERG_INGESTION_MAX_BYTES` | RSS/Atom ingestion timeout and response cap |
+| `ICEBERG_RSS_POLL_ENABLED` / `ICEBERG_RSS_POLL_INTERVAL_MINUTES` | Opt-in RSS poller switch and interval |
+| `ICEBERG_RSS_FETCH_TIMEOUT` / `ICEBERG_RSS_MAX_ITEMS_PER_FEED` | RSS/Atom fetch timeout and per-feed item cap |
+| `ICEBERG_RSS_ALLOW_PRIVATE_HOSTS` | Allow private/internal feed hosts for trusted deployments |
 | `ICEBERG_AUDIT_ENABLED` + `ICEBERG_AUDIT_METHODS` | Master switch + default SIEM emit methods (`stdout`/`syslog`/`http`); editable live at `/admin/audit` |
 | `ICEBERG_AUDIT_SYSLOG_*` / `ICEBERG_AUDIT_HTTP_ENDPOINT` | syslog (RFC 5424) host/port/protocol + HTTP event-collector endpoint defaults |
 | `ICEBERG_AUDIT_HTTP_TOKEN` | **Secret** HEC/bearer token for the HTTP SIEM method (env-only — never stored in the DB) |

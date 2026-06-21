@@ -8,14 +8,11 @@ from iceberg.models import (
     AuditAction,
     AuditEvent,
     AudienceGroup,
-    IngestedItem,
-    IngestionSource,
     IntelLevel,
     Notebook,
     ProductFormat,
     RenderedProduct,
     Report,
-    Source,
     TLP,
     User,
 )
@@ -295,46 +292,6 @@ def test_report_view_shows_stix_and_related_reports(client, login, engine):
     assert "Related reports" in resp.text
     assert "Related credential theft" in resp.text
     assert engine
-
-
-def test_ingestion_portal_promotes_queue_item(client, login, engine, monkeypatch):
-    from iceberg.services import ingestion as ingestion_service
-
-    monkeypatch.setattr(ingestion_service, "_assert_public_http_url", lambda url: None)
-    login("ANALYST", email="ingest@example.com")
-    notebook = client.post("/api/notebooks", json={"title": "Collection notebook"}).json()
-    with Session(engine) as session:
-        feed = IngestionSource(name="Trusted feed", url="https://feeds.example/rss.xml")
-        session.add(feed)
-        session.commit()
-        session.refresh(feed)
-        item = IngestedItem(
-            source_id=feed.id,
-            external_id="item-1",
-            title="Advisory item",
-            url="https://feeds.example/advisory",
-            summary="Confirmed exploitation.",
-            content_md="Confirmed exploitation.",
-        )
-        session.add(item)
-        session.commit()
-        session.refresh(item)
-        item_id = item.id
-
-    page = client.get("/ingestion")
-    assert page.status_code == 200
-    assert "Advisory item" in page.text
-
-    resp = client.post(
-        f"/ingestion/items/{item_id}/promote",
-        data={"notebook_id": str(notebook["id"])},
-        follow_redirects=False,
-    )
-    assert resp.status_code == 303
-    with Session(engine) as session:
-        promoted = session.get(IngestedItem, item_id)
-        assert promoted.status == "PROMOTED"
-        assert session.exec(select(Source).where(Source.title == "Advisory item")).first()
 
 
 def test_source_content_unblocks_heuristic_credibility(client, login):

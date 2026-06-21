@@ -27,7 +27,7 @@ dependencies = [
     "mdit-py-plugins>=0.6",
     "nh3>=0.3.5",
     "alembic>=1.18.4",
-    "defusedxml>=0.7.1",
+    "feedparser>=6.0.11",
 ]
 
 [project.optional-dependencies]

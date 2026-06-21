@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "c8f0a1b2d3e4"
-down_revision: str | Sequence[str] | None = "b2c5de1928db"
+down_revision: str | Sequence[str] | None = "d38850006560"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -70,39 +70,6 @@ def upgrade() -> None:
     )
 
     op.create_table(
-        "ingestionsource",
-        sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("name", sa.String(), nullable=False),
-        sa.Column("url", sa.String(), nullable=False),
-        sa.Column("active", sa.Boolean(), nullable=False),
-        sa.Column("created_at", sa.DateTime(), nullable=False),
-        sa.Column("last_checked_at", sa.DateTime(), nullable=True),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_table(
-        "ingesteditem",
-        sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("source_id", sa.Integer(), nullable=True),
-        sa.Column("external_id", sa.String(), nullable=False, server_default=""),
-        sa.Column("title", sa.String(), nullable=False),
-        sa.Column("url", sa.String(), nullable=False, server_default=""),
-        sa.Column("summary", sa.String(), nullable=False, server_default=""),
-        sa.Column("content_md", sa.String(), nullable=False, server_default=""),
-        sa.Column("published_at", sa.DateTime(), nullable=True),
-        sa.Column("status", sa.String(), nullable=False),
-        sa.Column("created_at", sa.DateTime(), nullable=False),
-        sa.Column("promoted_notebook_id", sa.Integer(), nullable=True),
-        sa.Column("promoted_source_id", sa.Integer(), nullable=True),
-        sa.ForeignKeyConstraint(["promoted_notebook_id"], ["notebook.id"]),
-        sa.ForeignKeyConstraint(["promoted_source_id"], ["source.id"]),
-        sa.ForeignKeyConstraint(["source_id"], ["ingestionsource.id"], ondelete="SET NULL"),
-        sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("source_id", "external_id", name="uq_ingested_item_source_external"),
-    )
-    op.create_index(op.f("ix_ingesteditem_source_id"), "ingesteditem", ["source_id"], unique=False)
-    op.create_index(op.f("ix_ingesteditem_status"), "ingesteditem", ["status"], unique=False)
-
-    op.create_table(
         "reportembedding",
         sa.Column("report_id", sa.Integer(), nullable=False),
         sa.Column("backend", sa.String(), nullable=False, server_default=""),
@@ -115,10 +82,6 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("reportembedding")
-    op.drop_index(op.f("ix_ingesteditem_status"), table_name="ingesteditem")
-    op.drop_index(op.f("ix_ingesteditem_source_id"), table_name="ingesteditem")
-    op.drop_table("ingesteditem")
-    op.drop_table("ingestionsource")
     op.drop_table("reportaudiencegroup")
     op.drop_table("useraudiencegroup")
     op.drop_table("usertagsubscription")

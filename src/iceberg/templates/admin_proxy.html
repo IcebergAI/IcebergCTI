@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Outbound proxy · {{ app_name }}{% endblock %}
+{% block crumb %}Outbound proxy{% endblock %}
+{% block content %}
+
+<div class="head-row mb-7">
+  <div>
+    <div class="eyebrow eyebrow-accent">Administration</div>
+    <h1 class="page-title mt-2">Outbound proxy</h1>
+    <div class="title-rule"></div>
+    <p class="text-sm mt-3" style="color:var(--muted);max-width:64ch;">How Iceberg makes outbound HTTP connections (RSS feed fetching and the SIEM HTTP sink). Choose to honour the system proxy (environment variables), connect directly, or route through an explicit proxy with a no-proxy exclusion list. Proxy credentials, if needed, are read from the environment and never stored here.</p>
+  </div>
+</div>
+
+<section class="card card-pad-lg mb-5">
+  <h2 class="section-title mb-4">Connectivity</h2>
+  <form method="post" action="/admin/proxy" class="add-form">
+    <label class="field-wrap">
+      <span class="field-label">Mode</span>
+      <select name="mode" class="field">
+        {% for m in modes %}
+        <option value="{{ m.value }}" {% if settings.mode == m %}selected{% endif %}>
+          {{ m.value }}{% if m.value == 'SYSTEM' %} — honour environment proxy{% elif m.value == 'NONE' %} — direct (ignore env){% else %} — use proxy below{% endif %}
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label class="field-wrap">
+      <span class="field-label">Proxy URL <span class="opt">EXPLICIT mode; no credentials</span></span>
+      <input name="proxy_url" class="field mono" value="{{ settings.proxy_url }}" placeholder="http://proxy.corp.example:3128">
+    </label>
+
+    <label class="field-wrap">
+      <span class="field-label">No-proxy list <span class="opt">EXPLICIT mode; comma-separated domains / IP CIDR ranges to connect to directly</span></span>
+      <textarea name="no_proxy" rows="2" class="field mono">{{ settings.no_proxy }}</textarea>
+    </label>
+
+    <p class="text-sm mt-2" style="color:var(--muted);">
+      Proxy credentials:
+      {% if creds_configured %}<strong>configured</strong> (from the environment){% else %}not set (anonymous proxy){% endif %}.
+      Set <span class="mono">ICEBERG_PROXY_USERNAME</span> / <span class="mono">ICEBERG_PROXY_PASSWORD</span> to authenticate.
+    </p>
+
+    <div style="margin-top:12px;">
+      <button class="btn btn--primary" type="submit">Save configuration</button>
+    </div>
+  </form>
+
+  <form method="post" action="/admin/proxy/test" class="add-form" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px;">
+    <label class="field-wrap">
+      <span class="field-label">Test connection <span class="opt">fetch a URL through the current settings</span></span>
+      <input name="test_url" class="field mono" placeholder="https://example.com">
+    </label>
+    <div style="margin-top:10px;">
+      <button class="btn btn--ghost btn--sm" type="submit">Test</button>
+      {% if test_result %}<span class="mono text-sm" style="margin-left:10px;color:{{ 'var(--c-crit)' if test_result.startswith('error') else 'var(--muted)' }};">{{ test_result }}</span>{% endif %}
+    </div>
+  </form>
+</section>
+
+{% endblock %}

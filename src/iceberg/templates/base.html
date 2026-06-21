@@ -38,6 +38,8 @@
     <symbol id="ic-help" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 4 1.8c0 1.7-2.5 2-2.5 3.2"/><circle cx="12" cy="17" r="0.6" fill="currentColor"/></symbol>
     <symbol id="ic-doc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h8l4 4v14H6z"/><path d="M13 3v5h5"/></symbol>
     <symbol id="ic-audit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v5c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/><path d="M9 12l2 2 4-4"/></symbol>
+    <symbol id="ic-rss" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15v4a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-4"/><path d="M8 11l4 4 4-4"/><path d="M12 3v12"/></symbol>
+    <symbol id="ic-proxy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="6" height="6" rx="1"/><path d="M3 12h6M15 12h6M12 3v6M12 15v6"/></symbol>
   </defs></svg>
 
   {% set path = request.url.path %}
@@ -45,8 +47,7 @@
   {% set _crumbs = {
     '': 'Dashboard', 'reports': 'Reports', 'notebooks': 'Notebooks',
     'search': 'Search', 'tags': 'Entities', 'matrix': 'ATT&CK matrix',
-    'ingestion': 'Ingestion',
-    'requirements': 'Tasking', 'feed': 'Feed', 'preferences': 'Preferences',
+    'requirements': 'Tasking', 'feed': 'Feed', 'feeds': 'Feed reader', 'preferences': 'Preferences',
     'maturity': 'Program maturity', 'help': 'Help', 'admin': 'Administration'
   } %}
   {% set crumb_default = _crumbs.get(_seg, _seg | replace('-', ' ') | title) %}
@@ -67,7 +68,7 @@
     {% set jump_items = [
       {'label': 'Dashboard', 'href': '/', 'group': 'Workspace'},
       {'label': 'Reports', 'href': '/reports', 'group': 'Workspace'},
-      {'label': 'Ingestion', 'href': '/ingestion', 'group': 'Workspace'},
+      {'label': 'Feed reader', 'href': '/feeds', 'group': 'Collection'},
       {'label': 'Search', 'href': '/search', 'group': 'Discovery'},
       {'label': 'Entities', 'href': '/tags', 'group': 'Discovery'},
       {'label': 'ATT&CK matrix', 'href': '/matrix', 'group': 'Discovery'},
@@ -75,6 +76,8 @@
       {'label': 'Taxonomy', 'href': '/admin/tags', 'group': 'Administration'},
       {'label': 'Audience groups', 'href': '/admin/audience', 'group': 'Administration'},
       {'label': 'Audit log', 'href': '/admin/audit', 'group': 'Administration'},
+      {'label': 'RSS feeds', 'href': '/admin/feeds', 'group': 'Administration'},
+      {'label': 'Outbound proxy', 'href': '/admin/proxy', 'group': 'Administration'},
       {'label': 'Tasking', 'href': '/requirements', 'group': 'Administration'},
       {'label': 'Help', 'href': '/help', 'group': 'Help'}
     ] %}
@@ -83,11 +86,11 @@
       {'label': 'Dashboard', 'href': '/', 'group': 'Workspace'},
       {'label': 'Notebooks', 'href': '/notebooks', 'group': 'Workspace'},
       {'label': 'Reports', 'href': '/reports', 'group': 'Workspace'},
-      {'label': 'Ingestion', 'href': '/ingestion', 'group': 'Workspace'},
       {'label': 'Search', 'href': '/search', 'group': 'Discovery'},
       {'label': 'Entities', 'href': '/tags', 'group': 'Discovery'},
       {'label': 'ATT&CK matrix', 'href': '/matrix', 'group': 'Discovery'},
       {'label': 'Program maturity', 'href': '/maturity', 'group': 'Discovery'},
+      {'label': 'Feed reader', 'href': '/feeds', 'group': 'Collection'},
       {'label': 'Tasking', 'href': '/requirements', 'group': 'Collection'},
       {'label': 'Help', 'href': '/help', 'group': 'Help'}
     ] %}
@@ -133,7 +136,7 @@
             <div class="rail-group-label">Workspace</div>
             {{ rail_link('/', 'ic-home', 'Dashboard', path == '/') }}
             {{ rail_link('/reports', 'ic-reports', 'Reports', path.startswith('/reports')) }}
-            {{ rail_link('/ingestion', 'ic-feed', 'Ingestion', path.startswith('/ingestion')) }}
+            {{ rail_link('/feeds', 'ic-feed', 'Feed reader', path == '/feeds') }}
           </div>
           <div class="rail-group">
             <div class="rail-group-label">Discovery</div>
@@ -147,6 +150,8 @@
             {{ rail_link('/admin/tags', 'ic-taxonomy', 'Taxonomy', path.startswith('/admin/tags')) }}
             {{ rail_link('/admin/audience', 'ic-entity', 'Audience', path.startswith('/admin/audience')) }}
             {{ rail_link('/admin/audit', 'ic-audit', 'Audit log', path.startswith('/admin/audit')) }}
+            {{ rail_link('/admin/feeds', 'ic-rss', 'RSS feeds', path.startswith('/admin/feeds')) }}
+            {{ rail_link('/admin/proxy', 'ic-proxy', 'Outbound proxy', path.startswith('/admin/proxy')) }}
             {{ rail_link('/requirements', 'ic-tasking', 'Tasking', path.startswith('/requirements')) }}
           </div>
         {% else %}
@@ -155,7 +160,6 @@
             {{ rail_link('/', 'ic-home', 'Dashboard', path == '/') }}
             {{ rail_link('/notebooks', 'ic-notebook', 'Notebooks', path.startswith('/notebooks')) }}
             {{ rail_link('/reports', 'ic-reports', 'Reports', path.startswith('/reports')) }}
-            {{ rail_link('/ingestion', 'ic-feed', 'Ingestion', path.startswith('/ingestion')) }}
           </div>
           <div class="rail-group">
             <div class="rail-group-label">Discovery</div>
@@ -166,6 +170,7 @@
           </div>
           <div class="rail-group">
             <div class="rail-group-label">Collection</div>
+            {{ rail_link('/feeds', 'ic-feed', 'Feed reader', path == '/feeds') }}
             {{ rail_link('/requirements', 'ic-tasking', 'Tasking', path.startswith('/requirements')) }}
           </div>
         {% endif %}

@@ -58,18 +58,6 @@ group_id  # SQLModel link-table FK (src/iceberg/models.py:420)
 _.members  # SQLModel relationship / response serialization (src/iceberg/api/audience.py:35)
 members  # SQLModel relationship (src/iceberg/models.py:466)
 subscribers  # SQLModel relationship (src/iceberg/models.py:836)
-last_checked_at  # SQLModel column (src/iceberg/models.py:849)
-last_error  # SQLModel column read in ingestion.html
-last_status_code  # SQLModel column read in ingestion.html
-last_item_count  # SQLModel column read in ingestion.html
-promoted_notebook_id  # SQLModel column (src/iceberg/models.py:871)
-promoted_source_id  # SQLModel column (src/iceberg/models.py:872)
-_.last_checked_at  # SQLModel column assignment (src/iceberg/services/ingestion.py:75)
-_.last_error  # SQLModel column assignment/read in ingestion operations
-_.last_status_code  # SQLModel column assignment/read in ingestion operations
-_.last_item_count  # SQLModel column assignment/read in ingestion operations
-_.promoted_notebook_id  # SQLModel column assignment (src/iceberg/services/ingestion.py:101)
-_.promoted_source_id  # SQLModel column assignment (src/iceberg/services/ingestion.py:102)
 ai_embeddings_enabled  # configuration field reserved for vector backend selection
 ai_embedding_model  # configuration field reserved for vector backend selection
 _.prune_renders_main  # console script entry point (pyproject.toml)
@@ -80,6 +68,9 @@ _.handle_starttag  # unused method (src/iceberg/services/source_grading.py:181)
 attrs  # unused variable (src/iceberg/services/source_grading.py:181)
 _.handle_endtag  # unused method (src/iceberg/services/source_grading.py:187)
 _.handle_data  # unused method (src/iceberg/services/source_grading.py:193)
+_.last_fetched_at  # unused attribute (src/iceberg/services/feeds.py)
+_.last_status  # unused attribute (src/iceberg/services/feeds.py)
+_.fetch_error  # unused attribute (src/iceberg/services/feeds.py)
 _.grading_origin  # unused attribute (src/iceberg/services/source_grading.py:520)
 _.grading_engine  # unused attribute (src/iceberg/services/source_grading.py:521)
 _.grading_error  # unused attribute (src/iceberg/services/source_grading.py:523)

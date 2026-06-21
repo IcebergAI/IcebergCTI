@@ -22,11 +22,15 @@ from sqlmodel import Session, select  # noqa: E402
 from iceberg.db import engine, init_db  # noqa: E402
 from iceberg.models import (  # noqa: E402
     Attachment,
+    Feed,
+    FeedItem,
     IntelLevel,
     Note,
     Notebook,
     Priority,
     ProductFormat,
+    ProxyMode,
+    ProxySettings,
     Report,
     ReportStatus,
     Requirement,
@@ -443,6 +447,70 @@ newly-registered lookalike domains fronted by a reverse proxy.
             "Flag pre-encryption behaviours we should be alerting on.",
             IntelLevel.OPERATIONAL, Priority.MEDIUM, RequirementStatus.OPEN,
             2, notebooks_=[nb_lockbit])
+
+        # ---- Inbound RSS feeds + fetched articles (FR #50) -------------- #
+        def feed(title, url, desc, days_ago, status):
+            f = Feed(title=title, url=url, description=desc, enabled=True,
+                     last_fetched_at=dt(days_ago, 8, 5), last_status=status,
+                     created_at=dt(days_ago + 20), updated_at=dt(days_ago))
+            s.add(f)
+            s.commit()
+            s.refresh(f)
+            return f
+
+        def item(f, title, link, summary, days_ago, ingested=False):
+            s.add(FeedItem(
+                feed_id=f.id, guid=link, link=link, title=title,
+                summary=summary, content=summary, author="",
+                published_at=dt(days_ago, 7, 30), fetched_at=dt(days_ago, 8, 5),
+                ingested_at=dt(days_ago, 10) if ingested else None))
+
+        f_cisa = feed("CISA Cybersecurity Advisories",
+                      "https://www.cisa.gov/cybersecurity-advisories/all.xml",
+                      "US CISA advisories, alerts and ICS bulletins.",
+                      0, "ok: 3 new, 40 total")
+        f_msft = feed("Microsoft Threat Intelligence",
+                      "https://www.microsoft.com/en-us/security/blog/feed/",
+                      "Microsoft MSTIC threat-actor and campaign reporting.",
+                      0, "ok: 2 new, 25 total")
+        f_dfir = feed("The DFIR Report",
+                      "https://thedfirreport.com/feed/",
+                      "Real intrusions, end-to-end, with detection guidance.",
+                      1, "ok: 1 new, 18 total")
+
+        item(f_cisa, "PRC State-Sponsored Actors Continue Pre-positioning in US Networks",
+             "https://www.cisa.gov/news-events/cybersecurity-advisories/aa24-038a-update",
+             "Updated joint guidance on living-off-the-land tradecraft against "
+             "communications, energy and water sector networks.", 0)
+        item(f_cisa, "#StopRansomware: LockBit Affiliate Activity Persists",
+             "https://www.cisa.gov/news-events/cybersecurity-advisories/lockbit-2026",
+             "Affiliate TTPs, IOCs and mitigations following continued postings "
+             "to the leak site.", 1)
+        item(f_cisa, "ICS Advisory: Authentication Bypass in OT Management Appliance",
+             "https://www.cisa.gov/news-events/ics-advisories/icsa-26-160-01",
+             "A widely deployed OT management appliance ships a flaw permitting "
+             "unauthenticated configuration changes.", 2, ingested=True)
+        item(f_msft, "Scattered Spider Shifts to Help-Desk Voice Social Engineering",
+             "https://www.microsoft.com/security/blog/scattered-spider-2026",
+             "MSTIC details identity-driven intrusions using MFA-reset abuse and "
+             "service-desk impersonation.", 0)
+        item(f_msft, "Token Theft and AiTM Phishing Targeting Financial Services",
+             "https://www.microsoft.com/security/blog/aitm-finserv-2026",
+             "Adversary-in-the-middle kits relay OTPs in real time to defeat "
+             "SMS-based MFA across retail banking customers.", 3)
+        item(f_dfir, "From Help-Desk Call to Domain Admin in Three Hours",
+             "https://thedfirreport.com/2026/06/help-desk-to-domain-admin",
+             "A full intrusion walkthrough: initial access via MFA reset, lateral "
+             "movement, and the telemetry that caught it.", 1)
+
+        # ---- Outbound proxy connectivity (admin example) ---------------- #
+        s.add(ProxySettings(
+            id=1, mode=ProxyMode.EXPLICIT,
+            proxy_url="http://proxy.corp.example:3128",
+            no_proxy="localhost,127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,"
+                     "192.168.0.0/16,siem.internal.example",
+        ))
+        s.commit()
 
         # ---- Render the sample PDF (Volt Typhoon, full product) --------- #
         try:
