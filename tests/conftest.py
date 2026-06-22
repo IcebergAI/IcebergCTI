@@ -5,7 +5,11 @@ import os
 
 # Must be set before importing the app/config (settings are cached at import).
 os.environ["ICEBERG_SECRET_KEY"] = "test-secret-0123456789abcdef0123456789"
-os.environ["ICEBERG_DATABASE_URL"] = "sqlite://"
+# Default to an in-memory SQLite DB, but honour an externally-provided Postgres
+# URL (the CI postgres-smoke job sets ICEBERG_DATABASE_URL=postgresql+psycopg://…)
+# so the same suite can exercise the Postgres datastore + FTS path.
+if not os.environ.get("ICEBERG_DATABASE_URL", "").startswith("postgresql"):
+    os.environ["ICEBERG_DATABASE_URL"] = "sqlite://"
 os.environ["ICEBERG_DEV_AUTH"] = "true"
 os.environ["ICEBERG_ENVIRONMENT"] = "dev"
 
@@ -19,8 +23,38 @@ from iceberg.db import get_session
 from iceberg.main import create_app
 
 
+def _pg_reset_and_upgrade(engine) -> None:
+    """Rebuild a clean schema on the Postgres test DB, then run Alembic to head so
+    the postgres_fts generated ``search_vector`` column + GIN index exist. The
+    schema is shared, so the postgres-smoke job must run serially (``-n0``)."""
+    from sqlalchemy import text
+
+    from alembic import command
+
+    with engine.begin() as conn:
+        conn.execute(text("DROP SCHEMA public CASCADE"))
+        conn.execute(text("CREATE SCHEMA public"))
+    cfg = db.alembic_config()
+    with engine.connect() as conn:
+        cfg.attributes["connection"] = conn
+        command.upgrade(cfg, "head")
+
+
 @pytest.fixture(name="engine")
 def engine_fixture():
+    url = os.environ["ICEBERG_DATABASE_URL"]
+    if url.startswith("postgresql"):
+        # Postgres smoke path (CI): a real engine against the configured DB, the
+        # schema rebuilt + migrated per test (Alembic, so the dialect-guarded
+        # postgres_fts migration runs). Slower than the in-memory SQLite default,
+        # so this path is used only for a focused subset.
+        engine = create_engine(url)
+        _pg_reset_and_upgrade(engine)
+        try:
+            yield engine
+        finally:
+            engine.dispose()
+        return
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},

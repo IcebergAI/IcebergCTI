@@ -22,7 +22,7 @@ Roles: `ADMIN`, `ANALYST`, `REVIEWER`, `STAKEHOLDER` (read-only).
 
 ### Technologies
 - Python >= 3.14
-- FastAPI (API + portal), SQLModel (SQLite), PyTest
+- FastAPI (API + portal), SQLModel — **SQLite** (zero-dependency dev/test default) or **PostgreSQL** (production option, via the `psycopg` v3 driver and a `postgresql+psycopg://` `ICEBERG_DATABASE_URL`; `pip install` the `postgres` extra). PyTest
 - Jinja2 + Tailwind CSS + Alpine JS (portal)
 - Typst — report → PDF typesetting (rendering goes directly through the Typst binary; Quarto was considered as a publishing layer but direct Typst was chosen — equivalent output, fewer dependencies)
 
@@ -83,7 +83,7 @@ A **controlled tag taxonomy** classifies reports by threat actor / campaign / ma
 
 The **starter taxonomy** ships as data (`src/iceberg/data/starter_tags.json`, ~94 entries: CISA sectors, cross-cutting topics, a curated ATT&CK Enterprise technique set, and example threat actors + malware with their ATT&CK G-/S-ids). It is loaded by `load_starter_tags()` and imported idempotently (matched on `(kind, slug)`) by `seed_default_taxonomy()` — run automatically on first boot via `init_db`, and re-runnable as an explicit **import step**: `python -m iceberg.seed` (or the `iceberg-seed` console script), with `--file` (custom taxonomy), `--update` (refresh metadata on existing tags), and `--list` (dry-run summary). CAMPAIGN tags start empty (org-specific events for admins to add).
 
-**Search** (`/search`, `GET /api/search`) is full-text over report title + body + the ICD 203 judgement scaffolding (`key_judgements`/`key_assumptions`/`intelligence_gaps`) via **SQLite FTS5** (bm25-ranked), plus facets (tag, kind, intel_level, tlp, status). Indexed columns mirror `report` column names so FTS5 external-content `rebuild` backfills them. The FTS table + sync triggers are created by an `after_create` event on the `report` table, so they build automatically for both `init_db()` and the in-memory test engine. Search is also **alias-aware** (roadmap 2a): a free-text query is *additionally* resolved against named-threat tag labels + `aliases` (`tags.resolve_alias_report_ids`, a Python scan — the vocabulary is small), and reports tagged with a matching entity are **appended after the bm25 body matches**, so "Fancy Bear" finds APT28-tagged reports even when the body never names the alias. The tag text is deliberately *not* denormalised into the FTS index (that would force re-syncing `report_fts` on every tag edit) — alias resolution stays a query-time tag lookup in `search_reports`, so there is **no FTS DDL change**. **Access control:** stakeholders only ever match *published* reports — `search_reports` reapplies `ensure_visible`'s rule so search can't leak unpublished material.
+**Search** (`/search`, `GET /api/search`) is full-text over report title + body + the ICD 203 judgement scaffolding (`key_judgements`/`key_assumptions`/`intelligence_gaps`), plus facets (tag, kind, intel_level, tlp, status). The full-text backend is **chosen by SQL dialect** in `search_reports` (`_fts_ids` dispatch): on **SQLite** it's **FTS5** (bm25-ranked) — an external-content `report_fts` table whose indexed columns mirror `report` column names (so the `rebuild` backfills them), created with its sync triggers by an `after_create` event on the `report` table (builds for both `init_db()` and the in-memory test engine); on **PostgreSQL** it's a **DB-maintained generated `tsvector` column** (`report.search_vector` + a GIN index, created by the dialect-guarded `postgres_fts` migration over the same text), queried with `websearch_to_tsquery` and ranked by `ts_rank` — always current, so no reindex step. Semantics differ deliberately by backend (FTS5 prefix terms vs Postgres whole-word stemming), so the SQLite-specific relevance tests stay in `test_search.py` and a backend-agnostic `test_postgres_smoke.py` covers the Postgres path. Search is also **alias-aware** (roadmap 2a): a free-text query is *additionally* resolved against named-threat tag labels + `aliases` (`tags.resolve_alias_report_ids`, a Python scan — the vocabulary is small), and reports tagged with a matching entity are **appended after the bm25 body matches**, so "Fancy Bear" finds APT28-tagged reports even when the body never names the alias. The tag text is deliberately *not* denormalised into the FTS index (that would force re-syncing `report_fts` on every tag edit) — alias resolution stays a query-time tag lookup in `search_reports`, so there is **no FTS DDL change**. **Access control:** stakeholders only ever match *published* reports — `search_reports` reapplies `ensure_visible`'s rule so search can't leak unpublished material.
 
 ### Dissemination (`src/iceberg/services/dissemination.py`, `services/email.py`)
 On publish, Iceberg matches stakeholders and delivers the report to their **feed**: a stakeholder matches when (a) the report is broadcast-eligible under the TLP ceiling — reports at or below `ICEBERG_DISSEMINATION_MAX_TLP` (default AMBER) are disseminated, while RED / AMBER+STRICT are withheld — **and** (b) the report's `intel_level` equals the stakeholder's `preferred_intel_level` (or the stakeholder has set no preference = all levels), **and** (c) if the stakeholder has tag subscriptions, the report shares at least one subscribed tag, **and** (d) if the report is scoped to audience groups, the stakeholder belongs to at least one of them. Feed delivery is recorded synchronously as `DisseminationEvent`s; an **email notification** is sent as a FastAPI background task. Email uses a pluggable backend (`ICEBERG_EMAIL_BACKEND`): `console` (default — records to an in-memory outbox + logs, for dev/tests) or `smtp`. An optional generic publication webhook (`ICEBERG_WEBHOOK_URL`, bearer token from `ICEBERG_WEBHOOK_TOKEN`) emits metadata only. Stakeholders set intel-level and tag-subscription preferences at `/preferences` and read their feed at `/feed`; API clients can also manage tag subscriptions.
@@ -156,20 +156,39 @@ An ACH (Analysis of Competing Hypotheses) matrix is rendered to a **self-contain
 An analyst uploads an image to a notebook's **Figures** collection (PNG/JPEG/GIF — the browser-`data:`-URI ∩ Typst-`image()` intersection; WebP/SVG are excluded) and embeds it inline by writing a `[[figure:ID]]` token in a report's body — mirroring the Diamond Model token, including notebook-scoping and the "unavailable" degrade for unknown/cross-notebook ids. Two surfaces from one upload: (a) **web view / live preview** — the token is swapped for an inline `<figure>` whose `<img>` carries a base64 `data:` URI of the file's bytes, injected **after** nh3 sanitisation (nh3 would otherwise strip a `data:` URI); the caption/alt is HTML-escaped, so it's safe; (b) **Typst PDF** — `render_report` copies each referenced image into the per-render `--root` as `figure-{id}{ext}` and rewrites the token to a markdown image, reusing `product.typ`'s generic `image` scope override (no template change). The shared web/preview pipeline lives in **`services/product_html.py`** (the assembler moved out of `diamond.py` so one `_to_html` pass substitutes *both* diamond and figure tokens). Figures are a **token-only** embed — there is no `ReportAttachment`-style link table and embedded figures do **not** appear in the PDF appendix. The figures collection is writer-only, but the published report inlines the bytes as a `data:` URI, so report viewers (incl. read-only stakeholders) see embedded figures without hitting the writer-only `/raw` endpoint (which serves the notebook/editor management thumbnails only).
 
 ### Database & migrations (`src/iceberg/db.py`, `src/iceberg/migrations/`)
+The datastore is driven entirely by **`ICEBERG_DATABASE_URL`**: **SQLite** is the
+zero-dependency dev/test default; **PostgreSQL** (`postgresql+psycopg://…`, the optional
+`postgres` extra → `psycopg` v3) is the production option. `db.py` branches engine config on the
+URL — SQLite keeps `check_same_thread`; networked backends get `pool_pre_ping=True`. The
+`_configure_sqlite` connect-event (WAL / `foreign_keys=ON` / `busy_timeout`) is guarded on the
+driver connection type so it's a no-op on Postgres (and correct for the tests' own engines,
+including a Postgres test engine). The migrate **deploy entrypoint is `iceberg-migrate`**
+(`maintenance.migrate_main` → `run_migrations`), which uses the in-code Alembic config (no
+packaged `alembic.ini` needed) and is what the k8s migrate Job runs.
+
 Schema is owned by **Alembic** (SQLModel models are the source autogenerate compares
 against). `init_db()` runs `alembic upgrade head` on boot when `ICEBERG_AUTO_MIGRATE=true`
 (the default — convenient for dev), then seeds the taxonomy and rebuilds the FTS index (both
 idempotent); set the flag false in prod and run migrations in the deploy step. Migrations run
 against the app's own engine via a **shared connection** (`db.run_migrations` injects it into
-`env.py`) so an in-memory `sqlite://` DB works too. The **FTS5 objects are not in SQLModel
-metadata** — the baseline migration owns a frozen copy of the `report_fts` virtual table +
-sync triggers (kept identical to `services/search.py`'s runtime DDL), and `env.py` excludes
-`report_fts*` from autogenerate so it never tries to drop them. `env.py` uses
-`render_as_batch=True` for SQLite ALTER support. Tests keep the fast in-memory `create_all`
-path; `tests/test_migrations.py` runs a real `upgrade head` on a temp DB and asserts (via
-`alembic check`) that models and migrations don't drift. New change → `alembic revision
---autogenerate -m "..."`; pre-existing DBs built by the old `create_all` → `alembic stamp head`
-once.
+`env.py`) so an in-memory `sqlite://` DB works too. **Backend-specific search objects are not in
+SQLModel metadata and are dialect-guarded in the migrations**: the baseline migration owns a
+frozen copy of the SQLite `report_fts` virtual table + sync triggers (created only when
+`dialect.name == "sqlite"`), and the `postgres_fts` migration owns the Postgres `report.search_vector`
+generated `tsvector` column + GIN index (created only when `dialect.name == "postgresql"`).
+`env.py` excludes `report_fts*` (table) and `search_vector` / `ix_report_search_vector` (column +
+index) from autogenerate so it never tries to drop them. `env.py` uses `render_as_batch=True` for
+SQLite ALTER support. Tests keep the fast in-memory `create_all` path; `tests/test_migrations.py`
+runs a real `upgrade head` on a temp DB and asserts (via `alembic check`) that models and
+migrations don't drift, and the CI **`postgres-smoke`** job runs the suite's Postgres path against
+a real Postgres service. New change → `alembic revision --autogenerate -m "..."`; pre-existing DBs
+built by the old `create_all` → `alembic stamp head` once.
+
+**Multi-replica caveat:** Postgres removes the database single-writer bottleneck, but
+attachments/figures/rendered PDFs are still written to a **local disk** path
+(`ICEBERG_ATTACHMENTS_DIR`/`FIGURES_DIR`/`RENDER_OUTPUT_DIR`), so horizontal scaling still needs
+shared file storage (RWX volume or object store) — a separate follow-on. The k8s Deployment stays
+`replicas: 1` + `Recreate` until then.
 
 ### Project structure
 ```
@@ -183,7 +202,7 @@ src/iceberg/
   schemas.py       # API request bodies
   seed.py          # CLI: import the tag taxonomy (python -m iceberg.seed)
   help_content.py  # structured /help copy: per-role guides + concepts glossary
-  maintenance.py   # console scripts: render retention prune + related-index rebuild
+  maintenance.py   # console scripts: migrate (deploy entrypoint) + render retention prune + related-index rebuild
   embeds.py        # single source of the inline-embed token grammar ([[diamond|figure|ach:ID]] / [[attack]])
   templating.py    # shared Jinja2Templates instance
   auth/            # OIDC (Entra) + dev login, JWT, role dependencies, same-origin CSRF mw, audit capture mw

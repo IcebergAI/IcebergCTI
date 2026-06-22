@@ -1,0 +1,96 @@
+# Optional self-hosted PostgreSQL for demo / non-managed clusters.
+#
+# Prefer a managed Postgres in production (backups, HA, patching) and skip this
+# file — just point ICEBERG_DATABASE_URL at the managed instance via
+# iceberg-secrets. This StatefulSet is a single-node convenience, not an HA setup.
+#
+# Credentials here are a template: supply them via the `postgres-secret` Secret
+# (not committed) — see the commented Secret at the bottom.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  labels:
+    app: postgres
+spec:
+  clusterIP: None  # headless — stable DNS (postgres-0.postgres) for the StatefulSet
+  selector:
+    app: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999          # the postgres image's `postgres` user
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: postgres:17
+          envFrom:
+            - secretRef:
+                name: postgres-secret
+          ports:
+            - containerPort: 5432
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: pgdata
+              mountPath: /var/lib/postgresql/data
+              subPath: pgdata   # subdir so the volume's lost+found doesn't clash
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "iceberg", "-d", "iceberg"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+  volumeClaimTemplates:
+    - metadata:
+        name: pgdata
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 20Gi
+# ---------------------------------------------------------------------------- #
+# Provide the DB credentials (do NOT commit real values):
+#
+# apiVersion: v1
+# kind: Secret
+# metadata:
+#   name: postgres-secret
+# type: Opaque
+# stringData:
+#   POSTGRES_USER: iceberg
+#   POSTGRES_PASSWORD: change-me
+#   POSTGRES_DB: iceberg
+#
+# Then set in iceberg-secrets:
+#   ICEBERG_DATABASE_URL: postgresql+psycopg://iceberg:change-me@postgres:5432/iceberg
+# ---------------------------------------------------------------------------- #

@@ -36,6 +36,47 @@ jobs:
       - name: Run tests with coverage
         run: uv run pytest --cov=iceberg --cov-report=term-missing  # fail_under enforced from pyproject
 
+  postgres-smoke:
+    name: PostgreSQL smoke (migrate + search + queries)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: iceberg
+          POSTGRES_PASSWORD: iceberg
+          POSTGRES_DB: iceberg
+        ports:
+          - 5432:5432
+        # Wait for Postgres to accept connections before the job's steps run.
+        options: >-
+          --health-cmd "pg_isready -U iceberg -d iceberg"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # The conftest honours a postgresql:// URL: it builds a real engine and
+      # rebuilds the schema via `alembic upgrade head` per test (so the
+      # dialect-guarded postgres_fts migration runs and the tsvector path is
+      # exercised). Shared schema ⇒ run serially (-n0).
+      ICEBERG_DATABASE_URL: "postgresql+psycopg://iceberg:iceberg@localhost:5432/iceberg"
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: uv.lock
+      - uses: astral-sh/setup-uv@4959332f0f014c5280e7eac8b70c90cb574c9f9b # v6.9.0
+        with:
+          version: "0.11.23"
+      - run: uv sync --locked --extra dev --extra postgres
+      # A focused subset against Postgres: search (FTS tsvector relevance/facets/
+      # access scoping) + dissemination (matching queries). Serial: the schema is
+      # shared and rebuilt per test.
+      - name: Postgres smoke tests
+        run: uv run pytest tests/test_postgres_smoke.py tests/test_dissemination.py -n0 -p no:cacheprovider
+
   static:
     name: Lint + security + dead code + audit + frontend
     runs-on: ubuntu-latest

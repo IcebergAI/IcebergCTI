@@ -40,12 +40,26 @@ def _include_name(name, type_, parent_names) -> bool:
     return True
 
 
+def _include_object(obj, name, type_, reflected, compare_to) -> bool:
+    """Exclude the Postgres search index objects from autogenerate. The
+    ``search_vector`` generated column and its GIN index are owned by the
+    ``postgres_fts`` migration's raw DDL, not by SQLModel.metadata — so on a
+    Postgres autogenerate they must not be diffed (and dropped). Mirrors the
+    ``report_fts*`` table exclusion in :func:`_include_name`."""
+    if type_ == "column" and name == "search_vector":
+        return False
+    if type_ == "index" and name == "ix_report_search_vector":
+        return False
+    return True
+
+
 def _configure(**kwargs) -> None:
     context.configure(
         target_metadata=target_metadata,
         render_as_batch=True,
         compare_type=True,
         include_name=_include_name,
+        include_object=_include_object,
         **kwargs,
     )
 

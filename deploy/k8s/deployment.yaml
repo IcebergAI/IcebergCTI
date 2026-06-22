@@ -3,6 +3,11 @@ kind: Deployment
 metadata:
   name: iceberg
 spec:
+  # Scaling note: even with PostgreSQL, attachments/figures/rendered PDFs are
+  # still written to the local /data PVC (ReadWriteOnce), so this stays a single
+  # replica with a Recreate rollout until shared file storage (RWX or object
+  # store) lands. Postgres removes the *database* single-writer bottleneck; the
+  # filesystem one is a separate follow-on.
   replicas: 1
   strategy:
     type: Recreate
@@ -17,8 +22,13 @@ spec:
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: iceberg
+          # Pin to an immutable tag/digest in production (not :latest), e.g.
+          # ghcr.io/theslopbucket/iceberg:0.1.0@sha256:<digest>.
           image: ghcr.io/theslopbucket/iceberg:latest
           ports:
             - containerPort: 8000
@@ -27,9 +37,23 @@ spec:
                 name: iceberg-config
             - secretRef:
                 name: iceberg-secrets
+          env:
+            # Writable cache for the Typst package fetch (cmarker), since the
+            # root filesystem is read-only.
+            - name: XDG_CACHE_HOME
+              value: /cache
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           volumeMounts:
             - name: data
               mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+            - name: cache
+              mountPath: /cache
           livenessProbe:
             httpGet:
               path: /healthz
@@ -51,3 +75,9 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: iceberg-data
+        # Read-only root filesystem ⇒ scratch space for tempfile + Typst renders
+        # and the Typst package cache come from emptyDir mounts.
+        - name: tmp
+          emptyDir: {}
+        - name: cache
+          emptyDir: {}

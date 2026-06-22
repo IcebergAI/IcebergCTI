@@ -20,17 +20,22 @@ _MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
 # time, so it fires for every create_all (app boot and the in-memory test engine).
 search_service.register_fts_events()
 
-_connect_args = (
-    {"check_same_thread": False}
-    if settings.database_url.startswith("sqlite")
-    else {}
+_is_sqlite = settings.database_url.startswith("sqlite")
+_connect_args = {"check_same_thread": False} if _is_sqlite else {}
+# Networked backends (PostgreSQL) pool connections that can be dropped by the
+# server/proxy; pre-ping discards a dead connection instead of erroring. SQLite
+# is a local file/in-memory handle, so pre-ping is unnecessary there.
+_engine_kwargs: dict = {} if _is_sqlite else {"pool_pre_ping": True}
+engine = create_engine(
+    settings.database_url, echo=False, connect_args=_connect_args, **_engine_kwargs
 )
-engine = create_engine(settings.database_url, echo=False, connect_args=_connect_args)
 
 
 @event.listens_for(Engine, "connect")
 def _configure_sqlite(dbapi_connection, _connection_record):
-    """Tune each SQLite connection:
+    """Tune each SQLite connection (no-op on other backends — guarded on the
+    driver connection type so it's correct for the app engine and the tests'
+    own engines alike, including a PostgreSQL test engine):
 
     - ``foreign_keys=ON`` so ON DELETE CASCADE is enforced.
     - ``journal_mode=WAL`` so readers don't block the writer (and vice versa) —
@@ -42,15 +47,13 @@ def _configure_sqlite(dbapi_connection, _connection_record):
     - ``busy_timeout`` so a writer waits-and-retries for up to 5s instead of
       failing immediately when the DB is momentarily locked.
     """
-    try:
-        cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.execute("PRAGMA journal_mode=WAL")
-        cursor.execute("PRAGMA busy_timeout=5000")
-        cursor.close()
-    except Exception:  # nosec B110 — best-effort: non-SQLite backends ignore the pragmas
-        # Non-SQLite backends ignore these.
-        pass
+    if "sqlite3" not in type(dbapi_connection).__module__:
+        return  # PostgreSQL (psycopg) etc. — these PRAGMAs are SQLite-only.
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA busy_timeout=5000")
+    cursor.close()
 
 
 def alembic_config():
