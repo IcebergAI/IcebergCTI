@@ -1,0 +1,9 @@
+# Caddy reverse proxy for a single-host Docker deployment (opt-in `tls` profile;
+# see docker-compose.yml). Set ICEBERG_DOMAIN to your public hostname for
+# automatic Let's Encrypt TLS; it defaults to `localhost`, for which Caddy issues
+# a local-CA certificate (handy for a demo). Caddy forwards X-Forwarded-For/-Proto
+# by default, which the app honours via uvicorn's --proxy-headers (so the real
+# client IP reaches the audit log and the scheme is correct for Secure cookies).
+{$ICEBERG_DOMAIN:localhost} {
+	reverse_proxy iceberg:8000
+}
