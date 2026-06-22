@@ -31,6 +31,21 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      # No curl/wget in the slim runtime image — use the venv python (on PATH).
+      # /healthz is liveness only (no DB touch), so it won't flap on a DB blip.
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=3)
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      # First boot runs migrations + taxonomy seed inside the lifespan before
+      # uvicorn serves, so /healthz isn't answerable immediately — don't count
+      # failures (or report unhealthy) during the warm-up window.
+      start_period: 40s
 
   postgres:
     image: postgres:17
@@ -61,7 +76,8 @@ services:
     image: caddy:2
     restart: unless-stopped
     depends_on:
-      - iceberg
+      iceberg:
+        condition: service_healthy
     environment:
       ICEBERG_DOMAIN: ${ICEBERG_DOMAIN:-localhost}
     ports:
