@@ -14,7 +14,8 @@ from typing import Any
 import httpx
 
 from ..config import Settings, get_settings
-from ..models import Report, TLP, User, is_disseminable
+from ..models import ProxySettings, Report, TLP, User, is_disseminable
+from . import proxy as proxy_service
 
 logger = logging.getLogger("iceberg.ai")
 
@@ -64,6 +65,7 @@ def assist(
     actor: User,
     settings: Settings | None = None,
     report: Report | None = None,
+    proxy_settings: ProxySettings | None = None,
 ) -> AISuggestion:
     settings = settings or get_settings()
     if settings.ai_backend == "none":
@@ -81,12 +83,19 @@ def assist(
     )
 
     if settings.ai_backend == "openai-compatible":
-        return _openai_compatible(task, payload, actor=actor, settings=settings)
+        return _openai_compatible(
+            task, payload, actor=actor, settings=settings, proxy_settings=proxy_settings
+        )
     return disabled(task, f"Unknown AI backend: {settings.ai_backend}")
 
 
 def _openai_compatible(
-    task: str, payload: dict, *, actor: User, settings: Settings
+    task: str,
+    payload: dict,
+    *,
+    actor: User,
+    settings: Settings,
+    proxy_settings: ProxySettings | None = None,
 ) -> AISuggestion:
     if not settings.ai_base_url or not settings.ai_model:
         return disabled(task, "AI backend is not configured")
@@ -101,9 +110,17 @@ def _openai_compatible(
         ),
         "payload": payload,
     }
+    base_url = f"{settings.ai_base_url.rstrip('/')}/chat/completions"
+    # Route through the global outbound proxy when one is configured (None →
+    # direct, the previous behaviour). See services/proxy.py.
+    proxy_kwargs = (
+        proxy_service.resolve(proxy_settings, base_url)
+        if proxy_settings is not None
+        else {}
+    )
     try:
         resp = httpx.post(
-            f"{settings.ai_base_url.rstrip('/')}/chat/completions",
+            base_url,
             headers=headers,
             json={
                 "model": settings.ai_model,
@@ -112,6 +129,7 @@ def _openai_compatible(
                 "response_format": {"type": "json_object"},
             },
             timeout=settings.ai_timeout,
+            **proxy_kwargs,
         )
         resp.raise_for_status()
         data = resp.json()
