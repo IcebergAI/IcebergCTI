@@ -74,16 +74,19 @@ def test_pg_facet_by_intel_level(client, login):
 
 
 def test_pg_alias_query_finds_canonical_entity(client, login):
+    # A unique label/alias that isn't in the seeded starter taxonomy — on Postgres
+    # the test DB is the (seeded) shared engine, so reusing a starter actor (APT28
+    # / "Fancy Bear") would collide on the unique slug.
     login("ADMIN", email="admin@example.com")
     tag = client.post(
         "/api/tags",
-        json={"kind": "ACTOR", "label": "APT28", "aliases": ["Fancy Bear"]},
+        json={"kind": "ACTOR", "label": "SmokeTestActor", "aliases": ["Smoke Phantom"]},
     ).json()
     rid = _report(client, login, "Intrusion set update", "Generic narrative body.")
     login("ANALYST", email="author@example.com")
     client.put(f"/api/reports/{rid}/tags", json={"tag_ids": [tag["id"]]})
     # Body never names the alias; it resolves via the tag (alias-aware search).
-    assert _titles(client.get("/api/search", params={"q": "Fancy Bear"})) == {
+    assert _titles(client.get("/api/search", params={"q": "Smoke Phantom"})) == {
         "Intrusion set update"
     }
 
