@@ -5,12 +5,10 @@ metadata:
 data:
   ICEBERG_ENVIRONMENT: "prod"
   ICEBERG_AUTO_MIGRATE: "false"
-  # Datastore: SQLite by default. For PostgreSQL, move the URL to the
-  # iceberg-secrets Secret (it carries credentials) and drop it here, e.g.
-  #   ICEBERG_DATABASE_URL: postgresql+psycopg://user:pass@host:5432/iceberg
-  # Run the migrate Job (alembic upgrade head) against it before/at rollout.
-  # See deploy/k8s/README.md and deploy/k8s/postgres.yaml.
-  ICEBERG_DATABASE_URL: "sqlite:////data/iceberg.db"
+  # Datastore: PostgreSQL (required in prod — the app refuses to boot on SQLite).
+  # ICEBERG_DATABASE_URL carries credentials, so it lives in the iceberg-secrets
+  # Secret, not here. Run the migrate Job (alembic upgrade head) against it
+  # before/at rollout. See deploy/k8s/README.md and deploy/k8s/postgres.yaml.
   ICEBERG_ATTACHMENTS_DIR: "/data/attachments"
   ICEBERG_FIGURES_DIR: "/data/figures"
   ICEBERG_RENDER_OUTPUT_DIR: "/data/rendered"

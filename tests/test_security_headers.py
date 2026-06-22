@@ -8,8 +8,10 @@ route runs.
 from iceberg.auth.security_headers import build_csp, build_security_headers
 from iceberg.config import Settings
 
-# A 32+ char key so the prod model-validator (config._guard_production) accepts it.
+# A 32+ char key and a Postgres URL so the prod model-validator
+# (config._guard_production) accepts it (prod refuses the default secret + SQLite).
 _PROD_KEY = "x" * 40
+_PROD_DB = "postgresql+psycopg://iceberg:iceberg@postgres:5432/iceberg"
 
 
 def _dev_settings() -> Settings:
@@ -17,7 +19,7 @@ def _dev_settings() -> Settings:
 
 
 def _prod_settings() -> Settings:
-    return Settings(environment="prod", secret_key=_PROD_KEY)
+    return Settings(environment="prod", secret_key=_PROD_KEY, database_url=_PROD_DB)
 
 
 def test_strict_script_src_has_no_unsafe():

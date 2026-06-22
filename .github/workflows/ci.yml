@@ -138,26 +138,47 @@ jobs:
   docker:
     name: Docker image build + boot smoke
     runs-on: ubuntu-latest
+    services:
+      # PostgreSQL is the supported container datastore (the prod image refuses to
+      # boot on SQLite), so the boot smoke runs against a real Postgres.
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: iceberg
+          POSTGRES_PASSWORD: iceberg
+          POSTGRES_DB: iceberg
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U iceberg -d iceberg"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       # Build via the runner's built-in Docker/BuildKit (no extra pinned action).
       - name: Build image
         run: DOCKER_BUILDKIT=1 docker build -t iceberg:ci .
-      # Mirror the production flow on the SQLite default: migrate as a deploy step
+      # Mirror the production flow on PostgreSQL: migrate as a deploy step
       # (iceberg-migrate, ICEBERG_AUTO_MIGRATE stays false), then boot the default
       # CMD and assert the probes + that the portal templates/static are packaged
       # in the image (guards the editable-install layout in the Dockerfile).
-      - name: Boot smoke (migrate + run on SQLite)
+      # --network host lets the throwaway containers reach the Postgres service on
+      # the runner's mapped localhost:5432 (and the app binds :8000 on the host).
+      - name: Boot smoke (migrate + run on PostgreSQL)
         env:
           ICEBERG_SECRET_KEY: ci-secret-0123456789abcdef0123456789
+          ICEBERG_DATABASE_URL: postgresql+psycopg://iceberg:iceberg@localhost:5432/iceberg
         run: |
           set -euo pipefail
           docker volume create iceberg-ci-data
-          docker run --rm -v iceberg-ci-data:/data \
+          docker run --rm --network host -v iceberg-ci-data:/data \
             -e ICEBERG_SECRET_KEY="$ICEBERG_SECRET_KEY" \
+            -e ICEBERG_DATABASE_URL="$ICEBERG_DATABASE_URL" \
             iceberg:ci iceberg-migrate
-          docker run -d --name iceberg-ci -p 8000:8000 -v iceberg-ci-data:/data \
+          docker run -d --name iceberg-ci --network host -v iceberg-ci-data:/data \
             -e ICEBERG_SECRET_KEY="$ICEBERG_SECRET_KEY" \
+            -e ICEBERG_DATABASE_URL="$ICEBERG_DATABASE_URL" \
             iceberg:ci
           for _ in $(seq 1 30); do
             if curl -fsS http://localhost:8000/healthz >/dev/null; then ready=1; break; fi

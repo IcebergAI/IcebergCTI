@@ -43,12 +43,14 @@ RUN set -eux; \
 # ---------------------------------------------------------------------------- #
 FROM python:3.14-slim AS runtime
 
+# No ICEBERG_DATABASE_URL default: the container datastore is PostgreSQL and the
+# prod app refuses to boot on SQLite (config._guard_production), so the operator
+# must supply a postgresql+psycopg:// URL (compose/k8s secrets do this).
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/app/.venv/bin:$PATH" \
     ICEBERG_ENVIRONMENT=prod \
     ICEBERG_AUTO_MIGRATE=false \
-    ICEBERG_DATABASE_URL=sqlite:////data/iceberg.db \
     ICEBERG_ATTACHMENTS_DIR=/data/attachments \
     ICEBERG_FIGURES_DIR=/data/figures \
     ICEBERG_RENDER_OUTPUT_DIR=/data/rendered

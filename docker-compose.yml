@@ -1,42 +1,28 @@
-# Default `docker compose up` runs Iceberg on the zero-dependency SQLite store,
-# served by uvicorn on :8000. Two opt-in profiles layer on top:
+# Iceberg on PostgreSQL — the supported container datastore. (SQLite is the
+# zero-dependency local dev/test default only; it is NOT a container deployment
+# option — the app refuses to boot on SQLite when ICEBERG_ENVIRONMENT=prod.)
 #
-#   docker compose --profile postgres up   # PostgreSQL datastore (iceberg-pg + postgres)
-#   docker compose --profile tls up        # Caddy TLS reverse proxy on :80/:443
+#   docker compose up                  # app on :8000 + its PostgreSQL database
+#   ICEBERG_DOMAIN=intel.example.com \
+#     docker compose --profile tls up  # add a Caddy TLS reverse proxy on :80/:443
 #
-# The `iceberg-pg` service is the same image wired to Postgres via
-# ICEBERG_DATABASE_URL; the default `iceberg` service stays SQLite. The `caddy`
-# service terminates TLS in front of the app (set ICEBERG_DOMAIN for a real
-# hostname). Profiles compose, e.g. `--profile postgres --profile tls`.
+# A single app service always pairs with the `postgres` service, so no two
+# services ever bind the same host port.
 services:
   iceberg:
     build: .
+    restart: unless-stopped
     ports:
       - "8000:8000"
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       ICEBERG_ENVIRONMENT: dev
       ICEBERG_AUTO_MIGRATE: "true"
-      ICEBERG_DATABASE_URL: sqlite:////data/iceberg.db
-      ICEBERG_ATTACHMENTS_DIR: /data/attachments
-      ICEBERG_FIGURES_DIR: /data/figures
-      ICEBERG_RENDER_OUTPUT_DIR: /data/rendered
-    volumes:
-      - iceberg-data:/data
-
-  # PostgreSQL-backed app (opt-in): `docker compose --profile postgres up`.
-  iceberg-pg:
-    profiles: ["postgres"]
-    build: .
-    ports:
-      - "8000:8000"
-    env_file:
-      - .env
-    environment:
-      ICEBERG_ENVIRONMENT: dev
-      ICEBERG_AUTO_MIGRATE: "true"
-      ICEBERG_DATABASE_URL: postgresql+psycopg://iceberg:iceberg@postgres:5432/iceberg
+      # PostgreSQL is the container datastore. Override the credentials/host via
+      # the shell or .env; the default targets the bundled `postgres` service.
+      ICEBERG_DATABASE_URL: ${ICEBERG_DATABASE_URL:-postgresql+psycopg://iceberg:iceberg@postgres:5432/iceberg}
       ICEBERG_ATTACHMENTS_DIR: /data/attachments
       ICEBERG_FIGURES_DIR: /data/figures
       ICEBERG_RENDER_OUTPUT_DIR: /data/rendered
@@ -47,8 +33,8 @@ services:
         condition: service_healthy
 
   postgres:
-    profiles: ["postgres"]
     image: postgres:17
+    restart: unless-stopped
     environment:
       POSTGRES_USER: iceberg
       POSTGRES_PASSWORD: iceberg
