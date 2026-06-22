@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Publication webhook · {{ app_name }}{% endblock %}
+{% block crumb %}Publication webhook{% endblock %}
+{% block content %}
+
+<div class="head-row mb-7">
+  <div>
+    <div class="eyebrow eyebrow-accent">Administration</div>
+    <h1 class="page-title mt-2">Publication webhook</h1>
+    <div class="title-rule"></div>
+    <p class="text-sm mt-3" style="color:var(--muted);max-width:64ch;">When a report is published, Iceberg POSTs a small JSON event (report id, title, link and recipient count — <strong>metadata only</strong>, never the report body) to this endpoint as a background task. Delivery is failure-isolated and routed through the global outbound proxy when one is configured. The bearer token is read from the environment and never stored here.</p>
+  </div>
+</div>
+
+<section class="card card-pad-lg mb-5">
+  <h2 class="section-title mb-4">Endpoint</h2>
+  <form method="post" action="/admin/webhook" class="add-form">
+    <label class="chip-check">
+      <input type="checkbox" name="enabled" {% if settings.enabled %}checked{% endif %}>
+      <span>Enable publication webhook</span>
+    </label>
+
+    <label class="field-wrap">
+      <span class="field-label">Webhook URL <span class="opt">no credentials; e.g. https://hooks.example.org/iceberg</span></span>
+      <input name="url" class="field mono" value="{{ settings.url }}" placeholder="https://hooks.example.org/iceberg">
+    </label>
+
+    <label class="field-wrap">
+      <span class="field-label">Timeout <span class="opt">seconds; bounds the POST so a stuck endpoint can't hang the notifier</span></span>
+      <input name="timeout" type="number" min="1" max="60" step="0.5" class="field mono" value="{{ settings.timeout }}">
+    </label>
+
+    <p class="text-sm mt-2" style="color:var(--muted);">
+      Bearer token:
+      {% if token_configured %}<strong>configured</strong> (from the environment){% else %}<strong>not set</strong> (optional){% endif %}.
+      Set <span class="mono">ICEBERG_WEBHOOK_TOKEN</span> to send an <span class="mono">Authorization: Bearer</span> header.
+    </p>
+
+    <div style="margin-top:12px;">
+      <button class="btn btn--primary" type="submit">Save configuration</button>
+    </div>
+  </form>
+
+  <form method="post" action="/admin/webhook/test" class="add-form" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px;">
+    <div>
+      <button class="btn btn--ghost btn--sm" type="submit">Send test event</button>
+      {% if test_result %}<span class="mono text-sm" style="margin-left:10px;color:{{ 'var(--c-crit)' if test_result.startswith('error') else 'var(--muted)' }};">{{ test_result }}</span>{% endif %}
+    </div>
+  </form>
+</section>
+
+{% endblock %}

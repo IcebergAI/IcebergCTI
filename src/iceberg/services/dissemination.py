@@ -23,11 +23,13 @@ from ..models import (
     Role,
     TLP,
     User,
+    WebhookSettings,
     is_disseminable,
 )
 from . import email as email_service
 from . import proxy as proxy_service
 from . import proxy_settings as proxy_settings_service
+from . import webhook_settings as webhook_settings_service
 
 logger = logging.getLogger("iceberg.dissemination")
 
@@ -123,12 +125,18 @@ def send_webhook_notification(
     report_title: str,
     report_id: int,
     recipient_count: int,
+    webhook_settings: WebhookSettings | None = None,
     proxy_settings: ProxySettings | None = None,
 ) -> None:
-    settings = get_settings()
-    if not settings.webhook_url:
+    if (
+        webhook_settings is None
+        or not webhook_settings.enabled
+        or not webhook_settings.url
+    ):
         return
+    settings = get_settings()
     headers = {"Content-Type": "application/json"}
+    # The bearer token is env-only (never persisted on the settings row).
     if settings.webhook_token:
         headers["Authorization"] = f"Bearer {settings.webhook_token}"
     payload = {
@@ -141,16 +149,16 @@ def send_webhook_notification(
     # Route through the global outbound proxy when one is configured (None →
     # direct, the previous behaviour). See services/proxy.py.
     proxy_kwargs = (
-        proxy_service.resolve(proxy_settings, settings.webhook_url)
+        proxy_service.resolve(proxy_settings, webhook_settings.url)
         if proxy_settings is not None
         else {}
     )
     try:
         resp = httpx.post(
-            settings.webhook_url,
+            webhook_settings.url,
             json=payload,
             headers=headers,
-            timeout=settings.webhook_timeout,
+            timeout=webhook_settings.timeout,
             **proxy_kwargs,
         )
         resp.raise_for_status()
@@ -160,6 +168,38 @@ def send_webhook_notification(
             report_id,
             exc_info=True,
         )
+
+
+def test_webhook_connection(
+    webhook_settings: WebhookSettings, proxy_settings: ProxySettings | None = None
+) -> str:
+    """Probe the configured webhook with a test payload (best-effort; never
+    raises — returns a status string for the admin console, mirroring
+    ``misp.test_connection``)."""
+    try:
+        if not webhook_settings.url.strip():
+            return "error: webhook URL is not configured"
+        settings = get_settings()
+        headers = {"Content-Type": "application/json"}
+        if settings.webhook_token:
+            headers["Authorization"] = f"Bearer {settings.webhook_token}"
+        proxy_kwargs = (
+            proxy_service.resolve(proxy_settings, webhook_settings.url)
+            if proxy_settings is not None
+            else {}
+        )
+        resp = httpx.post(
+            webhook_settings.url,
+            json={"event": "test", "source": "iceberg"},
+            headers=headers,
+            timeout=webhook_settings.timeout,
+            **proxy_kwargs,
+        )
+        resp.raise_for_status()
+        return f"ok: HTTP {resp.status_code}"
+    except Exception as exc:  # noqa: BLE001 — surface the failure, don't 500
+        logger.warning("Webhook test failed: %s", exc)
+        return f"error: {exc}"
 
 
 def queue_dissemination(
@@ -173,15 +213,17 @@ def queue_dissemination(
         background_tasks.add_task(
             send_notifications, payloads, report.title, report.id
         )
-    # Snapshot the proxy row so the webhook (a background task running after the
-    # request's session closes) can resolve the proxy without DB access — the
-    # same discipline as audit.schedule_emit's SIEM snapshot.
+    # Snapshot the webhook + proxy rows so the background task (running after the
+    # request's session closes) can read them without DB access — the same
+    # discipline as audit.schedule_emit's SIEM snapshot.
+    webhook_snapshot = webhook_settings_service.get(session).model_copy()
     proxy_snapshot = proxy_settings_service.get(session).model_copy()
     background_tasks.add_task(
         send_webhook_notification,
         report.title,
         report.id,
         len(recipients),
+        webhook_snapshot,
         proxy_snapshot,
     )
     return len(recipients)
