@@ -317,6 +317,9 @@ class AuditAction(StrEnum):
     MISP_SETTINGS_UPDATED = "MISP_SETTINGS_UPDATED"
     MISP_TEST = "MISP_TEST"
     MISP_PUSHED = "MISP_PUSHED"
+    # Publication webhook configuration (admin)
+    WEBHOOK_SETTINGS_UPDATED = "WEBHOOK_SETTINGS_UPDATED"
+    WEBHOOK_TEST = "WEBHOOK_TEST"
     # Sensitive file access
     ATTACHMENT_UPLOADED = "ATTACHMENT_UPLOADED"
     ATTACHMENT_DOWNLOADED = "ATTACHMENT_DOWNLOADED"
@@ -1179,4 +1182,23 @@ class MISPSettings(SQLModel, table=True):
     default_distribution: int = 0  # 0 = your organisation only
     default_threat_level: int = 4  # 4 = undefined
     default_published: bool = False  # leave events unpublished for review by default
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class WebhookSettings(SQLModel, table=True):
+    """Generic report-publication webhook config, admin-editable (single row, id=1).
+
+    On publish, Iceberg POSTs report **metadata only** to ``url`` as a background
+    task (see ``services/dissemination.send_webhook_notification``). Holds only
+    non-secret config — the bearer token is read from the environment
+    (``ICEBERG_WEBHOOK_TOKEN``) and injected at call time, never persisted here
+    (same discipline as the SIEM HTTP token / MISP API key / proxy credentials).
+    Mirrors ``MISPSettings`` / ``ProxySettings``."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    enabled: bool = Field(default=False)
+    # Endpoint to POST the publication event to (no credentials in the URL).
+    url: str = ""
+    # Bounds the POST so a stuck endpoint can't hang the background task.
+    timeout: float = 5.0
     updated_at: datetime = Field(default_factory=utcnow)

@@ -241,7 +241,9 @@ a browsable look at what the other roles do, and a glossary of the intelligence 
    Reports marked TLP:RED or AMBER+STRICT are withheld from broadcast.
 4. Stakeholders can subscribe to taxonomy tags from **Preferences**; if they have any
    subscriptions, publish-time matching requires at least one shared report tag. A generic
-   publication webhook can also be configured with `ICEBERG_WEBHOOK_URL`.
+   publication webhook (report metadata only) can be enabled/edited by an `ADMIN` at
+   **Publication webhook** (`/admin/webhook`) — with a "Send test event" check — or seeded via
+   `ICEBERG_WEBHOOK_URL`; the bearer token stays env-only (`ICEBERG_WEBHOOK_TOKEN`).
 
 ### Need-to-know groups
 `ADMIN`s can use **Audience** (`/admin/audience`) to create named groups, assign stakeholder
@@ -368,7 +370,7 @@ All settings use the `ICEBERG_` env prefix and can live in `.env` (see
 | `ICEBERG_FIGURES_DIR` / `ICEBERG_FIGURE_MAX_MB` | Notebook figure (embeddable image) storage dir + size cap (default 10 MB) |
 | `ICEBERG_DISSEMINATION_MAX_TLP` | Broadcast ceiling (default `AMBER`; RED/AMBER_STRICT withheld) |
 | `ICEBERG_EMAIL_BACKEND` + `ICEBERG_SMTP_*` | `console` (dev) or `smtp`; SMTP server settings |
-| `ICEBERG_WEBHOOK_URL` / `ICEBERG_WEBHOOK_TOKEN` | Optional generic report-publication webhook; token is env-only |
+| `ICEBERG_WEBHOOK_URL` / `ICEBERG_WEBHOOK_TOKEN` | Optional generic report-publication webhook (seeds the row; URL/enabled/timeout editable live at `/admin/webhook`); token is env-only |
 | `ICEBERG_PORTAL_BASE_URL` | Base URL used in notification email links |
 | `ICEBERG_AI_BACKEND` + `ICEBERG_AI_*` | Governed AI assist backend, model, TLP egress ceiling and timeout (off by default) |
 | `ICEBERG_RSS_POLL_ENABLED` / `ICEBERG_RSS_POLL_INTERVAL_MINUTES` | Opt-in RSS poller switch and interval |

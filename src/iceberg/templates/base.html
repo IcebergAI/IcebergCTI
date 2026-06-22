@@ -41,6 +41,7 @@
     <symbol id="ic-rss" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15v4a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-4"/><path d="M8 11l4 4 4-4"/><path d="M12 3v12"/></symbol>
     <symbol id="ic-proxy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="6" height="6" rx="1"/><path d="M3 12h6M15 12h6M12 3v6M12 15v6"/></symbol>
     <symbol id="ic-misp" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2.2"/><circle cx="5" cy="18" r="2.2"/><circle cx="19" cy="18" r="2.2"/><path d="M12 7.2v3.3M11 12.2 6.5 16M13 12.2 17.5 16"/></symbol>
+    <symbol id="ic-webhook" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 9a3 3 0 1 1 4 2.83L10.5 16"/><path d="M15 13a3 3 0 1 1-2.5 4.66H8"/><path d="M7.5 12.5 5 17a3 3 0 1 0 3 1"/></symbol>
   </defs></svg>
 
   {% set path = request.url.path %}
@@ -80,6 +81,7 @@
       {'label': 'RSS feeds', 'href': '/admin/feeds', 'group': 'Administration'},
       {'label': 'Outbound proxy', 'href': '/admin/proxy', 'group': 'Administration'},
       {'label': 'MISP push', 'href': '/admin/misp', 'group': 'Administration'},
+      {'label': 'Publication webhook', 'href': '/admin/webhook', 'group': 'Administration'},
       {'label': 'Tasking', 'href': '/requirements', 'group': 'Administration'},
       {'label': 'Help', 'href': '/help', 'group': 'Help'}
     ] %}
@@ -155,6 +157,7 @@
             {{ rail_link('/admin/feeds', 'ic-rss', 'RSS feeds', path.startswith('/admin/feeds')) }}
             {{ rail_link('/admin/proxy', 'ic-proxy', 'Outbound proxy', path.startswith('/admin/proxy')) }}
             {{ rail_link('/admin/misp', 'ic-misp', 'MISP push', path.startswith('/admin/misp')) }}
+            {{ rail_link('/admin/webhook', 'ic-webhook', 'Webhook', path.startswith('/admin/webhook')) }}
             {{ rail_link('/requirements', 'ic-tasking', 'Tasking', path.startswith('/requirements')) }}
           </div>
         {% else %}

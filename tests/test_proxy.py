@@ -11,7 +11,13 @@ import pytest
 from sqlmodel import Session, select
 
 from iceberg.config import Settings
-from iceberg.models import AuditSettings, ProxyMode, ProxySettings, User
+from iceberg.models import (
+    AuditSettings,
+    ProxyMode,
+    ProxySettings,
+    User,
+    WebhookSettings,
+)
 from iceberg.services import ai as ai_service
 from iceberg.services import dissemination as dissemination_service
 from iceberg.services import feeds as feeds_service
@@ -264,12 +270,16 @@ def test_ai_backend_without_snapshot_is_unchanged(monkeypatch):
 # --------------------------------------------------------------------------- #
 def _webhook_cfg():
     class _Cfg:
-        webhook_url = "https://hook.example.com/in"
         webhook_token = ""
-        webhook_timeout = 5.0
         portal_base_url = "https://iceberg.example.com"
 
     return _Cfg()
+
+
+def _webhook(**over) -> WebhookSettings:
+    base = dict(enabled=True, url="https://hook.example.com/in", timeout=5.0)
+    base.update(over)
+    return WebhookSettings(**base)
 
 
 def test_webhook_uses_proxy_snapshot(monkeypatch):
@@ -289,6 +299,7 @@ def test_webhook_uses_proxy_snapshot(monkeypatch):
         "Title",
         7,
         3,
+        _webhook(),
         _settings(mode=ProxyMode.EXPLICIT, proxy_url="http://p:3128"),
     )
     assert captured.get("proxy") == "http://p:3128"
@@ -308,8 +319,20 @@ def test_webhook_without_snapshot_is_unchanged(monkeypatch):
         "post",
         lambda *a, **k: (captured.update(k), _Resp())[1],
     )
-    dissemination_service.send_webhook_notification("Title", 7, 3)
+    dissemination_service.send_webhook_notification("Title", 7, 3, _webhook())
     assert "proxy" not in captured and "trust_env" not in captured
+
+
+def test_webhook_disabled_does_not_post(monkeypatch):
+    captured: dict = {}
+    monkeypatch.setattr(dissemination_service, "get_settings", _webhook_cfg)
+    monkeypatch.setattr(
+        dissemination_service.httpx,
+        "post",
+        lambda *a, **k: captured.update(k),
+    )
+    dissemination_service.send_webhook_notification("Title", 7, 3, _webhook(enabled=False))
+    assert captured == {}
 
 
 # --------------------------------------------------------------------------- #
