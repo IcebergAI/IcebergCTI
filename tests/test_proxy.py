@@ -1,14 +1,19 @@
-"""Global outbound proxy connectivity option (RSS + SIEM HTTP).
+"""Global outbound proxy connectivity option (RSS + SIEM HTTP + MISP + AI + webhook).
 
 Covers the pure resolver (mode rules + NO_PROXY bypass semantics + credential
-injection), the wiring into the RSS fetch and the SIEM HTTP sink, and the
-admin-only console.
+injection), the wiring into every outbound HTTP path (RSS fetch, SIEM HTTP sink,
+AI backend, publication webhook), and the admin-only console. Every outbound call
+must honour the proxy when configured (and stay unchanged when it isn't) — see
+CLAUDE.md *Outbound proxy connectivity*.
 """
 
 import pytest
 from sqlmodel import Session, select
 
-from iceberg.models import AuditSettings, ProxyMode, ProxySettings
+from iceberg.config import Settings
+from iceberg.models import AuditSettings, ProxyMode, ProxySettings, User
+from iceberg.services import ai as ai_service
+from iceberg.services import dissemination as dissemination_service
 from iceberg.services import feeds as feeds_service
 from iceberg.services import proxy, proxy_settings, siem
 
@@ -200,6 +205,110 @@ def test_siem_http_without_snapshot_is_unchanged(monkeypatch):
     )
     settings = AuditSettings(http_endpoint="https://siem.example.com/in")
     siem._emit_http({"a": 1}, settings, None)
+    assert "proxy" not in captured and "trust_env" not in captured
+
+
+# --------------------------------------------------------------------------- #
+# Wiring — AI backend
+# --------------------------------------------------------------------------- #
+class _AIResp:
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return {"choices": [{"message": {"content": "{}"}}]}
+
+
+def _ai_settings() -> Settings:
+    return Settings(
+        ai_backend="openai-compatible",
+        ai_base_url="https://ai.example.com/v1",
+        ai_model="m",
+        ai_api_key="",
+    )
+
+
+def test_ai_backend_uses_proxy(monkeypatch):
+    captured: dict = {}
+    monkeypatch.setattr(
+        ai_service.httpx, "post", lambda *a, **k: (captured.update(k), _AIResp())[1]
+    )
+    out = ai_service.assist(
+        "judgements",
+        {"x": 1},
+        actor=User(id=1, email="a@x.com", display_name="A"),
+        settings=_ai_settings(),
+        proxy_settings=_settings(mode=ProxyMode.EXPLICIT, proxy_url="http://p:3128"),
+    )
+    assert out.available is True
+    assert captured.get("proxy") == "http://p:3128"
+    assert captured.get("trust_env") is False
+
+
+def test_ai_backend_without_snapshot_is_unchanged(monkeypatch):
+    captured: dict = {}
+    monkeypatch.setattr(
+        ai_service.httpx, "post", lambda *a, **k: (captured.update(k), _AIResp())[1]
+    )
+    ai_service.assist(
+        "judgements",
+        {"x": 1},
+        actor=User(id=1, email="a@x.com", display_name="A"),
+        settings=_ai_settings(),
+    )
+    assert "proxy" not in captured and "trust_env" not in captured
+
+
+# --------------------------------------------------------------------------- #
+# Wiring — publication webhook
+# --------------------------------------------------------------------------- #
+def _webhook_cfg():
+    class _Cfg:
+        webhook_url = "https://hook.example.com/in"
+        webhook_token = ""
+        webhook_timeout = 5.0
+        portal_base_url = "https://iceberg.example.com"
+
+    return _Cfg()
+
+
+def test_webhook_uses_proxy_snapshot(monkeypatch):
+    captured: dict = {}
+
+    class _Resp:
+        def raise_for_status(self):
+            pass
+
+    monkeypatch.setattr(dissemination_service, "get_settings", _webhook_cfg)
+    monkeypatch.setattr(
+        dissemination_service.httpx,
+        "post",
+        lambda *a, **k: (captured.update(k), _Resp())[1],
+    )
+    dissemination_service.send_webhook_notification(
+        "Title",
+        7,
+        3,
+        _settings(mode=ProxyMode.EXPLICIT, proxy_url="http://p:3128"),
+    )
+    assert captured.get("proxy") == "http://p:3128"
+    assert captured.get("trust_env") is False
+
+
+def test_webhook_without_snapshot_is_unchanged(monkeypatch):
+    captured: dict = {}
+
+    class _Resp:
+        def raise_for_status(self):
+            pass
+
+    monkeypatch.setattr(dissemination_service, "get_settings", _webhook_cfg)
+    monkeypatch.setattr(
+        dissemination_service.httpx,
+        "post",
+        lambda *a, **k: (captured.update(k), _Resp())[1],
+    )
+    dissemination_service.send_webhook_notification("Title", 7, 3)
     assert "proxy" not in captured and "trust_env" not in captured
 
 

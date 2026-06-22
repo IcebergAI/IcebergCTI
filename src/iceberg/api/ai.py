@@ -34,6 +34,7 @@ from ..schemas import (
 )
 from ..services import ai as ai_service
 from ..services import audit
+from ..services import proxy_settings as proxy_settings_service
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 SessionDep = Annotated[Session, Depends(get_session)]
@@ -125,7 +126,13 @@ def suggest_judgements(
         ],
         "notes": [n.body_md for n in notebook.notes],
     }
-    result = ai_service.assist("judgements", payload, actor=user, report=report)
+    result = ai_service.assist(
+        "judgements",
+        payload,
+        actor=user,
+        report=report,
+        proxy_settings=proxy_settings_service.get(session),
+    )
     _record_ai(session, background_tasks, request, user, result, resource_type="report", resource_id=report.id)
     return AISuggestionResponse(**result.as_dict())
 
@@ -146,7 +153,12 @@ def summarise_source(
         "summary": source.summary,
         "content_md": source.content_md,
     }
-    result = ai_service.assist("summarise_source", payload, actor=user)
+    result = ai_service.assist(
+        "summarise_source",
+        payload,
+        actor=user,
+        proxy_settings=proxy_settings_service.get(session),
+    )
     _record_ai(session, background_tasks, request, user, result, resource_type="source", resource_id=source.id)
     return AISuggestionResponse(**result.as_dict())
 
@@ -179,7 +191,13 @@ def suggest_tags(
             for t in active_tags
         ],
     }
-    result = ai_service.assist("suggest_tags", payload, actor=user, report=report)
+    result = ai_service.assist(
+        "suggest_tags",
+        payload,
+        actor=user,
+        report=report,
+        proxy_settings=proxy_settings_service.get(session),
+    )
     active_ids = {t.id for t in active_tags}
     if result.available:
         raw_ids = result.suggestion.get("tag_ids", [])
@@ -201,7 +219,13 @@ def suggest_diamond(
     payload = {
         "reports": [{"title": r.title, "body_md": r.body_md} for r in reports],
     }
-    result = ai_service.assist("diamond", payload, actor=user, report=reports[0] if reports else None)
+    result = ai_service.assist(
+        "diamond",
+        payload,
+        actor=user,
+        report=reports[0] if reports else None,
+        proxy_settings=proxy_settings_service.get(session),
+    )
     _record_ai(session, background_tasks, request, user, result, resource_type="notebook", resource_id=body.notebook_id)
     return AISuggestionResponse(**result.as_dict())
 
@@ -220,7 +244,13 @@ def suggest_ach(
         "question": body.question,
         "reports": [{"title": r.title, "body_md": r.body_md} for r in reports],
     }
-    result = ai_service.assist("ach", payload, actor=user, report=reports[0] if reports else None)
+    result = ai_service.assist(
+        "ach",
+        payload,
+        actor=user,
+        report=reports[0] if reports else None,
+        proxy_settings=proxy_settings_service.get(session),
+    )
     _record_ai(session, background_tasks, request, user, result, resource_type="notebook", resource_id=body.notebook_id)
     return AISuggestionResponse(**result.as_dict())
 
@@ -242,7 +272,13 @@ def analytic_challenge(
         "key_assumptions": report.key_assumptions,
         "intelligence_gaps": report.intelligence_gaps,
     }
-    result = ai_service.assist("challenge", payload, actor=user, report=report)
+    result = ai_service.assist(
+        "challenge",
+        payload,
+        actor=user,
+        report=report,
+        proxy_settings=proxy_settings_service.get(session),
+    )
     _record_ai(session, background_tasks, request, user, result, resource_type="report", resource_id=report.id)
     return AISuggestionResponse(**result.as_dict())
 

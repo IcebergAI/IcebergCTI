@@ -17,6 +17,7 @@ from sqlmodel import Session, col, select
 from ..config import get_settings
 from ..models import (
     DisseminationEvent,
+    ProxySettings,
     Report,
     Role,
     TLP,
@@ -24,6 +25,8 @@ from ..models import (
     is_disseminable,
 )
 from . import email as email_service
+from . import proxy as proxy_service
+from . import proxy_settings as proxy_settings_service
 
 logger = logging.getLogger("iceberg.dissemination")
 
@@ -109,7 +112,12 @@ def send_notifications(
             )
 
 
-def send_webhook_notification(report_title: str, report_id: int, recipient_count: int) -> None:
+def send_webhook_notification(
+    report_title: str,
+    report_id: int,
+    recipient_count: int,
+    proxy_settings: ProxySettings | None = None,
+) -> None:
     settings = get_settings()
     if not settings.webhook_url:
         return
@@ -123,12 +131,20 @@ def send_webhook_notification(report_title: str, report_id: int, recipient_count
         "url": f"{settings.portal_base_url.rstrip('/')}/reports/{report_id}",
         "recipient_count": recipient_count,
     }
+    # Route through the global outbound proxy when one is configured (None →
+    # direct, the previous behaviour). See services/proxy.py.
+    proxy_kwargs = (
+        proxy_service.resolve(proxy_settings, settings.webhook_url)
+        if proxy_settings is not None
+        else {}
+    )
     try:
         resp = httpx.post(
             settings.webhook_url,
             json=payload,
             headers=headers,
             timeout=settings.webhook_timeout,
+            **proxy_kwargs,
         )
         resp.raise_for_status()
     except Exception:
@@ -150,7 +166,15 @@ def queue_dissemination(
         background_tasks.add_task(
             send_notifications, payloads, report.title, report.id
         )
+    # Snapshot the proxy row so the webhook (a background task running after the
+    # request's session closes) can resolve the proxy without DB access — the
+    # same discipline as audit.schedule_emit's SIEM snapshot.
+    proxy_snapshot = proxy_settings_service.get(session).model_copy()
     background_tasks.add_task(
-        send_webhook_notification, report.title, report.id, len(recipients)
+        send_webhook_notification,
+        report.title,
+        report.id,
+        len(recipients),
+        proxy_snapshot,
     )
     return len(recipients)
