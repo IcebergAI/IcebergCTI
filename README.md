@@ -398,6 +398,22 @@ needs shared storage (RWX volume or object store) — a follow-on to the datasto
 [`deploy/k8s/`](deploy/k8s/) and [`docker-compose.yml`](docker-compose.yml)
 (`docker compose --profile postgres up`).
 
+### TLS / running behind a proxy
+Iceberg always runs behind a **TLS-terminating reverse proxy** — a Kubernetes ingress, a cloud
+load balancer, or (for a single-host Docker deployment) the opt-in **Caddy** profile:
+
+```bash
+ICEBERG_DOMAIN=intel.example.com docker compose --profile tls up   # auto Let's Encrypt TLS
+```
+
+Caddy ([`deploy/Caddyfile`](deploy/Caddyfile)) terminates TLS and proxies to the app; pair it with
+`ICEBERG_ENVIRONMENT=prod` for `Secure` cookies + HSTS. The container starts uvicorn with
+`--proxy-headers` and trusts `X-Forwarded-*` (`FORWARDED_ALLOW_IPS`, default `*` — scope it to the
+proxy/pod CIDR for a stricter posture) so the request scheme is correct and the **audit log records
+the real client IP** rather than the proxy's. This applies to the Kubernetes ingress path too. An
+nginx sidecar isn't bundled — the ingress / Caddy covers TLS, and the app sets its own security
+headers.
+
 ### Source reliability grading
 Notebook sources carry Admiralty/NATO-style grades: source reliability (`A-F`) plus
 information credibility (`1-6`), displayed as chips such as `B2` or `B6`. Grading is a

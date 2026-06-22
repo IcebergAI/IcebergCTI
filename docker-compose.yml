@@ -1,11 +1,13 @@
-# Default `docker compose up` runs Iceberg on the zero-dependency SQLite store.
-# To exercise the PostgreSQL datastore instead, start the optional `postgres`
-# profile and point the app at it:
+# Default `docker compose up` runs Iceberg on the zero-dependency SQLite store,
+# served by uvicorn on :8000. Two opt-in profiles layer on top:
 #
-#   docker compose --profile postgres up
+#   docker compose --profile postgres up   # PostgreSQL datastore (iceberg-pg + postgres)
+#   docker compose --profile tls up        # Caddy TLS reverse proxy on :80/:443
 #
-# The `iceberg-pg` service (also under the profile) is the same image wired to
-# Postgres via ICEBERG_DATABASE_URL; the default `iceberg` service stays SQLite.
+# The `iceberg-pg` service is the same image wired to Postgres via
+# ICEBERG_DATABASE_URL; the default `iceberg` service stays SQLite. The `caddy`
+# service terminates TLS in front of the app (set ICEBERG_DOMAIN for a real
+# hostname). Profiles compose, e.g. `--profile postgres --profile tls`.
 services:
   iceberg:
     build: .
@@ -59,6 +61,33 @@ services:
       timeout: 5s
       retries: 10
 
+  # Opt-in TLS reverse proxy for a single-host Docker deployment:
+  #   ICEBERG_DOMAIN=intel.example.com docker compose --profile tls up
+  # Caddy terminates TLS (automatic Let's Encrypt for a real domain; a local-CA
+  # cert for the default `localhost`) and proxies to the app over the compose
+  # network. For real production also set ICEBERG_ENVIRONMENT=prod in .env
+  # (Secure cookies + HSTS) — uvicorn's --proxy-headers makes the app trust
+  # Caddy's X-Forwarded-Proto so the scheme is correct. (For a locked-down host
+  # you can also drop the `iceberg` service's published 8000 port so the app is
+  # only reachable via Caddy.)
+  caddy:
+    profiles: ["tls"]
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - iceberg
+    environment:
+      ICEBERG_DOMAIN: ${ICEBERG_DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
 volumes:
   iceberg-data:
   iceberg-pg-data:
+  caddy-data:
+  caddy-config:
