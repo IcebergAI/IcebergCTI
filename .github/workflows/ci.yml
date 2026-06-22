@@ -186,7 +186,10 @@ jobs:
           done
           if [ "${ready:-0}" != 1 ]; then echo "app did not become healthy"; exit 1; fi
           curl -fsS http://localhost:8000/readyz
-          curl -fsS http://localhost:8000/auth/login | grep -qi iceberg
+          # Write to a file rather than piping into `grep -q`: under `pipefail`,
+          # grep closing the pipe on first match makes curl fail with exit 23.
+          curl -fsS -o login.html http://localhost:8000/auth/login
+          grep -qi iceberg login.html
           curl -fsS -o /dev/null http://localhost:8000/static/css/iceberg.css
       - name: Container logs
         if: always()

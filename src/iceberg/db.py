@@ -1,9 +1,10 @@
 """Database engine, session and schema initialisation (SQLite via SQLModel)."""
 
 from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
-from sqlalchemy import event
+from sqlalchemy import event, text
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, create_engine
 
@@ -11,6 +12,11 @@ from .config import get_settings
 from .services import search as search_service
 
 settings = get_settings()
+
+# Stable key for the boot-time PostgreSQL advisory lock that serialises init_db
+# (migrations + idempotent taxonomy seed) across concurrent uvicorn workers /
+# replicas. Advisory-lock keys are bigint; this value is otherwise arbitrary.
+_BOOT_LOCK_KEY = 0x1CEB_0001
 
 # Alembic migrations ship inside the package, so this resolves for editable and
 # wheel installs alike (no dependency on alembic.ini's location at runtime).
@@ -80,22 +86,50 @@ def run_migrations() -> None:
         command.upgrade(cfg, "head")
 
 
+@contextmanager
+def _boot_serialised() -> Iterator[None]:
+    """Serialise boot init across concurrent uvicorn workers / replicas.
+
+    The app runs with multiple workers, and every worker calls ``init_db`` on
+    startup. Without coordination two workers run the migrations and the
+    check-then-insert taxonomy seed at the same time and race the ``(kind, slug)``
+    unique constraint (an ``IntegrityError`` that crashes a worker on PostgreSQL).
+    A PostgreSQL **session-level advisory lock** (held on a dedicated connection,
+    independent of transaction commits, auto-released if the process dies) makes
+    the second worker wait until the first finishes, after which the migrations
+    are at head and the seed is a no-op. A no-op on SQLite — that's the local
+    dev/test backend and its single-writer locking already serialises writers."""
+    if engine.dialect.name != "postgresql":
+        yield
+        return
+    conn = engine.connect()
+    try:
+        conn.execute(text("SELECT pg_advisory_lock(:k)"), {"k": _BOOT_LOCK_KEY})
+        conn.commit()  # end the txn; the session-level lock persists past commit
+        yield
+    finally:
+        conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": _BOOT_LOCK_KEY})
+        conn.commit()
+        conn.close()
+
+
 def init_db() -> None:
     # Importing models registers them on SQLModel.metadata (needed by env.py and
     # the in-memory test engine's create_all).
     from . import models  # noqa: F401
     from .services.tags import seed_default_taxonomy
 
-    # Apply schema migrations. In production set ICEBERG_AUTO_MIGRATE=false and
-    # run `alembic upgrade head` in the deploy step instead.
-    if get_settings().auto_migrate:
-        run_migrations()
+    with _boot_serialised():
+        # Apply schema migrations. In production set ICEBERG_AUTO_MIGRATE=false and
+        # run `alembic upgrade head` in the deploy step instead.
+        if get_settings().auto_migrate:
+            run_migrations()
 
-    # Seed the controlled taxonomy and backfill the FTS index for any rows that
-    # predate it. Both are idempotent.
-    with Session(engine) as session:
-        seed_default_taxonomy(session)
-        search_service.reindex(session)
+        # Seed the controlled taxonomy and backfill the FTS index for any rows
+        # that predate it. Both are idempotent.
+        with Session(engine) as session:
+            seed_default_taxonomy(session)
+            search_service.reindex(session)
 
 
 def get_session() -> Iterator[Session]:
