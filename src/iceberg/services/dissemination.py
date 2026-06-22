@@ -12,6 +12,7 @@ import logging
 import httpx
 from fastapi import BackgroundTasks
 from sqlalchemy import or_
+from sqlalchemy.orm import selectinload
 from sqlmodel import Session, col, select
 
 from ..config import get_settings
@@ -49,6 +50,12 @@ def matched_stakeholders(session: Session, report: Report) -> list[User]:
                 col(User.preferred_intel_level).is_(None),
                 User.preferred_intel_level == report.intel_level,
             )
+        )
+        # Eager-load the per-user collections the match loop reads, so matching N
+        # stakeholders is two extra queries, not 2N lazy loads.
+        .options(
+            selectinload(User.tag_subscriptions),
+            selectinload(User.audience_groups),
         )
     )
     report_tag_ids = {t.id for t in report.tags}

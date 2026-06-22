@@ -417,3 +417,29 @@ def test_logout_requires_post(client, login):
     login("ANALYST")
     assert client.get("/auth/logout").status_code == 405
     assert client.post("/auth/logout").status_code == 200  # follows redirect to login
+
+
+def test_valid_token_for_deleted_user_is_anonymous(client, login, engine):
+    """A still-valid session token whose user row no longer exists resolves to
+    anonymous (not a 500), so a deleted account can't keep browsing."""
+    from sqlmodel import Session, select
+
+    from iceberg.models import User
+
+    email = login("ANALYST")
+    assert client.get("/notebooks", follow_redirects=False).status_code == 200
+    with Session(engine) as session:
+        user = session.exec(select(User).where(User.email == email)).one()
+        session.delete(user)
+        session.commit()
+    # Token is still cryptographically valid, but the subject is gone → 401
+    # (anonymous), not a 500. A browser request (Accept: text/html) is then
+    # redirected to the login page by the auth handler.
+    assert client.get("/notebooks", follow_redirects=False).status_code == 401
+    resp = client.get(
+        "/notebooks",
+        headers={"accept": "text/html"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/auth/login"
