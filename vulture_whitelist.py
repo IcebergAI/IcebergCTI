@@ -60,6 +60,7 @@ members  # SQLModel relationship (src/iceberg/models.py:466)
 subscribers  # SQLModel relationship (src/iceberg/models.py:836)
 ai_embeddings_enabled  # configuration field reserved for vector backend selection
 ai_embedding_model  # configuration field reserved for vector backend selection
+_.migrate_main  # console script entry point (pyproject.toml)
 _.prune_renders_main  # console script entry point (pyproject.toml)
 _.rebuild_related_main  # console script entry point (pyproject.toml)
 _.reviewer_id  # unused attribute (src/iceberg/services/lifecycle.py:50)

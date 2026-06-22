@@ -1,11 +1,19 @@
-"""Full-text + faceted search over reports, backed by SQLite FTS5.
+"""Full-text + faceted search over reports — backend chosen by SQL dialect.
 
-An external-content FTS5 table (``report_fts``) mirrors each report's title and
-body; ``AFTER INSERT/UPDATE/DELETE`` triggers keep it in sync, so nothing in the
-report save paths needs to know about search. The table + triggers are created by
-an ``after_create`` event on ``Report.__table__`` — wired by
-:func:`register_fts_events`, which ``db`` calls at import time so the objects are
-built by *every* ``create_all`` (production boot and the in-memory test engine).
+The free-text query resolves to a ranked list of report ids by backend, then the
+same facet filters + access-control rules apply to both:
+
+- **SQLite** (dev/test default): an external-content FTS5 table (``report_fts``)
+  mirrors each report's title + body + judgement scaffolding; ``AFTER
+  INSERT/UPDATE/DELETE`` triggers keep it in sync, so nothing in the report save
+  paths needs to know about search. The table + triggers are created by an
+  ``after_create`` event on ``Report.__table__`` (wired by
+  :func:`register_fts_events`, called by ``db`` at import time so the objects are
+  built by *every* ``create_all``). Ranked with ``bm25``.
+- **PostgreSQL** (production option): a DB-maintained generated ``tsvector``
+  column (``report.search_vector`` + a GIN index, created by the ``postgres_fts``
+  migration) over the same text. Queried with ``websearch_to_tsquery`` and ranked
+  with ``ts_rank``. Always current, so no reindex step is needed.
 
 Access control: stakeholders (read-only consumers) only ever match *published*
 reports — the same rule as :func:`services.reports.ensure_visible`, reapplied here
@@ -103,6 +111,51 @@ def _match_query(q: str) -> str | None:
     return " ".join(f'"{tok}"*' for tok in tokens)
 
 
+def _fts_ids(session: Session, q: str) -> list[int]:
+    """Full-text ranked report ids for the free-text query, dispatched by backend
+    (SQLite FTS5 / PostgreSQL tsvector). Other backends return no FTS matches —
+    only the alias/label resolution in :func:`search_reports` contributes."""
+    dialect = session.bind.dialect.name if session.bind is not None else ""
+    if dialect == "sqlite":
+        return _fts_ids_sqlite(session, q)
+    if dialect == "postgresql":
+        return _fts_ids_postgres(session, q)
+    return []
+
+
+def _fts_ids_sqlite(session: Session, q: str) -> list[int]:
+    """SQLite FTS5 ranked ids (bm25) over ``report_fts``."""
+    match = _match_query(q)
+    if match is None:
+        return []
+    rows = session.execute(
+        # nosec B608: _FTS_TABLE is a constant; the user's query is bound via :m.
+        text(
+            f"SELECT rowid FROM {_FTS_TABLE} WHERE {_FTS_TABLE} MATCH :m "  # nosec B608
+            f"ORDER BY bm25({_FTS_TABLE})"
+        ),
+        {"m": match},
+    ).all()
+    return [r[0] for r in rows]
+
+
+def _fts_ids_postgres(session: Session, q: str) -> list[int]:
+    """PostgreSQL FTS ranked ids (ts_rank) over the generated ``search_vector``
+    column. ``websearch_to_tsquery`` parses the raw user string safely (bound via
+    :q), so no manual tokenisation/escaping is needed."""
+    if not (q or "").strip():
+        return []
+    rows = session.execute(
+        text(
+            "SELECT id FROM report "
+            "WHERE search_vector @@ websearch_to_tsquery('english', :q) "
+            "ORDER BY ts_rank(search_vector, websearch_to_tsquery('english', :q)) DESC"
+        ),
+        {"q": q},
+    ).all()
+    return [r[0] for r in rows]
+
+
 def search_reports(
     session: Session,
     *,
@@ -123,20 +176,9 @@ def search_reports(
     SQL filters. Stakeholders are restricted to published reports."""
     ranked_ids: list[int] | None = None
     if q:
-        match = _match_query(q)
-        fts_ids: list[int] = []
-        if match is not None:
-            rows = session.execute(
-                # nosec B608: _FTS_TABLE is a constant; the user's query is bound via :m.
-                text(
-                    f"SELECT rowid FROM {_FTS_TABLE} WHERE {_FTS_TABLE} MATCH :m "  # nosec B608
-                    f"ORDER BY bm25({_FTS_TABLE})"
-                ),
-                {"m": match},
-            ).all()
-            fts_ids = [r[0] for r in rows]
+        fts_ids = _fts_ids(session, q)
         # Entity (alias/label) matches appended after body relevance — the recall
-        # win without disturbing bm25 ordering.
+        # win without disturbing the full-text ranking.
         ranked_ids = list(fts_ids)
         seen = set(fts_ids)
         for rid in tag_service.resolve_alias_report_ids(session, q):

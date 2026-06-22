@@ -1,3 +1,11 @@
+# Default `docker compose up` runs Iceberg on the zero-dependency SQLite store.
+# To exercise the PostgreSQL datastore instead, start the optional `postgres`
+# profile and point the app at it:
+#
+#   docker compose --profile postgres up
+#
+# The `iceberg-pg` service (also under the profile) is the same image wired to
+# Postgres via ICEBERG_DATABASE_URL; the default `iceberg` service stays SQLite.
 services:
   iceberg:
     build: .
@@ -15,5 +23,42 @@ services:
     volumes:
       - iceberg-data:/data
 
+  # PostgreSQL-backed app (opt-in): `docker compose --profile postgres up`.
+  iceberg-pg:
+    profiles: ["postgres"]
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      ICEBERG_ENVIRONMENT: dev
+      ICEBERG_AUTO_MIGRATE: "true"
+      ICEBERG_DATABASE_URL: postgresql+psycopg://iceberg:iceberg@postgres:5432/iceberg
+      ICEBERG_ATTACHMENTS_DIR: /data/attachments
+      ICEBERG_FIGURES_DIR: /data/figures
+      ICEBERG_RENDER_OUTPUT_DIR: /data/rendered
+    volumes:
+      - iceberg-data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    profiles: ["postgres"]
+    image: postgres:17
+    environment:
+      POSTGRES_USER: iceberg
+      POSTGRES_PASSWORD: iceberg
+      POSTGRES_DB: iceberg
+    volumes:
+      - iceberg-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U iceberg -d iceberg"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 volumes:
   iceberg-data:
+  iceberg-pg-data:

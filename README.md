@@ -128,13 +128,13 @@ tagged with it).*
 
 ## Stack
 - **Python ≥ 3.14**, **FastAPI** (single app: JSON API `/api/*` + server-rendered portal `/*`)
-- **SQLModel** on **SQLite**
+- **SQLModel** on **SQLite** (dev/test default) or **PostgreSQL** (production option) — see *Production datastore*
 - **Jinja2 + Alpine.js** portal with a "command-center" design system (left rail + ⌘K palette)
   (`static/css/iceberg.css`; Archivo / JetBrains Mono / Spectral; a compiled **Tailwind v4** utility build)
   — Tailwind, Alpine and the fonts are **self-hosted, version-pinned and SRI-protected** (no CDN);
   regenerate with `python scripts/vendor_assets.py` (Tailwind's theme/sources live in `frontend/input.css`)
 - **markdown-it-py + nh3** for the live markdown preview
-- **SQLite FTS5** (bm25) for full-text report search
+- Full-text report search: **SQLite FTS5** (bm25) or **PostgreSQL `tsvector`** (GIN + `ts_rank`), chosen by dialect
 - **feedparser + httpx** for inbound RSS/Atom feed ingestion (opt-in poller)
 - **Typst** for PDF rendering
 - **PyTest** for tests
@@ -357,7 +357,7 @@ All settings use the `ICEBERG_` env prefix and can live in `.env` (see
 | Variable | Purpose |
 | --- | --- |
 | `ICEBERG_SECRET_KEY` | JWT + session signing key (use a random 32+ byte value in prod) |
-| `ICEBERG_DATABASE_URL` | SQLite URL, e.g. `sqlite:///./iceberg.db` |
+| `ICEBERG_DATABASE_URL` | Datastore URL — SQLite (`sqlite:///./iceberg.db`, default) or PostgreSQL (`postgresql+psycopg://user:pass@host:5432/iceberg`); see *Production datastore* |
 | `ICEBERG_DEV_AUTH` | Enable the dev-login bypass (auto-off when `ICEBERG_ENVIRONMENT=prod`) |
 | `ICEBERG_OIDC_ENABLED` + `ICEBERG_OIDC_*` | Microsoft Entra ID OIDC settings |
 | `ICEBERG_OIDC_DEPARTMENT_CLAIM` / `ICEBERG_OIDC_TITLE_CLAIM` / `ICEBERG_OIDC_COMPANY_CLAIM` / `ICEBERG_OIDC_OFFICE_CLAIM` | Optional Entra profile claims persisted on users |
@@ -377,6 +377,26 @@ All settings use the `ICEBERG_` env prefix and can live in `.env` (see
 | `ICEBERG_AUDIT_ENABLED` + `ICEBERG_AUDIT_METHODS` | Master switch + default SIEM emit methods (`stdout`/`syslog`/`http`); editable live at `/admin/audit` |
 | `ICEBERG_AUDIT_SYSLOG_*` / `ICEBERG_AUDIT_HTTP_ENDPOINT` | syslog (RFC 5424) host/port/protocol + HTTP event-collector endpoint defaults |
 | `ICEBERG_AUDIT_HTTP_TOKEN` | **Secret** HEC/bearer token for the HTTP SIEM method (env-only — never stored in the DB) |
+
+### Production datastore (PostgreSQL)
+SQLite is the zero-dependency dev/test default. For production, point Iceberg at
+**PostgreSQL** (managed instance recommended):
+
+1. Install the driver: `pip install "iceberg[postgres]"` (or `uv sync --extra postgres`) —
+   pulls `psycopg` v3.
+2. Set `ICEBERG_DATABASE_URL=postgresql+psycopg://user:pass@host:5432/iceberg`.
+3. Run migrations as a deploy step (keep `ICEBERG_AUTO_MIGRATE=false`): `iceberg-migrate`
+   (the in-code Alembic runner; the k8s migrate Job uses the same command). The same
+   migrations cover both backends — the SQLite FTS5 objects and the Postgres `search_vector`
+   (`tsvector` + GIN) index are each dialect-guarded.
+
+Full-text search adapts automatically: SQLite uses FTS5 (bm25); PostgreSQL uses a generated
+`tsvector` column queried with `websearch_to_tsquery` + `ts_rank`. **Caveat:** uploads and
+rendered PDFs are still written to a local filesystem dir, so running more than one replica
+needs shared storage (RWX volume or object store) — a follow-on to the datastore work. Container
++ Kubernetes manifests (including an optional self-hosted Postgres `StatefulSet`) are under
+[`deploy/k8s/`](deploy/k8s/) and [`docker-compose.yml`](docker-compose.yml)
+(`docker compose --profile postgres up`).
 
 ### Source reliability grading
 Notebook sources carry Admiralty/NATO-style grades: source reliability (`A-F`) plus

@@ -6,19 +6,39 @@ spec:
   template:
     spec:
       restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: migrate
+          # Pin to the same immutable tag/digest as the Deployment.
           image: ghcr.io/theslopbucket/iceberg:latest
-          command: ["alembic", "upgrade", "head"]
+          # Uses the app's in-code Alembic config (no packaged alembic.ini needed);
+          # reads ICEBERG_DATABASE_URL from the env above. Schema only.
+          command: ["iceberg-migrate"]
           envFrom:
             - configMapRef:
                 name: iceberg-config
             - secretRef:
                 name: iceberg-secrets
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           volumeMounts:
+            # /data is needed only for the SQLite default (the DB file lives
+            # there); harmless for Postgres. /tmp is scratch for a read-only root.
             - name: data
               mountPath: /data
+            - name: tmp
+              mountPath: /tmp
       volumes:
         - name: data
           persistentVolumeClaim:
             claimName: iceberg-data
+        - name: tmp
+          emptyDir: {}

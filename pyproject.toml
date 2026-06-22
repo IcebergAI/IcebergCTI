@@ -31,6 +31,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Production datastore driver (PostgreSQL). Optional so the default/dev install
+# stays SQLite-only and zero-dependency; SQLAlchemy uses the psycopg v3 driver
+# via a `postgresql+psycopg://` URL. See CLAUDE.md *Database & migrations*.
+postgres = [
+    "psycopg[binary]>=3.2",
+]
 dev = [
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
@@ -45,6 +51,7 @@ dev = [
 
 [project.scripts]
 iceberg-seed = "iceberg.seed:main"
+iceberg-migrate = "iceberg.maintenance:migrate_main"
 iceberg-prune-renders = "iceberg.maintenance:prune_renders_main"
 iceberg-rebuild-related = "iceberg.maintenance:rebuild_related_main"
 
