@@ -22,7 +22,7 @@ Roles: `ADMIN`, `ANALYST`, `REVIEWER`, `STAKEHOLDER` (read-only).
 
 ### Technologies
 - Python >= 3.14
-- FastAPI (API + portal), SQLModel — **SQLite** (zero-dependency dev/test default) or **PostgreSQL** (production option, via the `psycopg` v3 driver and a `postgresql+psycopg://` `ICEBERG_DATABASE_URL`; `pip install` the `postgres` extra). PyTest
+- FastAPI (API + portal), SQLModel — **SQLite** (zero-dependency **local dev/test default only**) or **PostgreSQL** (the **required datastore for every container/production deployment**, via the `psycopg` v3 driver and a `postgresql+psycopg://` `ICEBERG_DATABASE_URL`; `pip install` the `postgres` extra). The app **refuses to boot on a SQLite URL when `ICEBERG_ENVIRONMENT=prod`** (`config._guard_production`, alongside the secret-key guard), and the Docker image ships **no SQLite fallback** (no `ICEBERG_DATABASE_URL` default) so a container can't silently run SQLite. PyTest
 - Jinja2 + Tailwind CSS + Alpine JS (portal)
 - Typst — report → PDF typesetting (rendering goes directly through the Typst binary; Quarto was considered as a publishing layer but direct Typst was chosen — equivalent output, fewer dependencies)
 
@@ -157,8 +157,9 @@ An analyst uploads an image to a notebook's **Figures** collection (PNG/JPEG/GIF
 
 ### Database & migrations (`src/iceberg/db.py`, `src/iceberg/migrations/`)
 The datastore is driven entirely by **`ICEBERG_DATABASE_URL`**: **SQLite** is the
-zero-dependency dev/test default; **PostgreSQL** (`postgresql+psycopg://…`, the optional
-`postgres` extra → `psycopg` v3) is the production option. `db.py` branches engine config on the
+zero-dependency **local dev/test default only**; **PostgreSQL** (`postgresql+psycopg://…`, the
+`postgres` extra → `psycopg` v3) is the **required production/container datastore** — prod boot
+refuses a SQLite URL (`config._guard_production`). `db.py` branches engine config on the
 URL — SQLite keeps `check_same_thread`; networked backends get `pool_pre_ping=True`. The
 `_configure_sqlite` connect-event (WAL / `foreign_keys=ON` / `busy_timeout`) is guarded on the
 driver connection type so it's a no-op on Postgres (and correct for the tests' own engines,
@@ -283,7 +284,7 @@ Tests use an in-memory SQLite database (overriding the `get_session` dependency)
 
 - **Quality-roadmap foundation (done)** — governed AI-assist APIs (off by default), STIX 2.1 report export and report-view download, related-report side panel, audience-group need-to-know with admin/editor UI, stakeholder tag-subscription matching in Preferences plus publication webhook, RSS/Atom ingestion into notebook sources with portal triage, render retention, uv lock/CI, and Docker/Kubernetes deployment scaffolding.
 
-The original vision (collect → author → disseminate, aligned to stakeholder requirements) is now implemented end-to-end, with tagging + search and analytic models layered on top. Deployment now has a production-oriented container and starter Kubernetes manifests, but SQLite remains the datastore and migrations should still run as an explicit deploy step. Production hardening to consider: validating Entra against a live tenant, moving background notification, webhook and RSS work to a durable queue, adding portal UI for AI review flows, tag merge/rename tooling, and a full ATT&CK import. **Diamond Model fast-follows:** the classic meta-features (phase/methodology/direction/result/timestamp), alternative layouts, and per-vertex source linking.
+The original vision (collect → author → disseminate, aligned to stakeholder requirements) is now implemented end-to-end, with tagging + search and analytic models layered on top. Deployment now has a production-oriented container and starter Kubernetes manifests on **PostgreSQL** (SQLite is local dev/test only — the prod app refuses to boot on it and the image carries no SQLite fallback); migrations should still run as an explicit deploy step. Production hardening to consider: validating Entra against a live tenant, moving background notification, webhook and RSS work to a durable queue, adding portal UI for AI review flows, tag merge/rename tooling, and a full ATT&CK import. **Diamond Model fast-follows:** the classic meta-features (phase/methodology/direction/result/timestamp), alternative layouts, and per-vertex source linking.
 
 ## Maintenance
 - Maintain an up to date CLAUDE.md

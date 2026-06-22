@@ -191,16 +191,28 @@ class Settings(BaseSettings):
     def dev_login_enabled(self) -> bool:
         return self.dev_auth and not self.is_prod
 
+    @property
+    def is_sqlite(self) -> bool:
+        return self.database_url.lower().startswith("sqlite")
+
     @model_validator(mode="after")
     def _guard_production(self) -> "Settings":
-        """Fail fast rather than boot a production instance with an unsafe
-        signing key — the default is public, so it would allow JWT forgery."""
+        """Fail fast rather than boot an unsafe production instance."""
         if self.is_prod and (
             self.secret_key == _INSECURE_DEFAULT_SECRET or len(self.secret_key) < 32
         ):
+            # The default signing key is public, so it would allow JWT forgery.
             raise ValueError(
                 "ICEBERG_SECRET_KEY must be a unique value of at least 32 "
                 "characters in production (the built-in default is public)."
+            )
+        if self.is_prod and self.is_sqlite:
+            # SQLite is the dev/test default only — it is single-writer, has no
+            # network/HA story, and the container path mounts a local file that
+            # doesn't survive horizontal scaling. Production runs on PostgreSQL.
+            raise ValueError(
+                "ICEBERG_DATABASE_URL must be a PostgreSQL URL in production "
+                "(postgresql+psycopg://…); SQLite is for local dev/test only."
             )
         return self
 

@@ -1,8 +1,10 @@
 # Iceberg Kubernetes Deployment
 
-These manifests run Iceberg with either datastore. **SQLite** is the default
-(single replica, `ReadWriteOnce` PVC, `Recreate` rollout so two pods never write
-the same file). **PostgreSQL** is the production option.
+These manifests run Iceberg on **PostgreSQL** — the only supported deployment
+datastore. (SQLite is the zero-dependency *local* dev/test default; the prod app
+refuses to boot on it, and the image carries no SQLite fallback.) The Deployment
+stays single replica (`ReadWriteOnce` PVC, `Recreate` rollout) until uploads/
+renders move to shared storage — see *Scaling caveat*.
 
 ## Secrets
 
@@ -42,11 +44,11 @@ kubectl create secret generic iceberg-secrets \
    Postgres-only `search_vector` (tsvector + GIN) block are each dialect-guarded.
 4. **Deploy.** `kubectl apply -f configmap.yaml -f service.yaml -f pvc.yaml -f deployment.yaml`.
 
-## Apply order (SQLite default)
+## Apply order
 
 ```bash
 kubectl apply -f configmap.yaml -f service.yaml -f pvc.yaml
-kubectl apply -f secret.yaml          # from secret.example.yaml
+kubectl apply -f secret.yaml          # from secret.example.yaml (sets ICEBERG_DATABASE_URL)
 kubectl apply -f migrate-job.yaml     # alembic upgrade head
 kubectl apply -f deployment.yaml
 ```

@@ -379,8 +379,10 @@ All settings use the `ICEBERG_` env prefix and can live in `.env` (see
 | `ICEBERG_AUDIT_HTTP_TOKEN` | **Secret** HEC/bearer token for the HTTP SIEM method (env-only — never stored in the DB) |
 
 ### Production datastore (PostgreSQL)
-SQLite is the zero-dependency dev/test default. For production, point Iceberg at
-**PostgreSQL** (managed instance recommended):
+SQLite is the zero-dependency default for **local dev/test only**. Every **container/production
+deployment runs on PostgreSQL** — the app refuses to boot on a SQLite URL when
+`ICEBERG_ENVIRONMENT=prod` (see `config._guard_production`), and the Docker image carries no
+SQLite fallback. Point Iceberg at **PostgreSQL** (managed instance recommended):
 
 1. Install the driver: `pip install "iceberg[postgres]"` (or `uv sync --extra postgres`) —
    pulls `psycopg` v3.
@@ -395,8 +397,13 @@ Full-text search adapts automatically: SQLite uses FTS5 (bm25); PostgreSQL uses 
 rendered PDFs are still written to a local filesystem dir, so running more than one replica
 needs shared storage (RWX volume or object store) — a follow-on to the datastore work. Container
 + Kubernetes manifests (including an optional self-hosted Postgres `StatefulSet`) are under
-[`deploy/k8s/`](deploy/k8s/) and [`docker-compose.yml`](docker-compose.yml)
-(`docker compose --profile postgres up`).
+[`deploy/k8s/`](deploy/k8s/) and [`docker-compose.yml`](docker-compose.yml). Compose runs a
+**single** app service always paired with its `postgres` database container (no second app
+service, so nothing clashes on host port 8000):
+
+```bash
+docker compose up                       # app on :8000 + its PostgreSQL database
+```
 
 ### TLS / running behind a proxy
 Iceberg always runs behind a **TLS-terminating reverse proxy** — a Kubernetes ingress, a cloud
@@ -490,9 +497,116 @@ Reproduce the local gates with `uv sync --extra dev` then the commands above thr
 
 ## Deployment
 The repo includes a production-oriented `Dockerfile`, `docker-compose.yml`, and starter
-Kubernetes manifests under `deploy/k8s/`. Production deployments should set
+Kubernetes manifests under `deploy/k8s/`. Deployments run on **PostgreSQL** (SQLite is local
+dev/test only — the prod app refuses to boot on it). Production deployments should set
 `ICEBERG_AUTO_MIGRATE=false`, run `alembic upgrade head` as a separate job, use persistent
 volumes for `/data`, and provide a unique 32+ byte `ICEBERG_SECRET_KEY`.
+
+### Application layers
+A single FastAPI process serves both the JSON API and the server-rendered portal; the same
+service layer fronts the datastore, local file storage and (proxy-aware) outbound integrations.
+
+```mermaid
+flowchart TB
+  Client["Browser / API client"]
+  Client --> MW
+
+  subgraph app["FastAPI app — single process (uvicorn --proxy-headers)"]
+    direction TB
+    MW["Middleware (outer → inner)<br/>SecurityHeaders · Audit · CSRF · Session"]
+    Routers["Routers<br/>/api/* (JSON) · /* (Jinja portal) · /healthz /readyz"]
+    Services["Services<br/>notebooks · reports · dissemination · search · audit/siem · misp · feeds · ai"]
+    Render["Rendering<br/>markdown → HTML (nh3) · Typst → PDF · SVG diagrams"]
+    ORM["SQLModel ORM + Alembic migrations"]
+    MW --> Routers --> Services --> ORM
+    Services --> Render
+  end
+
+  Routers --> Static["Static assets<br/>self-hosted Tailwind / Alpine / fonts (SRI)"]
+  ORM --> DB[("Datastore<br/>SQLite (dev) / PostgreSQL (prod)")]
+  Render --> FS["File storage /data<br/>attachments · figures · rendered PDFs"]
+  Services -. "outbound via proxy.resolve" .-> Ext["External<br/>Entra OIDC · SMTP · RSS · SIEM · MISP · webhook · AI"]
+```
+
+### Deployment topologies
+Four supported shapes, from a zero-dependency local run to Kubernetes. Cylinders are persistent
+storage; dashed links are config/credential injection.
+
+**1. Local development** — uvicorn with the SQLite default and on-disk working dirs. No external
+dependencies; intended for dev/test only.
+
+```mermaid
+flowchart LR
+  Dev["Developer browser<br/>http://localhost:8000"] --> App["uvicorn --reload<br/>FastAPI app · :8000<br/>ICEBERG_ENVIRONMENT=dev"]
+  App --> DB[("SQLite<br/>./iceberg.db")]
+  App --> FS["Local dirs<br/>./attachments · ./figures · ./rendered"]
+```
+
+**2. Docker Compose (default)** — one app service paired with its own PostgreSQL container on the
+compose network; only the app publishes a host port (`:8000`). Each service has its own named volume.
+
+```mermaid
+flowchart TB
+  Client["Browser / API client"] -->|"host :8000"| App
+
+  subgraph net["docker compose — default bridge network"]
+    App["iceberg service<br/>FastAPI + uvicorn --proxy-headers<br/>container :8000"]
+    PG["postgres service<br/>postgres:17 · :5432 (network-internal)"]
+    App -->|"postgresql+psycopg://iceberg@postgres:5432"| PG
+  end
+
+  App --- V1[("iceberg-data volume<br/>/data: attachments · figures · rendered")]
+  PG --- V2[("iceberg-pg-data volume<br/>/var/lib/postgresql/data")]
+```
+
+**3. Docker Compose + TLS (`--profile tls`)** — adds a Caddy reverse proxy that terminates TLS and
+forwards `X-Forwarded-*`; the app trusts those headers (`--proxy-headers`) so the scheme and client
+IP are correct. Only Caddy publishes `:80`/`:443`; the app port stays on the internal network.
+
+```mermaid
+flowchart TB
+  Client["Browser"] -->|"https :443 · http→https :80"| Caddy
+
+  subgraph net["docker compose --profile tls"]
+    Caddy["caddy service<br/>TLS termination (Let's Encrypt / local CA)<br/>:80 · :443"]
+    App["iceberg service<br/>uvicorn --proxy-headers · :8000<br/>prod → Secure cookies + HSTS"]
+    PG["postgres service · :5432"]
+    Caddy -->|"reverse proxy + X-Forwarded-*"| App
+    App -->|"psycopg"| PG
+  end
+
+  Caddy --- CV[("caddy-data · caddy-config<br/>certificates")]
+  App --- V1[("iceberg-data<br/>/data")]
+  PG --- V2[("iceberg-pg-data")]
+```
+
+**4. Kubernetes** — an Ingress terminates TLS to a ClusterIP Service and the single-replica
+Deployment (`Recreate`, non-root, read-only rootfs). A migrate Job runs `alembic upgrade head` out
+of band; config comes from a ConfigMap (non-secret) and the `ICEBERG_DATABASE_URL`/secrets from a
+Secret. PostgreSQL is a managed instance or the optional StatefulSet; uploads/renders live on a
+`ReadWriteOnce` `/data` PVC (the reason replicas stays at 1 until shared storage lands).
+
+```mermaid
+flowchart TB
+  Client["Browser"] -->|"https"| Ingress["Ingress<br/>TLS termination"]
+
+  subgraph ns["Kubernetes namespace"]
+    Ingress --> Svc["Service (ClusterIP)<br/>iceberg · :8000"]
+    Svc --> Pod["Deployment (replicas: 1 · Recreate)<br/>iceberg pod · uvicorn --proxy-headers :8000<br/>non-root · read-only rootfs · dropped caps"]
+    Job["migrate Job<br/>iceberg-migrate → alembic upgrade head"]
+    CM["ConfigMap<br/>iceberg-config (non-secret env)"]
+    Sec["Secret<br/>iceberg-secrets<br/>ICEBERG_DATABASE_URL · SECRET_KEY · tokens"]
+    PG[("PostgreSQL<br/>managed service or StatefulSet")]
+
+    Pod --- PVC[("/data PVC (RWO)<br/>attachments · figures · rendered")]
+    Pod -->|"psycopg"| PG
+    Job -->|"psycopg"| PG
+    CM -. "envFrom" .-> Pod
+    Sec -. "envFrom" .-> Pod
+    CM -. "envFrom" .-> Job
+    Sec -. "envFrom" .-> Job
+  end
+```
 
 The static gates also run automatically on every commit via
 [pre-commit](.pre-commit-config.yaml) — `repo: local` hooks that invoke the same pinned dev
