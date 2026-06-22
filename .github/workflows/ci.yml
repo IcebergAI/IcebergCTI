@@ -134,3 +134,39 @@ jobs:
         run: uv run python scripts/vendor_assets.py
       - name: Assert no asset drift
         run: git diff --exit-code -- src/iceberg/static
+
+  docker:
+    name: Docker image build + boot smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      # Build via the runner's built-in Docker/BuildKit (no extra pinned action).
+      - name: Build image
+        run: DOCKER_BUILDKIT=1 docker build -t iceberg:ci .
+      # Mirror the production flow on the SQLite default: migrate as a deploy step
+      # (iceberg-migrate, ICEBERG_AUTO_MIGRATE stays false), then boot the default
+      # CMD and assert the probes + that the portal templates/static are packaged
+      # in the image (guards the editable-install layout in the Dockerfile).
+      - name: Boot smoke (migrate + run on SQLite)
+        env:
+          ICEBERG_SECRET_KEY: ci-secret-0123456789abcdef0123456789
+        run: |
+          set -euo pipefail
+          docker volume create iceberg-ci-data
+          docker run --rm -v iceberg-ci-data:/data \
+            -e ICEBERG_SECRET_KEY="$ICEBERG_SECRET_KEY" \
+            iceberg:ci iceberg-migrate
+          docker run -d --name iceberg-ci -p 8000:8000 -v iceberg-ci-data:/data \
+            -e ICEBERG_SECRET_KEY="$ICEBERG_SECRET_KEY" \
+            iceberg:ci
+          for _ in $(seq 1 30); do
+            if curl -fsS http://localhost:8000/healthz >/dev/null; then ready=1; break; fi
+            sleep 2
+          done
+          if [ "${ready:-0}" != 1 ]; then echo "app did not become healthy"; exit 1; fi
+          curl -fsS http://localhost:8000/readyz
+          curl -fsS http://localhost:8000/auth/login | grep -qi iceberg
+          curl -fsS -o /dev/null http://localhost:8000/static/css/iceberg.css
+      - name: Container logs
+        if: always()
+        run: docker logs iceberg-ci || true
