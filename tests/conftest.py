@@ -15,7 +15,7 @@ os.environ["ICEBERG_ENVIRONMENT"] = "dev"
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import NullPool, StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
 from iceberg import db, models  # noqa: F401  -- register tables on metadata
@@ -48,11 +48,18 @@ def engine_fixture():
         # schema rebuilt + migrated per test (Alembic, so the dialect-guarded
         # postgres_fts migration runs). Slower than the in-memory SQLite default,
         # so this path is used only for a focused subset.
-        engine = create_engine(url)
+        #
+        # NullPool + disposing the app's module engine after each rebuild: the
+        # per-test DROP SCHEMA + re-migrate gives the enum types fresh OIDs, so a
+        # pooled connection caching the old OIDs would raise "cache lookup failed
+        # for type" — a test-isolation artifact (the schema is stable in prod).
+        engine = create_engine(url, poolclass=NullPool)
         _pg_reset_and_upgrade(engine)
+        db.engine.dispose()
         try:
             yield engine
         finally:
+            db.engine.dispose()
             engine.dispose()
         return
     engine = create_engine(
