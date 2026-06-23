@@ -2,6 +2,8 @@
 
 > **Type:** Strategic advisory roadmap (assessment + prioritised recommendations). This document is a forward-looking deliverable; the field/model proposals below are illustrative of direction, not an implementation spec.
 
+This has mostly been moved into GitHub issues and Projects, refer there rather than here
+
 ## Context
 
 Iceberg is a **finished-intelligence production** platform (collect in notebooks → author narrative reports → review → disseminate), deliberately *not* an IOC/indicator store ("Iceberg doesn't deal directly in IOCs"). This roadmap answers: as a senior threat-intel specialist, how would I evolve it to better align with contemporary CTI best practice?
