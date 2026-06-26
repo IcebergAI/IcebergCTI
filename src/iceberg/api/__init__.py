@@ -14,6 +14,7 @@ from .reports import router as reports_router
 from .requirements import router as requirements_router
 from .search import router as search_router
 from .tags import router as tags_router
+from .taxii import router as taxii_router
 
 api_router = APIRouter()
 api_router.include_router(ai_router)
@@ -28,3 +29,4 @@ api_router.include_router(preview_router)
 api_router.include_router(tags_router)
 api_router.include_router(search_router)
 api_router.include_router(attack_router)
+api_router.include_router(taxii_router)
