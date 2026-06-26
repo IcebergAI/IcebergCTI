@@ -29,7 +29,7 @@ event collector) — configurable in the admin console.
 > dissemination (on publish, reports are matched to stakeholders by preferred intel level +
 > TLP into a personalized feed, with email notifications) **closed by a stakeholder feedback /
 > RFI-satisfaction loop**, and an admin-curated tag taxonomy with full-text + faceted search.
-> The current branch adds governed AI-assist APIs, STIX export, audience-group need-to-know,
+> The current branch adds governed AI-assist APIs, STIX/TAXII export, audience-group need-to-know,
 > tag-subscription/webhook dissemination, RSS/Atom ingestion, related-report indexing,
 > render retention and deployment scaffolding.
 > See [CLAUDE.md](CLAUDE.md).
@@ -268,10 +268,29 @@ source grading path.
 ### Export and relate products
 Published reports can be exported as STIX 2.1 bundles with `GET /api/reports/{id}/stix`.
 The export maps the report plus controlled taxonomy tags into STIX report, threat-actor,
-malware, campaign, attack-pattern and sector identity objects. `GET /api/reports/{id}/related`
+malware, campaign, attack-pattern and sector identity objects. The same published-report
+objects are available through a read-only TAXII-shaped collection rooted at
+`GET /api/taxii2/` (`published-reports`: collections, manifest and objects), access-scoped
+like report reads and supporting incremental pull filters (`added_after`, `limit`, `next`,
+`match[type]`, `match[id]`). `GET /api/reports/{id}/related`
 returns access-scoped related products from a rebuildable local vector table; rebuild it with
 `iceberg-rebuild-related`. The report view exposes both the STIX download and related-product
 panel when related products exist.
+
+Example TAXII pulls using `curl` for quick smoke tests; production integrations can use
+any TAXII/HTTP client with a Bearer JWT:
+```bash
+# Pull visible published STIX objects.
+curl -H "Authorization: Bearer $ICEBERG_TOKEN" \
+  "http://localhost:8000/api/taxii2/collections/published-reports/objects/"
+
+# Incrementally pull report SDOs added after a timestamp.
+curl -G -H "Authorization: Bearer $ICEBERG_TOKEN" \
+  --data-urlencode "added_after=2026-06-01T00:00:00Z" \
+  --data-urlencode "limit=100" \
+  --data-urlencode "match[type]=report" \
+  "http://localhost:8000/api/taxii2/collections/published-reports/objects/"
+```
 
 ### Try the feedback loop
 1. Before publishing, have the `ANALYST` tick the **Requirements satisfied** so the report addresses
