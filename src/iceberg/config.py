@@ -2,8 +2,10 @@
 
 from functools import lru_cache
 
-from pydantic import model_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_AI_BACKENDS = {"none", "openai-compatible", "claude", "bedrock"}
 
 # The default signing key shipped for local dev. It is public (it's in source
 # control), so running with it in production would let anyone forge JWTs.
@@ -102,10 +104,11 @@ class Settings(BaseSettings):
 
     # Governed AI analyst assist. Off by default; every feature routes through
     # services/ai.py so advisory behavior, TLP egress and audit stay consistent.
-    ai_backend: str = "none"  # none | openai-compatible
+    ai_backend: str = "none"  # none | openai-compatible | claude | bedrock
     ai_base_url: str = ""
-    ai_api_key: str = ""
+    ai_api_key: str = ""  # Bearer key for openai-compatible / claude (env-only)
     ai_model: str = ""
+    ai_aws_region: str = ""  # bedrock only; auth is the standard AWS credential chain
     ai_timeout: float = 20.0
     ai_max_tlp: str = "AMBER"
     ai_embeddings_enabled: bool = False
@@ -197,6 +200,15 @@ class Settings(BaseSettings):
     @property
     def is_sqlite(self) -> bool:
         return self.database_url.lower().startswith("sqlite")
+
+    @field_validator("ai_backend")
+    @classmethod
+    def _validate_ai_backend(cls, value: str) -> str:
+        if value not in _AI_BACKENDS:
+            raise ValueError(
+                f"ICEBERG_AI_BACKEND must be one of {sorted(_AI_BACKENDS)}; got {value!r}."
+            )
+        return value
 
     @model_validator(mode="after")
     def _guard_production(self) -> "Settings":

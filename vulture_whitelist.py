@@ -93,3 +93,5 @@ _.event_id  # unused attribute (src/iceberg/services/misp.py)
 _.pushed_at  # unused attribute (src/iceberg/services/misp.py)
 # Future LLM/AI phase seam — IOC auto-extraction (not wired yet).
 extract  # unused function (src/iceberg/services/iocs.py)
+# Conventional classmethod first-arg on the @field_validator (config.py:_validate_ai_backend).
+cls  # unused variable (pydantic @field_validator first arg, src/iceberg/config.py)
