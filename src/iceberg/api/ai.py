@@ -268,16 +268,21 @@ def suggest_diamond(
     _w: Writer,
 ) -> AISuggestionResponse:
     reports = list(session.exec(select(Report).where(Report.notebook_id == body.notebook_id)).all())
-    payload = {
-        "reports": [{"title": r.title, "body_md": r.body_md} for r in reports],
-    }
-    result = ai_service.assist(
-        "diamond",
-        payload,
-        actor=user,
-        report=reports[0] if reports else None,
-        proxy_settings=proxy_settings_service.get(session),
-    )
+    sendable = ai_service.sendable_reports(reports)
+    if not sendable:
+        result = ai_service.disabled(
+            "diamond", "No notebook reports are within the AI egress ceiling"
+        )
+    else:
+        payload = {
+            "reports": [{"title": r.title, "body_md": r.body_md} for r in sendable],
+        }
+        result = ai_service.assist(
+            "diamond",
+            payload,
+            actor=user,
+            proxy_settings=proxy_settings_service.get(session),
+        )
     _record_ai(session, background_tasks, request, user, result, resource_type="notebook", resource_id=body.notebook_id)
     return AISuggestionResponse(**result.as_dict())
 
@@ -292,17 +297,22 @@ def suggest_ach(
     _w: Writer,
 ) -> AISuggestionResponse:
     reports = list(session.exec(select(Report).where(Report.notebook_id == body.notebook_id)).all())
-    payload = {
-        "question": body.question,
-        "reports": [{"title": r.title, "body_md": r.body_md} for r in reports],
-    }
-    result = ai_service.assist(
-        "ach",
-        payload,
-        actor=user,
-        report=reports[0] if reports else None,
-        proxy_settings=proxy_settings_service.get(session),
-    )
+    sendable = ai_service.sendable_reports(reports)
+    if not sendable:
+        result = ai_service.disabled(
+            "ach", "No notebook reports are within the AI egress ceiling"
+        )
+    else:
+        payload = {
+            "question": body.question,
+            "reports": [{"title": r.title, "body_md": r.body_md} for r in sendable],
+        }
+        result = ai_service.assist(
+            "ach",
+            payload,
+            actor=user,
+            proxy_settings=proxy_settings_service.get(session),
+        )
     _record_ai(session, background_tasks, request, user, result, resource_type="notebook", resource_id=body.notebook_id)
     return AISuggestionResponse(**result.as_dict())
 

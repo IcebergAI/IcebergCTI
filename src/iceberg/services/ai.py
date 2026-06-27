@@ -54,6 +54,19 @@ def should_send_report(report: Report, settings: Settings | None = None) -> bool
     return is_disseminable(TLP(report.tlp), _max_tlp(settings))
 
 
+def sendable_reports(
+    reports: list[Report], settings: Settings | None = None
+) -> list[Report]:
+    """Filter a collection of reports to those within the AI egress ceiling.
+
+    The diamond/ACH assist tasks build their payload from *all* of a notebook's
+    reports, so each report must clear the ceiling independently — gating on a
+    single report would let an over-ceiling sibling ride along in the payload
+    (#97). Returns the reports that may egress, in input order."""
+    settings = settings or get_settings()
+    return [r for r in reports if should_send_report(r, settings)]
+
+
 def should_send_source(source: Source, settings: Settings | None = None) -> bool:
     """Whether a source's content may leave the process for an AI backend.
 
