@@ -285,6 +285,66 @@ def test_taxii_paginates_objects_and_manifest(client, login, engine):
     assert manifest_ids == expected_ids
 
 
+def test_taxii_keyset_cursor_is_stable_across_inserts(client, login, engine):
+    a = _report(client, login, title="A product")
+    b = _report(client, login, title="B product")
+    c = _report(client, login, title="C product")
+    for r in (a, b, c):
+        _publish(client, login, r["id"])
+    _set_published_at(engine, a["id"], BASE_TIME)
+    _set_published_at(engine, b["id"], BASE_TIME + timedelta(minutes=1))
+    _set_published_at(engine, c["id"], BASE_TIME + timedelta(minutes=2))
+
+    login("ANALYST", email="author@example.com")
+    page_one = client.get(
+        "/api/taxii2/collections/published-reports/objects/",
+        params={"limit": "2"},
+    ).json()
+    assert page_one["more"] is True
+    seen = [obj["id"] for obj in page_one["objects"]]
+    assert len(seen) == 2
+
+    # Publishing a report *earlier* than the cursor boundary shifts an offset
+    # cursor and would duplicate/skip a row across pages. A keyset cursor resumes
+    # strictly after the last (date_added, object_id) returned, so it stays
+    # stable regardless of inserts between pulls (#119).
+    x = _report(client, login, title="X product")
+    _publish(client, login, x["id"])
+    _set_published_at(engine, x["id"], BASE_TIME - timedelta(minutes=1))
+
+    login("ANALYST", email="author@example.com")
+    page_two = client.get(
+        "/api/taxii2/collections/published-reports/objects/",
+        params={"limit": "2", "next": page_one["next"]},
+    ).json()
+    page_two_ids = [obj["id"] for obj in page_two["objects"]]
+    assert page_two_ids  # the next object in order, not a duplicate or a skip
+    assert not (set(seen) & set(page_two_ids))
+
+
+def test_taxii_caches_per_report_bundle(client, login, monkeypatch):
+    from iceberg.services import stix as stix_service
+    from iceberg.services import taxii as taxii_service
+
+    rep = _report(client, login)
+    _publish(client, login, rep["id"])
+
+    calls = {"n": 0}
+    real = stix_service.report_bundle
+
+    def _counting(report):
+        calls["n"] += 1
+        return real(report)
+
+    monkeypatch.setattr(taxii_service.stix_service, "report_bundle", _counting)
+
+    login("ANALYST", email="author@example.com")
+    for _ in range(3):
+        resp = client.get("/api/taxii2/collections/published-reports/objects/")
+        assert resp.status_code == 200
+    assert calls["n"] == 1  # built once; immutable published reports stay cached
+
+
 def test_taxii_rejects_invalid_query_values(client, login):
     login("ANALYST")
 

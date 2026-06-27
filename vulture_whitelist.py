@@ -95,3 +95,5 @@ _.pushed_at  # unused attribute (src/iceberg/services/misp.py)
 extract  # unused function (src/iceberg/services/iocs.py)
 # Conventional classmethod first-arg on the @field_validator (config.py:_validate_ai_backend).
 cls  # unused variable (pydantic @field_validator first arg, src/iceberg/config.py)
+# Test-only cache reset (tests/conftest.py clears the process-global LRU per test).
+clear_bundle_cache  # unused function (src/iceberg/services/taxii.py)

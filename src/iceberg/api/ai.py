@@ -150,6 +150,12 @@ def summarise_source(
     _w: Writer,
 ) -> AISuggestionResponse:
     source = _source_or_404(session, body.source_id)
+    # Check the backend first so a disabled backend doesn't surface the TLP gate's
+    # message (which would mislead — TLP isn't the blocker when AI is off, #117).
+    if not ai_service.is_enabled():
+        result = ai_service.disabled("summarise_source", "AI backend is disabled")
+        _record_ai(session, background_tasks, request, user, result, resource_type="source", resource_id=source.id)
+        return AISuggestionResponse(**result.as_dict())
     if not ai_service.should_send_source(source):
         result = ai_service.disabled(
             "summarise_source", "Source TLP exceeds the configured AI egress ceiling"
@@ -185,6 +191,12 @@ def extract_iocs(
     subset into IOC rows). Source content egress is gated by the source's own TLP
     against the configured AI egress ceiling."""
     source = _source_or_404(session, body.source_id)
+    # Check the backend first so a disabled backend doesn't surface the TLP gate's
+    # message (which would mislead — TLP isn't the blocker when AI is off, #117).
+    if not ai_service.is_enabled():
+        result = ai_service.disabled("ioc_extract", "AI backend is disabled")
+        _record_ai(session, background_tasks, request, user, result, resource_type="source", resource_id=source.id)
+        return AISuggestionResponse(**result.as_dict())
     if not ai_service.should_send_source(source):
         result = ai_service.disabled(
             "ioc_extract", "Source TLP exceeds the configured AI egress ceiling"

@@ -169,6 +169,22 @@ def test_extract_iocs_proceeds_under_ceiling(client, login, monkeypatch):
     assert called["posted"] is True
 
 
+def test_over_ceiling_source_reports_backend_off_not_tlp(client, login):
+    """When the AI backend is disabled, an over-ceiling source must report the
+    backend as the blocker — not the TLP gate, which would mislead (#117)."""
+    login("ANALYST")
+    nb = _notebook(client)
+    src = _source(client, nb["id"], tlp="RED")  # above the AMBER ceiling
+
+    for path in ("/api/ai/extract-iocs", "/api/ai/summarise-source"):
+        resp = client.post(path, json={"source_id": src["id"]})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["available"] is False
+        assert "egress ceiling" not in body["message"]
+        assert body["message"] == "AI backend is disabled"
+
+
 # --------------------------------------------------------------------------- #
 # MISP push TLP confirmation (push all; prompt above the ceiling)
 # --------------------------------------------------------------------------- #

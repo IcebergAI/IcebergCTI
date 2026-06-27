@@ -80,6 +80,9 @@ def client_fixture(engine, monkeypatch):
         with Session(engine) as session:
             yield session
 
+    from iceberg.services import taxii as taxii_service
+
+    taxii_service.clear_bundle_cache()  # process-global LRU; isolate per test
     app = create_app()
     app.dependency_overrides[get_session] = _get_session
     with TestClient(app) as client:

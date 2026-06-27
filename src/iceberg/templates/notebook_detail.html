@@ -328,19 +328,25 @@
 </section>
 
 <!-- Indicators of compromise -->
-<section id="indicators" class="card card-pad-lg mb-6">
+{% set ai_review = ai_enabled and can_write and sources %}
+<section id="indicators" class="card card-pad-lg mb-6"{% if ai_review %} x-data="iocReview('ioc-review-data')"{% endif %}>
+  {% if ai_review %}
+    <script type="application/json" id="ioc-review-data">
+      {{ {'notebookId': notebook.id, 'iocTypes': ai_ioc_type_choices, 'count': iocs | length} | tojson }}
+    </script>
+  {% endif %}
   <div class="head-row mb-4">
     <h2 class="section-title">Indicators</h2>
     <span class="eyebrow">{{ iocs | length }}</span>
   </div>
   <p class="text-xs mb-4" style="color:var(--muted);">Indicators of compromise staged against this collection. Cite them in a report to list them in its Indicators appendix and push them to MISP as one event. The authoritative IOC store stays external (MISP).</p>
   {% if updated == 'ioc-added' %}<div class="inline-notice mb-3">Indicator added.</div>{% endif %}
-  {% if iocs %}
-    <table class="ioc-table text-sm mb-4">
+  {% if iocs or ai_review %}
+    <table class="ioc-table text-sm mb-4"{% if ai_review %} x-show="count > 0"{% endif %}>
       <thead>
         <tr><th>Type</th><th>Indicator</th><th>TLP</th><th>Context</th>{% if can_write %}<th></th>{% endif %}</tr>
       </thead>
-      <tbody>
+      <tbody{% if ai_review %} x-ref="iocBody"{% endif %}>
         {% for i in iocs %}
           <tr>
             <td><span class="tag">{{ ioc_type_label(i.ioc_type) }}</span></td>
@@ -359,14 +365,12 @@
         {% endfor %}
       </tbody>
     </table>
-  {% else %}
-    <p class="empty">No indicators yet. Add IPs, domains, hashes or URLs observed in your sources.</p>
   {% endif %}
-  {% if ai_enabled and can_write and sources %}
-    <div class="mt-2 pt-5 border-t border-line" x-data="iocReview('ioc-review-data')">
-      <script type="application/json" id="ioc-review-data">
-        {{ {'notebookId': notebook.id, 'iocTypes': ai_ioc_type_choices} | tojson }}
-      </script>
+  {% if not iocs %}
+    <p class="empty"{% if ai_review %} x-show="count === 0"{% endif %}>No indicators yet. Add IPs, domains, hashes or URLs observed in your sources.</p>
+  {% endif %}
+  {% if ai_review %}
+    <div class="mt-2 pt-5 border-t border-line">
       <div class="head-row mb-2">
         <h3 class="text-sm" style="font-weight:600;">Suggest indicators with AI</h3>
         <span class="eyebrow">advisory</span>
