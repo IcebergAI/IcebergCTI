@@ -134,6 +134,7 @@
             <div class="flex items-start gap-2 flex-wrap">
               <div class="row-title text-sm">{{ s.title }}</div>
               {{ m.source_grade_chip(s) }}
+              {{ m.tlp_badge(s.tlp) }}
             </div>
             {% if s.reference %}<div class="mono text-xs break-all mt-0.5" style="color:var(--accent-deep);">{{ s.reference }}</div>{% endif %}
             {% if s.summary %}<div class="text-xs mt-0.5" style="color:var(--muted);">{{ s.summary }}</div>{% endif %}
@@ -161,6 +162,11 @@
                           <option value="">Credibility</option>
                           {% for c in source_credibilities %}
                             <option value="{{ c.value }}" {% if s.credibility and s.credibility.value == c.value %}selected{% endif %}>{{ c.value }} · {{ source_credibility_label(c) }}</option>
+                          {% endfor %}
+                        </select>
+                        <select name="tlp" class="field" aria-label="Source TLP marking">
+                          {% for t in TLP %}
+                            <option value="{{ t.value }}" {% if s.tlp.value == t.value %}selected{% endif %}>{{ tlp_label(t) }}</option>
                           {% endfor %}
                         </select>
                         <textarea name="grading_rationale" rows="2" placeholder="Rationale" class="field source-rationale-field">{{ s.grading_rationale }}</textarea>
@@ -205,6 +211,11 @@
               {% endfor %}
             </select>
           </div>
+          <select name="tlp" class="field" aria-label="Source TLP marking">
+            {% for t in TLP %}
+              <option value="{{ t.value }}" {% if t.value == 'AMBER' %}selected{% endif %}>{{ tlp_label(t) }}</option>
+            {% endfor %}
+          </select>
           <textarea name="grading_rationale" rows="2" placeholder="Rationale" class="field source-rationale-field"></textarea>
           <button class="btn btn--ghost btn--sm">Create source</button>
         </form>
@@ -327,13 +338,14 @@
   {% if iocs %}
     <table class="ioc-table text-sm mb-4">
       <thead>
-        <tr><th>Type</th><th>Indicator</th><th>Context</th>{% if can_write %}<th></th>{% endif %}</tr>
+        <tr><th>Type</th><th>Indicator</th><th>TLP</th><th>Context</th>{% if can_write %}<th></th>{% endif %}</tr>
       </thead>
       <tbody>
         {% for i in iocs %}
           <tr>
             <td><span class="tag">{{ ioc_type_label(i.ioc_type) }}</span></td>
             <td class="mono break-all">{{ i.value }}</td>
+            <td>{{ m.tlp_badge(i.tlp) }}</td>
             <td style="color:var(--muted);">{{ i.description }}</td>
             {% if can_write %}
               <td>
@@ -409,14 +421,22 @@
         <input name="value" placeholder="Indicator value (e.g. 198.51.100.4)" required class="field mono" style="flex:1;min-width:220px;">
       </div>
       <input name="description" placeholder="Context (optional — e.g. C2 server)" class="field">
-      {% if sources %}
-        <select name="source_id" class="field">
-          <option value="">— Provenance source (optional)</option>
-          {% for s in sources %}
-            <option value="{{ s.id }}">{{ s.title }}</option>
+      <div class="flex gap-2 flex-wrap">
+        {% if sources %}
+          <select name="source_id" class="field" style="flex:1;min-width:200px;">
+            <option value="">— Provenance source (optional)</option>
+            {% for s in sources %}
+              <option value="{{ s.id }}">{{ s.title }}</option>
+            {% endfor %}
+          </select>
+        {% endif %}
+        <select name="tlp" class="field" style="max-width:220px;" aria-label="Indicator TLP marking">
+          <option value="">TLP — inherit from source</option>
+          {% for t in TLP %}
+            <option value="{{ t.value }}">{{ tlp_label(t) }}</option>
           {% endfor %}
         </select>
-      {% endif %}
+      </div>
       <button class="btn btn--ghost btn--sm">Add indicator</button>
     </form>
   {% endif %}

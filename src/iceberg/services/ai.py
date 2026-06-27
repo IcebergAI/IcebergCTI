@@ -14,7 +14,7 @@ from typing import Any
 import httpx
 
 from ..config import Settings, get_settings
-from ..models import ProxySettings, Report, TLP, User, is_disseminable
+from ..models import ProxySettings, Report, Source, TLP, User, is_disseminable
 from . import proxy as proxy_service
 
 logger = logging.getLogger("iceberg.ai")
@@ -52,6 +52,15 @@ def should_send_report(report: Report, settings: Settings | None = None) -> bool
     """Whether report content may leave the process for an AI backend."""
     settings = settings or get_settings()
     return is_disseminable(TLP(report.tlp), _max_tlp(settings))
+
+
+def should_send_source(source: Source, settings: Settings | None = None) -> bool:
+    """Whether a source's content may leave the process for an AI backend.
+
+    A Source now carries its own TLP marking, so AI calls that egress source
+    text (summarise-source, ioc_extract) honour the same ceiling as reports."""
+    settings = settings or get_settings()
+    return is_disseminable(TLP(source.tlp), _max_tlp(settings))
 
 
 def disabled(task: str, message: str = "AI assist is unavailable") -> AISuggestion:

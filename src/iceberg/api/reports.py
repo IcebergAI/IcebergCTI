@@ -173,16 +173,20 @@ def push_to_misp(
     background_tasks: BackgroundTasks,
     request: Request,
     _w: Writer,
+    acknowledge_tlp: bool = False,
 ) -> ReportMispEvent:
     """Push the report's cited indicators to MISP as one event (create/update).
 
     Best-effort — the push never raises; the returned :class:`ReportMispEvent`
-    carries the outcome (``last_status`` / ``error``)."""
+    carries the outcome (``last_status`` / ``error``). When cited indicators
+    exceed the MISP egress ceiling, pass ``acknowledge_tlp=true`` to confirm;
+    otherwise the record returns ``last_status="needs_confirmation"``."""
     report = ensure_author(_get_report(session, report_id), user)
     record = misp_service.push_report(
         session,
         report,
         proxy_settings=proxy_settings_service.get(session),
+        acknowledge_tlp=acknowledge_tlp,
     )
     audit.record_and_emit(
         session,

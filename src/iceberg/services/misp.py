@@ -21,12 +21,14 @@ from sqlmodel import Session, select
 from ..config import get_settings
 from ..models import (
     IOC,
+    TLP,
     IOCType,
     MISPSettings,
     ProxySettings,
     Report,
     ReportMispEvent,
     Tag,
+    is_disseminable,
     tlp_label,
     utcnow,
 )
@@ -76,6 +78,8 @@ def _attribute(ioc: IOC) -> dict:
         "value": ioc.value,
         "comment": ioc.description or "",
         "to_ids": True,
+        # Each indicator carries its own TLP marking so MISP honours it per-attribute.
+        "Tag": [{"name": tlp_label(ioc.tlp).lower()}],
     }
 
 
@@ -103,6 +107,29 @@ def build_event_payload(
     }
 
 
+def _misp_max_tlp() -> TLP:
+    try:
+        return TLP(get_settings().misp_max_tlp)
+    except ValueError:
+        return TLP.AMBER
+
+
+def over_ceiling_iocs(iocs: list[IOC], max_tlp: TLP | None = None) -> list[IOC]:
+    """Cited indicators whose TLP exceeds the MISP egress ceiling. They are not
+    blocked — the writer is prompted to confirm before they ride to MISP (which
+    honours the per-attribute TLP tag)."""
+    ceiling = max_tlp or _misp_max_tlp()
+    return [i for i in iocs if not is_disseminable(TLP(i.tlp), ceiling)]
+
+
+def _ceiling_message(over: list[IOC], max_tlp: TLP) -> str:
+    markings = sorted({tlp_label(i.tlp) for i in over})
+    return (
+        f"{len(over)} cited indicator(s) are above the {tlp_label(max_tlp)} MISP "
+        f"egress ceiling ({', '.join(markings)}). Confirm to push them to MISP."
+    )
+
+
 def get_record(session: Session, report_id: int) -> ReportMispEvent | None:
     return session.exec(
         select(ReportMispEvent).where(ReportMispEvent.report_id == report_id)
@@ -123,15 +150,22 @@ def push_report(
     *,
     settings: MISPSettings | None = None,
     proxy_settings: ProxySettings | None = None,
+    acknowledge_tlp: bool = False,
 ) -> ReportMispEvent:
     """Push a report's cited indicators to MISP as one event (create or update).
 
     Best-effort: any configuration/transport failure is recorded on the returned
     :class:`ReportMispEvent` (``last_status`` / ``error``) and never raised, so
-    the caller always has a row to surface."""
+    the caller always has a row to surface.
+
+    When cited indicators exceed the configured MISP egress ceiling and
+    ``acknowledge_tlp`` is False, nothing is pushed and the record is returned
+    with ``last_status="needs_confirmation"`` so the writer can confirm."""
     settings = settings or misp_settings_service.get(session)
     record = _get_or_create_record(session, report.id)
     iocs = list(report.cited_iocs)
+    max_tlp = _misp_max_tlp()
+    over = over_ceiling_iocs(iocs, max_tlp)
     try:
         if not settings.enabled:
             raise MISPError("MISP push is disabled")
@@ -143,35 +177,40 @@ def push_report(
         if not iocs:
             raise MISPError("Report cites no indicators to push")
 
-        payload = build_event_payload(report, iocs, list(report.tags), settings)
-        proxy_kwargs = (
-            proxy_service.resolve(proxy_settings, settings.url)
-            if proxy_settings is not None
-            else {}
-        )
-        # Idempotent: update the existing event if we've pushed before, else add.
-        if record.event_uuid:
-            endpoint = _join(settings.url, f"events/edit/{record.event_uuid}")
+        if over and not acknowledge_tlp:
+            # Don't egress over-ceiling indicators without explicit confirmation.
+            record.last_status = "needs_confirmation"
+            record.error = _ceiling_message(over, max_tlp)
         else:
-            endpoint = _join(settings.url, "events/add")
-        resp = httpx.post(
-            endpoint,
-            json=payload,
-            headers=_headers(api_key),
-            timeout=get_settings().misp_timeout,
-            verify=settings.verify_tls,
-            **proxy_kwargs,
-        )
-        resp.raise_for_status()
-        event = (resp.json() or {}).get("Event", {})
-        if event.get("uuid"):
-            record.event_uuid = event["uuid"]
-        if event.get("id") is not None:
-            record.event_id = str(event["id"])
-        record.attribute_count = len(iocs)
-        record.last_status = "ok"
-        record.error = ""
-        record.pushed_at = utcnow()
+            payload = build_event_payload(report, iocs, list(report.tags), settings)
+            proxy_kwargs = (
+                proxy_service.resolve(proxy_settings, settings.url)
+                if proxy_settings is not None
+                else {}
+            )
+            # Idempotent: update the existing event if we've pushed before, else add.
+            if record.event_uuid:
+                endpoint = _join(settings.url, f"events/edit/{record.event_uuid}")
+            else:
+                endpoint = _join(settings.url, "events/add")
+            resp = httpx.post(
+                endpoint,
+                json=payload,
+                headers=_headers(api_key),
+                timeout=get_settings().misp_timeout,
+                verify=settings.verify_tls,
+                **proxy_kwargs,
+            )
+            resp.raise_for_status()
+            event = (resp.json() or {}).get("Event", {})
+            if event.get("uuid"):
+                record.event_uuid = event["uuid"]
+            if event.get("id") is not None:
+                record.event_id = str(event["id"])
+            record.attribute_count = len(iocs)
+            record.last_status = "ok"
+            record.error = ""
+            record.pushed_at = utcnow()
     except Exception as exc:  # noqa: BLE001 — surface the failure, never 500
         logger.warning("MISP push failed for report %s: %s", report.id, exc)
         record.last_status = "error"

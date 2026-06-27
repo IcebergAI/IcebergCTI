@@ -32,7 +32,7 @@ from fastapi import HTTPException, status
 from sqlmodel import Session, col, select
 
 from ..config import get_settings
-from ..models import Feed, FeedItem, Notebook, Source, utcnow
+from ..models import TLP, Feed, FeedItem, Notebook, Source, utcnow
 from . import notebooks as notebook_service
 from . import proxy, proxy_settings
 
@@ -272,6 +272,8 @@ def send_item_to_notebook(
         reference=item.link,
         summary=_to_text(item.summary or item.content),
         content_md=_to_text(item.content or item.summary),
+        # Public RSS/Atom articles are open-source material — mark TLP:CLEAR.
+        tlp=TLP.CLEAR,
     )
     item.ingested_at = utcnow()
     session.add(item)

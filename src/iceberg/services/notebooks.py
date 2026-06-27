@@ -5,6 +5,7 @@ from fastapi import HTTPException, status
 from sqlmodel import Session
 
 from ..models import (
+    TLP,
     Note,
     Notebook,
     Source,
@@ -39,6 +40,7 @@ def add_source(
     reference: str = "",
     summary: str = "",
     content_md: str = "",
+    tlp: TLP = TLP.AMBER,
     reliability: SourceReliability | None = None,
     credibility: SourceCredibility | None = None,
     grading_rationale: str = "",
@@ -49,6 +51,7 @@ def add_source(
         reference=reference,
         summary=summary,
         content_md=content_md,
+        tlp=tlp,
     )
     if reliability or credibility:
         source_grading.set_manual_grade(
@@ -81,6 +84,7 @@ def update_source(
     reference: str | None = None,
     summary: str | None = None,
     content_md: str | None = None,
+    tlp: TLP | None = None,
 ) -> Source:
     if title is not None:
         source.title = title
@@ -90,6 +94,8 @@ def update_source(
         source.summary = summary
     if content_md is not None:
         source.content_md = content_md
+    if tlp is not None:
+        source.tlp = tlp
     session.add(source)
     session.commit()
     session.refresh(source)

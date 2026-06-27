@@ -204,19 +204,36 @@
     <div class="side-card">
       <div class="side-card-label">MISP</div>
       {% if cited_iocs %}
-        <form method="post" action="/reports/{{ report.id }}/misp-push">
-          <button type="submit" class="btn btn--sm" style="width:100%; justify-content:center;">
-            {{ 'Re-push to MISP' if misp_event and misp_event.event_uuid else 'Push to MISP' }}
-          </button>
-        </form>
+        {% if misp_over_ceiling %}
+          <div class="inline-notice mb-2" role="status">
+            {{ misp_over_ceiling | length }} cited indicator{{ '' if misp_over_ceiling | length == 1 else 's' }} above the MISP TLP ceiling
+            ({% for t in misp_over_ceiling | map(attribute='tlp') | unique %}{{ tlp_label(t) }}{{ '' if loop.last else ', ' }}{% endfor %}).
+            MISP honours the markings — confirm to push.
+          </div>
+          <form method="post" action="/reports/{{ report.id }}/misp-push"
+                x-data="confirmSubmit('Some cited indicators are above the configured MISP TLP egress ceiling. MISP will honour the per-indicator markings — push anyway?')" @submit="check($event)">
+            <input type="hidden" name="acknowledge_tlp" value="true">
+            <button type="submit" class="btn btn--sm" style="width:100%; justify-content:center;">
+              {{ 'Re-push to MISP' if misp_event and misp_event.event_uuid else 'Push to MISP' }}
+            </button>
+          </form>
+        {% else %}
+          <form method="post" action="/reports/{{ report.id }}/misp-push">
+            <button type="submit" class="btn btn--sm" style="width:100%; justify-content:center;">
+              {{ 'Re-push to MISP' if misp_event and misp_event.event_uuid else 'Push to MISP' }}
+            </button>
+          </form>
+        {% endif %}
         <p class="eyebrow mt-2">Pushes {{ cited_iocs | length }} indicator{{ '' if cited_iocs | length == 1 else 's' }} as one event.</p>
       {% else %}
         <p class="eyebrow">Cite indicators on the report to push them to MISP.</p>
       {% endif %}
       {% if misp_event %}
-        <p class="mono text-xs mt-2" style="color:{{ 'var(--c-crit)' if misp_event.last_status == 'error' else 'var(--muted)' }};">
+        <p class="mono text-xs mt-2" style="color:{{ 'var(--c-crit)' if misp_event.last_status in ['error', 'needs_confirmation'] else 'var(--muted)' }};">
           {% if misp_event.last_status == 'ok' %}
             ✓ Pushed{% if misp_event.event_id %} (event {{ misp_event.event_id }}){% endif %}{% if misp_event.pushed_at %} · {{ misp_event.pushed_at.strftime('%Y-%m-%d %H:%M') }}{% endif %}
+          {% elif misp_event.last_status == 'needs_confirmation' %}
+            ⚠ {{ misp_event.error }}
           {% elif misp_event.last_status == 'error' %}
             ✗ {{ misp_event.error }}
           {% endif %}

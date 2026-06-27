@@ -30,6 +30,7 @@ from ..models import (
     Role,
     SourceCredibility,
     SourceReliability,
+    TLP,
     ioc_type_label,
     utcnow,
 )
@@ -67,6 +68,16 @@ def _parse_source_grade(
         return SourceReliability(reliability), SourceCredibility(credibility)
     except ValueError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid source grade") from exc
+
+
+def _parse_tlp(raw: str, default: TLP | None) -> TLP | None:
+    """Parse a TLP form value (empty → ``default``, validate-or-400)."""
+    if not raw:
+        return default
+    try:
+        return TLP(raw)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid TLP marking") from exc
 
 
 @router.get("/")
@@ -225,6 +236,7 @@ def add_source(
     title: Annotated[str, Form()],
     reference: Annotated[str, Form()] = "",
     summary: Annotated[str, Form()] = "",
+    tlp: Annotated[str, Form()] = "",
     reliability: Annotated[str, Form()] = "",
     credibility: Annotated[str, Form()] = "",
     grading_rationale: Annotated[str, Form()] = "",
@@ -238,6 +250,7 @@ def add_source(
         title=title,
         reference=reference,
         summary=summary,
+        tlp=_parse_tlp(tlp, TLP.AMBER),
         reliability=rel,
         credibility=cred,
         grading_rationale=grading_rationale,
@@ -254,6 +267,7 @@ def update_source(
     title: Annotated[str, Form()],
     reference: Annotated[str, Form()] = "",
     summary: Annotated[str, Form()] = "",
+    tlp: Annotated[str, Form()] = "",
     reliability: Annotated[str | None, Form()] = None,
     credibility: Annotated[str | None, Form()] = None,
     grading_rationale: Annotated[str | None, Form()] = None,
@@ -261,7 +275,12 @@ def update_source(
     _require_writer(user)
     source = notebook_service.get_source_or_404(session, notebook_id, source_id)
     notebook_service.update_source(
-        session, source, title=title, reference=reference, summary=summary
+        session,
+        source,
+        title=title,
+        reference=reference,
+        summary=summary,
+        tlp=_parse_tlp(tlp, None),
     )
     if reliability is not None or credibility is not None or grading_rationale is not None:
         rel, cred = _parse_source_grade(reliability or "", credibility or "")
@@ -345,6 +364,7 @@ def add_ioc(
     ioc_type: Annotated[IOCType, Form()] = IOCType.DOMAIN,
     description: Annotated[str, Form()] = "",
     source_id: Annotated[str, Form()] = "",
+    tlp: Annotated[str, Form()] = "",
 ):
     _require_writer(user)
     nb = _get_notebook(session, notebook_id)
@@ -355,6 +375,7 @@ def add_ioc(
         value=value,
         description=description,
         source_id=int(source_id) if source_id.strip() else None,
+        tlp=_parse_tlp(tlp, None),  # empty → inherit the source's TLP
     )
     return _redirect(f"/notebooks/{notebook_id}?updated=ioc-added#indicators")
 

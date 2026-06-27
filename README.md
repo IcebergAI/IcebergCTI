@@ -103,7 +103,12 @@ source's text when the governed AI backend is enabled — see *Governed AI assis
 into a report's **Indicators appendix** (web view + PDF), and a
 writer **pushes the cited indicators to MISP as one event** from the report. The push is idempotent
 (re-push updates the same event), failure-isolated, proxy-aware, and authenticated with an
-**env-only** API key (`ICEBERG_MISP_API_KEY`). Admins configure the connection at `/admin/misp`.*
+**env-only** API key (`ICEBERG_MISP_API_KEY`). Admins configure the connection at `/admin/misp`.
+Sources and IOCs carry their own **TLP** marking (manual sources default to AMBER, RSS-ingested
+sources to CLEAR, IOCs inherit their source's TLP); each indicator's TLP rides to MISP as a
+per-attribute tag. Cited indicators above `ICEBERG_MISP_MAX_TLP` (default AMBER) don't block the
+push — MISP honours the markings — but the writer is **prompted to confirm** before they leave the
+org. The same source TLP gates AI egress of a source's content against `ICEBERG_AI_MAX_TLP`.*
 
 ### Outbound proxy connectivity
 ![Outbound proxy](docs/images/outbound-proxy.png)

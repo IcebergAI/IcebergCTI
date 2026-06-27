@@ -596,6 +596,10 @@ class Source(SQLModel, table=True):
     )
     title: str
     reference: str = ""  # URL or citation reference
+    # Handling marking for this collected material. Manual sources default to
+    # AMBER; RSS-ingested sources are stamped CLEAR. Gates AI egress of the
+    # source's content and is inherited by IOCs captured from it.
+    tlp: TLP = Field(default=TLP.AMBER)
     summary: str = ""
     # Analyst-provided or ingested source text. The app deliberately does not
     # fetch arbitrary source URLs; AI/source summaries operate only on content
@@ -647,6 +651,9 @@ class IOC(SQLModel, table=True):
     ioc_type: IOCType = Field(default=IOCType.DOMAIN)
     value: str
     description: str = ""  # optional analyst context / role of the indicator
+    # Handling marking, inherited from the provenance source when one is set
+    # (else AMBER). Stamped per-attribute on the MISP push.
+    tlp: TLP = Field(default=TLP.AMBER)
     source_id: int | None = Field(
         default=None, foreign_key="source.id", ondelete="SET NULL", index=True
     )
