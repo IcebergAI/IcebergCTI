@@ -24,6 +24,12 @@ const KIND_CLASS = {
   TECHNIQUE: 'k-technique', SECTOR: 'k-sector', TOPIC: 'k-topic',
 };
 const NAMED_KINDS = ['ACTOR', 'MALWARE', 'CAMPAIGN'];
+// TLP marking → badge class, mirroring templates/_macros.html `tlp_badge` so a
+// client-side appended indicator row matches the server-rendered ones.
+const IOC_TLP_CLASS = {
+  RED: 'tlp--red', AMBER_STRICT: 'tlp--amber tlp--strict',
+  AMBER: 'tlp--amber', GREEN: 'tlp--green', CLEAR: 'tlp--clear',
+};
 
 /* Read server state from a <script type="application/json"> island by id.
  * Server HTML/SVG/text is passed this way (not through x-data attributes):
@@ -125,8 +131,9 @@ document.addEventListener('alpine:init', () => {
   // accept (promote to a real IOC via the existing create endpoint), edit or
   // discard each. Nothing is created until the analyst accepts a row.
   Alpine.data('iocReview', (dataId) => ({
-    ...readJSON(dataId),  // notebookId, iocTypes
+    ...readJSON(dataId),  // notebookId, iocTypes, count (existing indicator rows)
     sourceId: '', loading: false, message: '', candidates: [],
+    init() { this.count = Number(this.count) || 0; },
     async suggest() {
       if (!this.sourceId || this.loading) return;
       this.loading = true; this.message = ''; this.candidates = [];
@@ -158,9 +165,64 @@ document.addEventListener('alpine:init', () => {
             description: c.description || '', source_id: Number(this.sourceId),
           }),
         });
-        if (res.ok) { this.candidates.splice(idx, 1); }
-        else { this.message = 'Could not add that indicator.'; }
+        if (res.ok) {
+          // Reflect the just-created IOC in the Indicators table above without a
+          // full reload (#118); the create response carries the persisted row.
+          let created = null;
+          try { created = await res.json(); } catch { /* row append is best-effort */ }
+          if (created?.id) this.appendRow(created);
+          this.candidates.splice(idx, 1);
+        } else { this.message = 'Could not add that indicator.'; }
       } catch { this.message = 'Request failed.'; }
+    },
+    // Build a row matching the server-rendered ones with safe DOM APIs
+    // (textContent, not innerHTML — the CSP build forbids x-html anyway).
+    appendRow(ioc) {
+      const body = this.$refs.iocBody;
+      if (!body || !ioc?.id) return;
+      const row = document.createElement('tr');
+
+      const typeTd = document.createElement('td');
+      const typeTag = document.createElement('span');
+      typeTag.className = 'tag';
+      const meta = (this.iocTypes || []).find(t => t.value === ioc.ioc_type);
+      typeTag.textContent = meta ? meta.label : ioc.ioc_type;
+      typeTd.appendChild(typeTag);
+
+      const valueTd = document.createElement('td');
+      valueTd.className = 'mono break-all';
+      valueTd.textContent = ioc.value;
+
+      const tlpTd = document.createElement('td');
+      const tlpTag = document.createElement('span');
+      tlpTag.className = `tag tlp ${IOC_TLP_CLASS[ioc.tlp] || 'tlp--clear'}`;
+      const swatch = document.createElement('span');
+      swatch.className = 'swatch';
+      tlpTag.appendChild(swatch);
+      tlpTag.append(`TLP:${String(ioc.tlp || '').replace('_', '+')}`);
+      tlpTd.appendChild(tlpTag);
+
+      const ctxTd = document.createElement('td');
+      ctxTd.style.color = 'var(--muted)';
+      ctxTd.textContent = ioc.description || '';
+
+      const actionTd = document.createElement('td');
+      const form = document.createElement('form');
+      form.method = 'post';
+      form.action = `/notebooks/${this.notebookId}/iocs/${ioc.id}/delete`;
+      form.addEventListener('submit', (e) => {
+        if (!window.confirm('Delete this indicator?')) e.preventDefault();
+      });
+      const del = document.createElement('button');
+      del.className = 'link-danger';
+      del.style.cssText = 'background:none;border:0;cursor:pointer;';
+      del.textContent = 'Delete';
+      form.appendChild(del);
+      actionTd.appendChild(form);
+
+      row.append(typeTd, valueTd, tlpTd, ctxTd, actionTd);
+      body.appendChild(row);
+      this.count++;
     },
     discard(idx) { this.candidates.splice(idx, 1); },
   }));

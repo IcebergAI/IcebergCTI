@@ -11,7 +11,6 @@ from iceberg.config import Settings
 from iceberg.models import IOC, AuditAction, AuditEvent
 from iceberg.services import ai as ai_service
 from iceberg.services import iocs as ioc_service
-from iceberg.web import notebooks as web_notebooks
 
 
 # --------------------------------------------------------------------------- #
@@ -183,7 +182,7 @@ def test_notebook_panel_shown_when_ai_enabled(client, login, monkeypatch):
     enabled = Settings(
         ai_backend="openai-compatible", ai_base_url="https://x", ai_model="m"
     )
-    monkeypatch.setattr(web_notebooks, "get_settings", lambda: enabled)
+    monkeypatch.setattr(ai_service, "get_settings", lambda: enabled)
     login("ANALYST")
     nb = _notebook(client)
     _source(client, nb["id"])

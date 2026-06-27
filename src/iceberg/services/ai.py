@@ -50,6 +50,12 @@ class AISuggestion:
         }
 
 
+def is_enabled(settings: Settings | None = None) -> bool:
+    """Whether an AI backend is configured (i.e. not ``none``)."""
+    settings = settings or get_settings()
+    return settings.ai_backend != "none"
+
+
 def _max_tlp(settings: Settings) -> TLP:
     try:
         return TLP(settings.ai_max_tlp)
