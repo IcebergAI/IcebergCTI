@@ -38,7 +38,7 @@
     "version": "google-fonts"
   },
   "tailwind": {
-    "integrity": "sha384-KCWZOUXHVpLHlvycipMCOVBCjbchMQ1FJWbzHjTfCFrFeXv5Q3nFruxgWgBzirYr",
+    "integrity": "sha384-hnkLhLoBO7yoR4B5c9WVigpbnfD+mt9OmFZjLsppsaoO/5zJ7+1dQBLXLEqqDZfx",
     "path": "css/vendor/tailwind.css",
     "version": "4.3.1"
   }
