@@ -258,14 +258,18 @@ Stakeholders outside a scoped report's groups cannot see it in search, feeds, di
 reads, or dissemination. Unscoped published reports remain visible to authenticated stakeholders.
 
 ### Governed AI assist
-AI assist is off by default (`ICEBERG_AI_BACKEND=none`). When configured for an
-OpenAI-compatible chat endpoint, writer-only API endpoints can draft judgement text, source
-summaries, tag suggestions, Diamond/ACH starts, analytic challenge notes, and **candidate
-indicators extracted from a source** (the notebook Indicators section shows a "Suggest indicators"
-review list — candidates are refanged and constrained to the MISP-pushable `IOCType` set, and the
-analyst accepts, edits, or discards each before it becomes a real IOC). Suggestions are
-advisory only; Iceberg records an audit event with metadata, never prompt/response bodies, and
-report content is blocked when its TLP exceeds `ICEBERG_AI_MAX_TLP`.
+AI assist is off by default (`ICEBERG_AI_BACKEND=none`). Four backends are selectable:
+`openai-compatible` (a generic chat endpoint, `ICEBERG_AI_BASE_URL` + `ICEBERG_AI_API_KEY`),
+`claude` (Anthropic's first-party API — `pip install '.[anthropic]'`, key in `ICEBERG_AI_API_KEY`,
+default model `claude-opus-4-8`), and `bedrock` (Amazon Bedrock — `pip install '.[bedrock]'`,
+`ICEBERG_AI_AWS_REGION` plus the standard AWS credential chain, no API key). When configured,
+writer-only API endpoints can draft judgement text, source summaries, tag suggestions, Diamond/ACH
+starts, analytic challenge notes, and **candidate indicators extracted from a source** (the notebook
+Indicators section shows a "Suggest indicators" review list — candidates are refanged and constrained
+to the MISP-pushable `IOCType` set, and the analyst accepts, edits, or discards each before it
+becomes a real IOC). Suggestions are advisory only; Iceberg records an audit event with metadata,
+never prompt/response bodies, every backend honours the global outbound proxy, and report content is
+blocked when its TLP exceeds `ICEBERG_AI_MAX_TLP`.
 
 ### Ingest external reporting
 Admins configure RSS/Atom sources at `/admin/feeds`; writers browse the resulting
@@ -400,7 +404,7 @@ All settings use the `ICEBERG_` env prefix and can live in `.env` (see
 | `ICEBERG_EMAIL_BACKEND` + `ICEBERG_SMTP_*` | `console` (dev) or `smtp`; SMTP server settings |
 | `ICEBERG_WEBHOOK_URL` / `ICEBERG_WEBHOOK_TOKEN` | Optional generic report-publication webhook (seeds the row; URL/enabled/timeout editable live at `/admin/webhook`); token is env-only |
 | `ICEBERG_PORTAL_BASE_URL` | Base URL used in notification email links |
-| `ICEBERG_AI_BACKEND` + `ICEBERG_AI_*` | Governed AI assist backend, model, TLP egress ceiling and timeout (off by default) |
+| `ICEBERG_AI_BACKEND` + `ICEBERG_AI_*` | Governed AI assist backend (`none`/`openai-compatible`/`claude`/`bedrock`), model, key/`ICEBERG_AI_AWS_REGION`, TLP egress ceiling and timeout (off by default) |
 | `ICEBERG_RSS_POLL_ENABLED` / `ICEBERG_RSS_POLL_INTERVAL_MINUTES` | Opt-in RSS poller switch and interval |
 | `ICEBERG_RSS_FETCH_TIMEOUT` / `ICEBERG_RSS_MAX_ITEMS_PER_FEED` | RSS/Atom fetch timeout and per-feed item cap |
 | `ICEBERG_RSS_ALLOW_PRIVATE_HOSTS` | Allow private/internal feed hosts for trusted deployments |

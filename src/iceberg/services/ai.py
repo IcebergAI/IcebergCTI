@@ -22,6 +22,14 @@ logger = logging.getLogger("iceberg.ai")
 # Inspectable in tests; stores metadata only, never prompt/response bodies.
 OUTBOX: list[dict] = []
 
+# Anthropic-backed tasks return short advisory JSON; the cap just bounds runaway
+# output. The base URL is only used to resolve the outbound proxy per-host.
+_CLAUDE_MAX_TOKENS = 2048
+_ANTHROPIC_URL = "https://api.anthropic.com"
+_DEFAULT_CLAUDE_MODEL = "claude-opus-4-8"
+# Bedrock model ids carry the ``anthropic.`` provider prefix.
+_DEFAULT_BEDROCK_MODEL = "anthropic.claude-opus-4-8"
+
 
 @dataclass(frozen=True)
 class AISuggestion:
@@ -108,6 +116,14 @@ def assist(
         return _openai_compatible(
             task, payload, actor=actor, settings=settings, proxy_settings=proxy_settings
         )
+    if settings.ai_backend == "claude":
+        return _claude(
+            task, payload, actor=actor, settings=settings, proxy_settings=proxy_settings
+        )
+    if settings.ai_backend == "bedrock":
+        return _bedrock(
+            task, payload, actor=actor, settings=settings, proxy_settings=proxy_settings
+        )
     return disabled(task, f"Unknown AI backend: {settings.ai_backend}")
 
 
@@ -124,14 +140,7 @@ def _openai_compatible(
     headers = {"Content-Type": "application/json"}
     if settings.ai_api_key:
         headers["Authorization"] = f"Bearer {settings.ai_api_key}"
-    prompt = {
-        "task": task,
-        "instructions": (
-            "Return compact JSON only. Output is advisory; the analyst will edit "
-            "or reject it. Ground suggestions only in the supplied Iceberg content."
-        ),
-        "payload": payload,
-    }
+    prompt = _advisory_prompt(task, payload)
     base_url = f"{settings.ai_base_url.rstrip('/')}/chat/completions"
     # Route through the global outbound proxy when one is configured (None →
     # direct, the previous behaviour). See services/proxy.py.
@@ -162,6 +171,123 @@ def _openai_compatible(
             available=True,
             suggestion=suggestion if isinstance(suggestion, dict) else {"value": suggestion},
             provenance=_provenance(task, settings.ai_backend, actor),
+        )
+    except Exception:
+        logger.warning("AI assist failed for task %s", task, exc_info=True)
+        return disabled(task, "AI provider failed")
+
+
+def _advisory_prompt(task: str, payload: dict) -> dict:
+    return {
+        "task": task,
+        "instructions": (
+            "Return compact JSON only. Output is advisory; the analyst will edit "
+            "or reject it. Ground suggestions only in the supplied Iceberg content."
+        ),
+        "payload": payload,
+    }
+
+
+def _claude(
+    task: str,
+    payload: dict,
+    *,
+    actor: User,
+    settings: Settings,
+    proxy_settings: ProxySettings | None = None,
+) -> AISuggestion:
+    """Anthropic first-party Claude API backend (official ``anthropic`` SDK)."""
+    try:
+        import anthropic
+    except ImportError:
+        return disabled(task, "Anthropic SDK is not installed")
+    model = settings.ai_model or _DEFAULT_CLAUDE_MODEL
+    proxy_kwargs = (
+        proxy_service.resolve(proxy_settings, _ANTHROPIC_URL)
+        if proxy_settings is not None
+        else {}
+    )
+    try:
+        with httpx.Client(**proxy_kwargs) as http_client:
+            client = anthropic.Anthropic(api_key=settings.ai_api_key, http_client=http_client)
+            return _anthropic_assist(
+                task, payload, actor=actor, backend="claude", model=model, client=client
+            )
+    except Exception:
+        logger.warning("AI assist failed for task %s", task, exc_info=True)
+        return disabled(task, "AI provider failed")
+
+
+def _bedrock(
+    task: str,
+    payload: dict,
+    *,
+    actor: User,
+    settings: Settings,
+    proxy_settings: ProxySettings | None = None,
+) -> AISuggestion:
+    """Amazon Bedrock backend (the SDK's ``AnthropicBedrockMantle`` client).
+
+    Auth is the standard AWS credential chain — no API key. Bedrock model ids
+    carry the ``anthropic.`` prefix (an operator-supplied ``ai_model`` provides
+    the prefixed id)."""
+    try:
+        from anthropic import AnthropicBedrockMantle
+    except ImportError:
+        return disabled(task, "Anthropic Bedrock SDK is not installed")
+    model = settings.ai_model or _DEFAULT_BEDROCK_MODEL
+    # Bedrock resolves to per-region AWS endpoints; the proxy decision keys off
+    # the target host, which we don't know here — resolve against the API host as
+    # a representative target (the proxy/no-proxy lists are domain/CIDR matches).
+    proxy_kwargs = (
+        proxy_service.resolve(proxy_settings, _ANTHROPIC_URL)
+        if proxy_settings is not None
+        else {}
+    )
+    try:
+        with httpx.Client(**proxy_kwargs) as http_client:
+            client = AnthropicBedrockMantle(
+                aws_region=settings.ai_aws_region, http_client=http_client
+            )
+            return _anthropic_assist(
+                task, payload, actor=actor, backend="bedrock", model=model, client=client
+            )
+    except Exception:
+        logger.warning("AI assist failed for task %s", task, exc_info=True)
+        return disabled(task, "AI provider failed")
+
+
+def _anthropic_assist(
+    task: str,
+    payload: dict,
+    *,
+    actor: User,
+    backend: str,
+    model: str,
+    client,
+) -> AISuggestion:
+    """Shared Anthropic Messages-API call + JSON parse for the claude/bedrock
+    backends. ``temperature``/``thinking`` are deliberately omitted — Opus 4.x
+    rejects ``temperature`` (400), and these advisory tasks want a fast, direct
+    JSON answer."""
+    prompt = _advisory_prompt(task, payload)
+    try:
+        resp = client.messages.create(
+            model=model,
+            max_tokens=_CLAUDE_MAX_TOKENS,
+            messages=[{"role": "user", "content": json.dumps(prompt)}],
+        )
+        if getattr(resp, "stop_reason", None) == "refusal":
+            return disabled(task, "AI provider declined the request")
+        text = next(
+            (b.text for b in resp.content if getattr(b, "type", None) == "text"), ""
+        )
+        suggestion = json.loads(text)
+        return AISuggestion(
+            task=task,
+            available=True,
+            suggestion=suggestion if isinstance(suggestion, dict) else {"value": suggestion},
+            provenance=_provenance(task, backend, actor),
         )
     except Exception:
         logger.warning("AI assist failed for task %s", task, exc_info=True)
