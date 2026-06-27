@@ -210,13 +210,26 @@
             ({% for t in misp_over_ceiling | map(attribute='tlp') | unique %}{{ tlp_label(t) }}{{ '' if loop.last else ', ' }}{% endfor %}).
             MISP honours the markings — confirm to push.
           </div>
-          <form method="post" action="/reports/{{ report.id }}/misp-push"
-                x-data="confirmSubmit('Some cited indicators are above the configured MISP TLP egress ceiling. MISP will honour the per-indicator markings — push anyway?')" @submit="check($event)">
-            <input type="hidden" name="acknowledge_tlp" value="true">
-            <button type="submit" class="btn btn--sm" style="width:100%; justify-content:center;">
-              {{ 'Re-push to MISP' if misp_event and misp_event.event_uuid else 'Push to MISP' }}
-            </button>
-          </form>
+          {% if misp_event and misp_event.last_status == 'needs_confirmation' %}
+            {# The server already gated this push (recorded needs_confirmation, no
+               egress). This is the explicit, server-authoritative confirm step —
+               the acknowledgement only rides on this second, deliberate submit. #}
+            <form method="post" action="/reports/{{ report.id }}/misp-push">
+              <input type="hidden" name="acknowledge_tlp" value="true">
+              <button type="submit" class="btn btn--sm" style="width:100%; justify-content:center;">
+                Confirm &amp; push {{ misp_over_ceiling | length }} indicator{{ '' if misp_over_ceiling | length == 1 else 's' }} to MISP
+              </button>
+            </form>
+          {% else %}
+            {# First attempt sends no acknowledgement: the server gates the
+               over-ceiling indicators and records needs_confirmation, so the gate
+               holds without relying on any client-side confirmation. #}
+            <form method="post" action="/reports/{{ report.id }}/misp-push">
+              <button type="submit" class="btn btn--sm" style="width:100%; justify-content:center;">
+                {{ 'Re-push to MISP' if misp_event and misp_event.event_uuid else 'Push to MISP' }}
+              </button>
+            </form>
+          {% endif %}
         {% else %}
           <form method="post" action="/reports/{{ report.id }}/misp-push">
             <button type="submit" class="btn btn--sm" style="width:100%; justify-content:center;">

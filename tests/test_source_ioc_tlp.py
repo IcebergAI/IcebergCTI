@@ -218,6 +218,42 @@ def test_misp_push_prompts_when_over_ceiling(client, login, engine, monkeypatch)
     assert posted["n"] == 1  # pushed after confirmation
 
 
+def test_portal_push_is_server_gated_over_ceiling(client, login, engine, monkeypatch):
+    """The portal push is server-authoritative: the first POST carries no
+    acknowledgement, so over-ceiling indicators are gated server-side (recorded
+    needs_confirmation, no egress) without relying on a client-side confirm. Only
+    the explicit second POST (acknowledge_tlp) actually pushes."""
+    login("ANALYST")
+    nb = _notebook(client)
+    src = _source(client, nb["id"], tlp="RED")
+    ioc = _ioc(client, nb["id"], source_id=src["id"])  # inherits RED
+    rid = _report_citing(client, nb["id"], ioc["id"])
+    monkeypatch.setattr(get_settings(), "misp_api_key", "KEY")
+
+    posted = {"n": 0}
+    monkeypatch.setattr(misp.httpx, "post", lambda *a, **k: posted.__setitem__("n", posted["n"] + 1) or _FakeResp())
+    with Session(engine) as session:
+        misp_settings.update(session, enabled=True, url="https://misp.example")
+
+    # First portal push — no acknowledgement: server gates, nothing egresses.
+    client.post(f"/reports/{rid}/misp-push", data={}, follow_redirects=False)
+    with Session(engine) as session:
+        record = misp.get_record(session, rid)
+        assert record.last_status == "needs_confirmation"
+    assert posted["n"] == 0
+
+    # Explicit confirm — the acknowledgement rides only on this deliberate submit.
+    client.post(
+        f"/reports/{rid}/misp-push",
+        data={"acknowledge_tlp": "true"},
+        follow_redirects=False,
+    )
+    with Session(engine) as session:
+        record = misp.get_record(session, rid)
+        assert record.last_status == "ok"
+    assert posted["n"] == 1
+
+
 def test_misp_push_no_prompt_under_ceiling(client, login, engine, monkeypatch):
     login("ANALYST")
     nb = _notebook(client)
