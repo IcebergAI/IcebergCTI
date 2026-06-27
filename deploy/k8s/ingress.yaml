@@ -1,0 +1,57 @@
+# Example Ingress exposing Iceberg over TLS.
+#
+# This is a turnkey starting point, not an opinionated default — edit the two
+# placeholders (`intel.example.com` and the TLS secret name) and apply. It
+# targets the ingress-nginx controller; the spec is generic enough that other
+# controllers (Traefik, HAProxy, a cloud LB) need only their own annotations.
+#
+# Prerequisites:
+#   - An ingress controller installed in the cluster (e.g. ingress-nginx).
+#   - The `iceberg` Service (service.yaml) — this routes to its port 80, which
+#     forwards to the app's container port 8000.
+#
+# TLS, two options:
+#   (a) cert-manager (recommended): install cert-manager + a ClusterIssuer, then
+#       uncomment the `cert-manager.io/cluster-issuer` annotation below. It will
+#       provision and renew the certificate into the `tls.secretName` Secret
+#       automatically — you do NOT pre-create that Secret.
+#   (b) Bring your own cert: create the TLS Secret yourself and reference it:
+#         kubectl create secret tls iceberg-tls --cert=fullchain.pem --key=privkey.pem
+#
+# Proxy headers: the container already starts uvicorn with `--proxy-headers` and
+# trusts `X-Forwarded-*` (FORWARDED_ALLOW_IPS, default `*`), so the request
+# scheme is correct and the audit log records the real client IP rather than the
+# ingress pod's. Scope FORWARDED_ALLOW_IPS to the ingress-controller pod CIDR for
+# a stricter posture. Terminating TLS at the ingress (below) is what makes those
+# forwarded headers trustworthy. Pair with ICEBERG_ENVIRONMENT=prod for `Secure`
+# cookies + HSTS.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: iceberg
+  annotations:
+    # cert-manager: uncomment and set to your ClusterIssuer to auto-provision the
+    # TLS cert into the Secret named under `tls.secretName` below.
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+
+    # Allow report attachment/figure uploads up to the app's cap (default 25 MB,
+    # ICEBERG_ATTACHMENT_MAX_MB) — ingress-nginx defaults to 1 MB otherwise.
+    nginx.ingress.kubernetes.io/proxy-body-size: "25m"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - intel.example.com
+      # cert-manager writes the cert here; or pre-create this Secret yourself.
+      secretName: iceberg-tls
+  rules:
+    - host: intel.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: iceberg
+                port:
+                  number: 80
