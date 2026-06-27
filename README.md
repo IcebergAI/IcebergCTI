@@ -451,9 +451,27 @@ Caddy ([`deploy/Caddyfile`](deploy/Caddyfile)) terminates TLS and proxies to the
 `ICEBERG_ENVIRONMENT=prod` for `Secure` cookies + HSTS. The container starts uvicorn with
 `--proxy-headers` and trusts `X-Forwarded-*` (`FORWARDED_ALLOW_IPS`, default `*` — scope it to the
 proxy/pod CIDR for a stricter posture) so the request scheme is correct and the **audit log records
-the real client IP** rather than the proxy's. This applies to the Kubernetes ingress path too. An
-nginx sidecar isn't bundled — the ingress / Caddy covers TLS, and the app sets its own security
-headers.
+the real client IP** rather than the proxy's. On **Kubernetes**, terminate TLS at an Ingress
+instead — [`deploy/k8s/ingress.yaml`](deploy/k8s/ingress.yaml) is a commented ingress-nginx example
+with a cert-manager note (edit the host + TLS secret and apply). An nginx sidecar isn't bundled —
+the ingress / Caddy covers TLS, and the app sets its own security headers.
+
+### Backup & restore
+Persistent state lives in two places: **PostgreSQL** (all reports, requirements, tags, audit
+events, settings) and a **local filesystem dir** (uploaded attachments/figures + rendered PDFs,
+the `iceberg-data` volume in Compose / the `iceberg-data` PVC in k8s). Back up **both** from the
+same window — the PDFs regenerate, but attachments/figures are original material. For Compose:
+
+```bash
+docker compose exec postgres pg_dump -U iceberg -d iceberg -Fc > iceberg-$(date +%F).dump
+docker run --rm -v iceberg_iceberg-data:/data -v "$PWD":/out busybox \
+  tar cf /out/iceberg-data-$(date +%F).tar -C /data .
+```
+
+Restore reverses each (stop the app first so nothing writes mid-restore): `pg_restore -U iceberg
+-d iceberg --clean --if-exists` for the database, and untar back into the `iceberg-data` volume.
+Full copy-pasteable k8s steps (`VolumeSnapshot` / `kubectl`-piped tar + `pg_dump`/`pg_restore`)
+are in [`deploy/k8s/README.md`](deploy/k8s/README.md#backup--restore).
 
 ### Source reliability grading
 Notebook sources carry Admiralty/NATO-style grades: source reliability (`A-F`) plus

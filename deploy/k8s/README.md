@@ -51,7 +51,105 @@ kubectl apply -f configmap.yaml -f service.yaml -f pvc.yaml
 kubectl apply -f secret.yaml          # from secret.example.yaml (sets ICEBERG_DATABASE_URL)
 kubectl apply -f migrate-job.yaml     # alembic upgrade head
 kubectl apply -f deployment.yaml
+kubectl apply -f ingress.yaml         # optional — TLS exposure (edit host + secret first)
 ```
+
+## TLS / Ingress
+
+Iceberg always runs behind a **TLS-terminating proxy**. In Kubernetes that's an
+Ingress (or a cloud load balancer). [`ingress.yaml`](ingress.yaml) is a commented
+ingress-nginx example routing to the `iceberg` Service on port 80 (→ container
+8000) — edit the host and TLS secret name, then `kubectl apply -f ingress.yaml`.
+
+TLS, two options:
+
+- **cert-manager (recommended).** Install cert-manager + a `ClusterIssuer`, then
+  uncomment the `cert-manager.io/cluster-issuer` annotation in `ingress.yaml`. It
+  provisions and renews the cert into the `tls.secretName` Secret automatically —
+  you don't pre-create it.
+- **Bring your own cert.**
+  `kubectl create secret tls iceberg-tls --cert=fullchain.pem --key=privkey.pem`
+  and reference it from `tls.secretName`.
+
+The container starts uvicorn with `--proxy-headers` and trusts `X-Forwarded-*`
+(`FORWARDED_ALLOW_IPS`, default `*` — scope it to the ingress-controller pod CIDR
+for a stricter posture), so the request scheme is correct and the audit log
+records the real client IP rather than the ingress pod's. Set
+`ICEBERG_ENVIRONMENT=prod` for `Secure` cookies + HSTS.
+
+## Backup & restore
+
+Two stores hold all persistent state: **PostgreSQL** (every report, requirement,
+tag, audit event, settings row) and the **`iceberg-data` PVC** (uploaded
+attachments and figures, plus rendered PDFs under `/data`). Back up **both** —
+the PDFs regenerate from a report, but attachments/figures are original material
+with no other copy. The database is authoritative, so when in doubt dump it
+first, the files second.
+
+### PostgreSQL
+
+Prefer a **managed** instance's automated backups / PITR. For the self-hosted
+`postgres` StatefulSet (or any reachable instance), use `pg_dump`/`pg_restore`:
+
+```bash
+# Back up — a custom-format dump (compressed, restorable selectively).
+kubectl exec postgres-0 -- \
+  pg_dump -U iceberg -d iceberg -Fc > iceberg-$(date +%F).dump
+
+# Restore into a fresh, empty database (scale the app to 0 first so nothing
+# writes mid-restore: kubectl scale deploy/iceberg --replicas=0).
+kubectl exec -i postgres-0 -- \
+  pg_restore -U iceberg -d iceberg --clean --if-exists < iceberg-2026-06-27.dump
+kubectl scale deploy/iceberg --replicas=1
+```
+
+The dump is schema + data, so a restore lands at the schema version it was taken
+at; run the migrate Job afterwards (`kubectl apply -f migrate-job.yaml`) if you
+are restoring into a newer image. The SQLite FTS index has no Postgres analogue —
+the `tsvector` column is generated, so search works immediately after restore.
+
+### `iceberg-data` PVC (uploads + renders)
+
+If your storage class supports `VolumeSnapshot`, that's the simplest route.
+Otherwise tar the volume through a short-lived helper pod that mounts it (the app
+is single-replica with a `Recreate` rollout, so scale it to 0 first for a
+consistent copy):
+
+```bash
+kubectl scale deploy/iceberg --replicas=0
+
+# Spin up a helper pod that mounts the PVC read/write.
+kubectl apply -f - <<'EOF'
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pvc-tool
+spec:
+  containers:
+    - name: tool
+      image: busybox
+      command: ["sleep", "3600"]
+      volumeMounts: [{ name: data, mountPath: /data }]
+  volumes:
+    - name: data
+      persistentVolumeClaim: { claimName: iceberg-data }
+EOF
+kubectl wait --for=condition=Ready pod/pvc-tool
+
+# Back up: stream a tar of /data out through the helper.
+kubectl exec pvc-tool -- tar cf - -C /data . > iceberg-data-$(date +%F).tar
+
+# Restore: pipe a tar back in (the PVC must already exist; -i feeds stdin).
+kubectl exec -i pvc-tool -- tar xf - -C /data < iceberg-data-2026-06-27.tar
+
+kubectl delete pod pvc-tool
+kubectl scale deploy/iceberg --replicas=1
+```
+
+Keep DB and file backups from the **same window** so a restored report's cited
+attachments still resolve. (This is the same single-writer / local-filesystem
+caveat as *Scaling caveat* below — there is one `iceberg-data` volume to snapshot
+because there is exactly one replica.)
 
 ## Scaling caveat
 
