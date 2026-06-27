@@ -8,6 +8,7 @@ auditable without logging prompts or responses.
 import hashlib
 import json
 import logging
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -112,69 +113,18 @@ def assist(
         }
     )
 
-    if settings.ai_backend == "openai-compatible":
-        return _openai_compatible(
-            task, payload, actor=actor, settings=settings, proxy_settings=proxy_settings
-        )
-    if settings.ai_backend == "claude":
-        return _claude(
-            task, payload, actor=actor, settings=settings, proxy_settings=proxy_settings
-        )
-    if settings.ai_backend == "bedrock":
-        return _bedrock(
-            task, payload, actor=actor, settings=settings, proxy_settings=proxy_settings
-        )
-    return disabled(task, f"Unknown AI backend: {settings.ai_backend}")
-
-
-def _openai_compatible(
-    task: str,
-    payload: dict,
-    *,
-    actor: User,
-    settings: Settings,
-    proxy_settings: ProxySettings | None = None,
-) -> AISuggestion:
-    if not settings.ai_base_url or not settings.ai_model:
-        return disabled(task, "AI backend is not configured")
-    headers = {"Content-Type": "application/json"}
-    if settings.ai_api_key:
-        headers["Authorization"] = f"Bearer {settings.ai_api_key}"
-    prompt = _advisory_prompt(task, payload)
-    base_url = f"{settings.ai_base_url.rstrip('/')}/chat/completions"
-    # Route through the global outbound proxy when one is configured (None →
-    # direct, the previous behaviour). See services/proxy.py.
-    proxy_kwargs = (
-        proxy_service.resolve(proxy_settings, base_url)
-        if proxy_settings is not None
-        else {}
+    backend = _BACKENDS.get(settings.ai_backend)
+    if backend is None:
+        return disabled(task, f"Unknown AI backend: {settings.ai_backend}")
+    return backend.run(
+        task, payload, actor=actor, settings=settings, proxy_settings=proxy_settings
     )
-    try:
-        resp = httpx.post(
-            base_url,
-            headers=headers,
-            json={
-                "model": settings.ai_model,
-                "messages": [{"role": "user", "content": json.dumps(prompt)}],
-                "temperature": 0.2,
-                "response_format": {"type": "json_object"},
-            },
-            timeout=settings.ai_timeout,
-            **proxy_kwargs,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        content = data["choices"][0]["message"]["content"]
-        suggestion = json.loads(content)
-        return AISuggestion(
-            task=task,
-            available=True,
-            suggestion=suggestion if isinstance(suggestion, dict) else {"value": suggestion},
-            provenance=_provenance(task, settings.ai_backend, actor),
-        )
-    except Exception:
-        logger.warning("AI assist failed for task %s", task, exc_info=True)
-        return disabled(task, "AI provider failed")
+
+
+def _resolve_proxy(proxy_settings: ProxySettings | None, url: str) -> dict:
+    """httpx kwargs for the global outbound proxy (``None`` → direct, the
+    previous behaviour). See services/proxy.py."""
+    return proxy_service.resolve(proxy_settings, url) if proxy_settings is not None else {}
 
 
 def _advisory_prompt(task: str, payload: dict) -> dict:
@@ -188,112 +138,6 @@ def _advisory_prompt(task: str, payload: dict) -> dict:
     }
 
 
-def _claude(
-    task: str,
-    payload: dict,
-    *,
-    actor: User,
-    settings: Settings,
-    proxy_settings: ProxySettings | None = None,
-) -> AISuggestion:
-    """Anthropic first-party Claude API backend (official ``anthropic`` SDK)."""
-    try:
-        import anthropic
-    except ImportError:
-        return disabled(task, "Anthropic SDK is not installed")
-    model = settings.ai_model or _DEFAULT_CLAUDE_MODEL
-    proxy_kwargs = (
-        proxy_service.resolve(proxy_settings, _ANTHROPIC_URL)
-        if proxy_settings is not None
-        else {}
-    )
-    try:
-        with httpx.Client(**proxy_kwargs) as http_client:
-            client = anthropic.Anthropic(api_key=settings.ai_api_key, http_client=http_client)
-            return _anthropic_assist(
-                task, payload, actor=actor, backend="claude", model=model, client=client
-            )
-    except Exception:
-        logger.warning("AI assist failed for task %s", task, exc_info=True)
-        return disabled(task, "AI provider failed")
-
-
-def _bedrock(
-    task: str,
-    payload: dict,
-    *,
-    actor: User,
-    settings: Settings,
-    proxy_settings: ProxySettings | None = None,
-) -> AISuggestion:
-    """Amazon Bedrock backend (the SDK's ``AnthropicBedrockMantle`` client).
-
-    Auth is the standard AWS credential chain — no API key. Bedrock model ids
-    carry the ``anthropic.`` prefix (an operator-supplied ``ai_model`` provides
-    the prefixed id)."""
-    try:
-        from anthropic import AnthropicBedrockMantle
-    except ImportError:
-        return disabled(task, "Anthropic Bedrock SDK is not installed")
-    model = settings.ai_model or _DEFAULT_BEDROCK_MODEL
-    # Bedrock resolves to per-region AWS endpoints; the proxy decision keys off
-    # the target host, which we don't know here — resolve against the API host as
-    # a representative target (the proxy/no-proxy lists are domain/CIDR matches).
-    proxy_kwargs = (
-        proxy_service.resolve(proxy_settings, _ANTHROPIC_URL)
-        if proxy_settings is not None
-        else {}
-    )
-    try:
-        with httpx.Client(**proxy_kwargs) as http_client:
-            client = AnthropicBedrockMantle(
-                aws_region=settings.ai_aws_region, http_client=http_client
-            )
-            return _anthropic_assist(
-                task, payload, actor=actor, backend="bedrock", model=model, client=client
-            )
-    except Exception:
-        logger.warning("AI assist failed for task %s", task, exc_info=True)
-        return disabled(task, "AI provider failed")
-
-
-def _anthropic_assist(
-    task: str,
-    payload: dict,
-    *,
-    actor: User,
-    backend: str,
-    model: str,
-    client,
-) -> AISuggestion:
-    """Shared Anthropic Messages-API call + JSON parse for the claude/bedrock
-    backends. ``temperature``/``thinking`` are deliberately omitted — Opus 4.x
-    rejects ``temperature`` (400), and these advisory tasks want a fast, direct
-    JSON answer."""
-    prompt = _advisory_prompt(task, payload)
-    try:
-        resp = client.messages.create(
-            model=model,
-            max_tokens=_CLAUDE_MAX_TOKENS,
-            messages=[{"role": "user", "content": json.dumps(prompt)}],
-        )
-        if getattr(resp, "stop_reason", None) == "refusal":
-            return disabled(task, "AI provider declined the request")
-        text = next(
-            (b.text for b in resp.content if getattr(b, "type", None) == "text"), ""
-        )
-        suggestion = json.loads(text)
-        return AISuggestion(
-            task=task,
-            available=True,
-            suggestion=suggestion if isinstance(suggestion, dict) else {"value": suggestion},
-            provenance=_provenance(task, backend, actor),
-        )
-    except Exception:
-        logger.warning("AI assist failed for task %s", task, exc_info=True)
-        return disabled(task, "AI provider failed")
-
-
 def _provenance(task: str, backend: str, actor: User) -> dict:
     return {
         "origin": "AI",
@@ -301,6 +145,165 @@ def _provenance(task: str, backend: str, actor: User) -> dict:
         "backend": backend,
         "actor_id": actor.id,
     }
+
+
+class BackendUnavailable(Exception):
+    """Raised by a backend to fail soft with a *specific* message (not configured,
+    SDK missing, provider declined). The template maps it to ``disabled``; any
+    other exception maps to the generic "AI provider failed"."""
+
+    def __init__(self, message: str):
+        self.message = message
+        super().__init__(message)
+
+
+class AIBackend(ABC):
+    """One provider adapter. The base owns the cross-cutting plumbing — fail-soft
+    wrapping, the ``BackendUnavailable`` → ``disabled`` mapping, and the
+    ``AISuggestion`` + provenance envelope — so a subclass implements only the
+    provider call + response→dict mapping in :meth:`_complete`. Governance (the
+    off/TLP/audit gates) stays in :func:`assist`, above the backend.
+
+    Proxy awareness is the subclass's responsibility (it knows its own target
+    host) via :func:`_resolve_proxy`; ``_complete`` must route every outbound
+    call through the resolved kwargs."""
+
+    name: str = ""
+
+    def run(
+        self,
+        task: str,
+        payload: dict,
+        *,
+        actor: User,
+        settings: Settings,
+        proxy_settings: ProxySettings | None = None,
+    ) -> AISuggestion:
+        try:
+            suggestion = self._complete(
+                _advisory_prompt(task, payload),
+                settings=settings,
+                proxy_settings=proxy_settings,
+            )
+        except BackendUnavailable as exc:
+            return disabled(task, exc.message)
+        except Exception:
+            logger.warning("AI assist failed for task %s", task, exc_info=True)
+            return disabled(task, "AI provider failed")
+        return AISuggestion(
+            task=task,
+            available=True,
+            suggestion=suggestion if isinstance(suggestion, dict) else {"value": suggestion},
+            provenance=_provenance(task, self.name, actor),
+        )
+
+    @abstractmethod
+    def _complete(
+        self, prompt: dict, *, settings: Settings, proxy_settings: ProxySettings | None
+    ) -> Any:
+        """Call the provider and return the parsed JSON suggestion. Raise
+        ``BackendUnavailable(msg)`` to fail soft with a specific message; any
+        other exception fails soft as "AI provider failed"."""
+
+
+class OpenAICompatibleBackend(AIBackend):
+    """A generic OpenAI-style ``/chat/completions`` endpoint."""
+
+    name = "openai-compatible"
+
+    def _complete(self, prompt, *, settings, proxy_settings):
+        if not settings.ai_base_url or not settings.ai_model:
+            raise BackendUnavailable("AI backend is not configured")
+        base_url = f"{settings.ai_base_url.rstrip('/')}/chat/completions"
+        headers = {"Content-Type": "application/json"}
+        if settings.ai_api_key:
+            headers["Authorization"] = f"Bearer {settings.ai_api_key}"
+        resp = httpx.post(
+            base_url,
+            headers=headers,
+            json={
+                "model": settings.ai_model,
+                "messages": [{"role": "user", "content": json.dumps(prompt)}],
+                "temperature": 0.2,
+                "response_format": {"type": "json_object"},
+            },
+            timeout=settings.ai_timeout,
+            **_resolve_proxy(proxy_settings, base_url),
+        )
+        resp.raise_for_status()
+        return json.loads(resp.json()["choices"][0]["message"]["content"])
+
+
+class _AnthropicBackend(AIBackend):
+    """Shared Anthropic Messages-API adapter for the first-party and Bedrock
+    clients — they differ only in client construction and default model.
+    ``temperature``/``thinking`` are deliberately omitted (Opus 4.x rejects
+    ``temperature`` with a 400; these advisory tasks want a fast direct answer)."""
+
+    default_model: str = ""
+
+    @abstractmethod
+    def _client(self, settings: Settings, http_client: httpx.Client):
+        """Construct the provider SDK client. Raise ``BackendUnavailable`` when
+        the optional SDK isn't installed."""
+
+    def _complete(self, prompt, *, settings, proxy_settings):
+        model = settings.ai_model or self.default_model
+        with httpx.Client(**_resolve_proxy(proxy_settings, _ANTHROPIC_URL)) as http_client:
+            client = self._client(settings, http_client)
+            resp = client.messages.create(
+                model=model,
+                max_tokens=_CLAUDE_MAX_TOKENS,
+                messages=[{"role": "user", "content": json.dumps(prompt)}],
+            )
+        if getattr(resp, "stop_reason", None) == "refusal":
+            raise BackendUnavailable("AI provider declined the request")
+        text = next(
+            (b.text for b in resp.content if getattr(b, "type", None) == "text"), ""
+        )
+        return json.loads(text)
+
+
+class ClaudeBackend(_AnthropicBackend):
+    """Anthropic first-party Claude API (official ``anthropic`` SDK)."""
+
+    name = "claude"
+    default_model = _DEFAULT_CLAUDE_MODEL
+
+    def _client(self, settings, http_client):
+        try:
+            import anthropic
+        except ImportError as exc:
+            raise BackendUnavailable("Anthropic SDK is not installed") from exc
+        return anthropic.Anthropic(api_key=settings.ai_api_key, http_client=http_client)
+
+
+class BedrockBackend(_AnthropicBackend):
+    """Amazon Bedrock (the SDK's ``AnthropicBedrockMantle`` client). Auth is the
+    standard AWS credential chain — no API key. Bedrock model ids carry the
+    ``anthropic.`` prefix (an operator-supplied ``ai_model`` provides it)."""
+
+    name = "bedrock"
+    default_model = _DEFAULT_BEDROCK_MODEL
+
+    def _client(self, settings, http_client):
+        try:
+            from anthropic import AnthropicBedrockMantle
+        except ImportError as exc:
+            raise BackendUnavailable("Anthropic Bedrock SDK is not installed") from exc
+        return AnthropicBedrockMantle(
+            aws_region=settings.ai_aws_region, http_client=http_client
+        )
+
+
+# Backend registry — the single source of dispatchable backends. `none` is not
+# registered (it's gated in `assist`). Adding a provider = a class + one entry
+# here (keep config._AI_BACKENDS in sync — config can't import this without a
+# layering cycle).
+_BACKENDS: dict[str, AIBackend] = {
+    b.name: b
+    for b in (OpenAICompatibleBackend(), ClaudeBackend(), BedrockBackend())
+}
 
 
 def local_embedding(text: str, dimensions: int = 32) -> list[float]:
