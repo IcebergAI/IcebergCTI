@@ -101,7 +101,7 @@ This roadmap **prioritises two themes** — *Analytic Tradecraft (ICD 203)* and 
 **Done:** ~~A (Navigator export)~~, ~~Priority 1 (1a/1b/1c incl. ACH + hedging lint)~~, ~~Priority 2 (2a/2b; 2c retired)~~, ~~G (requirement kinds)~~, ~~D (feedback loop)~~, ~~H (maturity dashboard)~~, plus foundations for ~~B~~, ~~C~~, ~~F~~ and ~~I~~ — all ✅ at the service/API layer noted above.
 
 **What's next, in recommended order:**
-1. **AI review workflow.** Audience groups, ingestion and tag subscriptions now have first-class portal workflows; the remaining workflow UX gap is governed AI suggestion review/acceptance in the editor.
+1. **AI review workflow.** Audience groups, ingestion and tag subscriptions now have first-class portal workflows. The **first governed AI review UI has shipped** — AI-assisted IOC extraction (#95): the notebook Indicators section suggests candidate indicators from a source (refanged + `IOCType`-constrained), which the analyst accepts/edits/discards before promotion. The remaining UX gap is the same review/acceptance pattern for the report-editor suggestions (judgements, tags, challenge notes) and the feed-reader IOC surface.
 2. **Richer STIX + inbound interop.** TAXII serving is useful now; validation tooling, richer external references, optional relationship/SRO enrichment, TAXII/MISP pull, and full ATT&CK import are the interop follow-ups.
 3. **PAP marking ([#32](../../issues/32))** and handling-policy automation are still small, useful governance additions.
 

@@ -98,8 +98,9 @@ trigger an on-demand fetch.*
 
 ### Light-touch IOCs → MISP push
 *Iceberg is **not** an IOC store — the authoritative store stays external (**MISP**). An analyst
-stages **indicators of compromise** as notebook entities (manual entry; AI auto-extraction is a
-deferred phase), cites a subset into a report's **Indicators appendix** (web view + PDF), and a
+stages **indicators of compromise** as notebook entities (manual entry, or **AI-suggested** from a
+source's text when the governed AI backend is enabled — see *Governed AI assist*), cites a subset
+into a report's **Indicators appendix** (web view + PDF), and a
 writer **pushes the cited indicators to MISP as one event** from the report. The push is idempotent
 (re-push updates the same event), failure-isolated, proxy-aware, and authenticated with an
 **env-only** API key (`ICEBERG_MISP_API_KEY`). Admins configure the connection at `/admin/misp`.*
@@ -254,7 +255,10 @@ reads, or dissemination. Unscoped published reports remain visible to authentica
 ### Governed AI assist
 AI assist is off by default (`ICEBERG_AI_BACKEND=none`). When configured for an
 OpenAI-compatible chat endpoint, writer-only API endpoints can draft judgement text, source
-summaries, tag suggestions, Diamond/ACH starts, and analytic challenge notes. Suggestions are
+summaries, tag suggestions, Diamond/ACH starts, analytic challenge notes, and **candidate
+indicators extracted from a source** (the notebook Indicators section shows a "Suggest indicators"
+review list — candidates are refanged and constrained to the MISP-pushable `IOCType` set, and the
+analyst accepts, edits, or discards each before it becomes a real IOC). Suggestions are
 advisory only; Iceberg records an audit event with metadata, never prompt/response bodies, and
 report content is blocked when its TLP exceeds `ICEBERG_AI_MAX_TLP`.
 

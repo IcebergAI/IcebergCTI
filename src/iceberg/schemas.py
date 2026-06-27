@@ -327,6 +327,10 @@ class AISourceSummaryRequest(BaseModel):
     source_id: int
 
 
+class AIIOCExtractRequest(BaseModel):
+    source_id: int
+
+
 class AIJudgementsRequest(BaseModel):
     report_id: int
 

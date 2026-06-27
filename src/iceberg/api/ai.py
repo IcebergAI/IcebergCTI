@@ -16,6 +16,7 @@ from ..models import (
     AuditAction,
     AuditCategory,
     AuditOutcome,
+    IOCType,
     Report,
     Role,
     Source,
@@ -27,6 +28,7 @@ from ..schemas import (
     AIAcceptProvenance,
     AIChallengeRequest,
     AIDiamondSuggestRequest,
+    AIIOCExtractRequest,
     AIJudgementsRequest,
     AISourceSummaryRequest,
     AISuggestionResponse,
@@ -34,6 +36,7 @@ from ..schemas import (
 )
 from ..services import ai as ai_service
 from ..services import audit
+from ..services import iocs as ioc_service
 from ..services import proxy_settings as proxy_settings_service
 
 router = APIRouter(prefix="/ai", tags=["ai"])
@@ -159,6 +162,43 @@ def summarise_source(
         actor=user,
         proxy_settings=proxy_settings_service.get(session),
     )
+    _record_ai(session, background_tasks, request, user, result, resource_type="source", resource_id=source.id)
+    return AISuggestionResponse(**result.as_dict())
+
+
+@router.post("/extract-iocs", response_model=AISuggestionResponse)
+def extract_iocs(
+    body: AIIOCExtractRequest,
+    session: SessionDep,
+    user: CurrentUser,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    _w: Writer,
+) -> AISuggestionResponse:
+    """Suggest indicators from a source's text (advisory; the analyst promotes a
+    subset into IOC rows). Source-scoped like summarise-source — a Source carries
+    no TLP, so there is no report egress ceiling to apply here."""
+    source = _source_or_404(session, body.source_id)
+    payload = {
+        "title": source.title,
+        "reference": source.reference,
+        "summary": source.summary,
+        "content_md": source.content_md,
+        "allowed_types": [t.value for t in IOCType],
+        "output_shape": {
+            "candidates": [{"ioc_type": "<allowed_types>", "value": "", "description": ""}]
+        },
+    }
+    result = ai_service.assist(
+        "ioc_extract",
+        payload,
+        actor=user,
+        proxy_settings=proxy_settings_service.get(session),
+    )
+    if result.available:
+        candidates = ioc_service.normalise_candidates(result.suggestion.get("candidates", []))
+        result.suggestion["candidates"] = candidates
+        result.suggestion["source_id"] = source.id
     _record_ai(session, background_tasks, request, user, result, resource_type="source", resource_id=source.id)
     return AISuggestionResponse(**result.as_dict())
 

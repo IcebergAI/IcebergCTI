@@ -120,6 +120,51 @@ document.addEventListener('alpine:init', () => {
     },
   }));
 
+  /* ---- AI IOC suggestion review (notebook_detail.html) ------------------- */
+  // Advisory, human-in-the-loop: scan a source for candidate indicators, then
+  // accept (promote to a real IOC via the existing create endpoint), edit or
+  // discard each. Nothing is created until the analyst accepts a row.
+  Alpine.data('iocReview', (dataId) => ({
+    ...readJSON(dataId),  // notebookId, iocTypes
+    sourceId: '', loading: false, message: '', candidates: [],
+    async suggest() {
+      if (!this.sourceId || this.loading) return;
+      this.loading = true; this.message = ''; this.candidates = [];
+      try {
+        const res = await fetch('/api/ai/extract-iocs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'fetch' },
+          body: JSON.stringify({ source_id: Number(this.sourceId) }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.available) {
+          this.message = data.message || 'AI assist is unavailable.';
+        } else {
+          this.candidates = (data.suggestion.candidates || []).map(c => ({ ...c }));
+          this.message = this.candidates.length ? '' : 'No indicators suggested from this source.';
+        }
+      } catch { this.message = 'AI request failed.'; }
+      this.loading = false;
+    },
+    async accept(idx) {
+      const c = this.candidates[idx];
+      if (!c?.value) return;
+      try {
+        const res = await fetch(`/api/notebooks/${this.notebookId}/iocs`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'fetch' },
+          body: JSON.stringify({
+            ioc_type: c.ioc_type, value: c.value,
+            description: c.description || '', source_id: Number(this.sourceId),
+          }),
+        });
+        if (res.ok) { this.candidates.splice(idx, 1); }
+        else { this.message = 'Could not add that indicator.'; }
+      } catch { this.message = 'Request failed.'; }
+    },
+    discard(idx) { this.candidates.splice(idx, 1); },
+  }));
+
   /* ---- Reports library filter (reports_list.html) ------------------------ */
   // ok($el) reads the row's data-* attributes (avoids passing titles — which may
   // contain < > & ' — through the CSP expression parser).

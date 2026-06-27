@@ -15,6 +15,7 @@ from fastapi import (
 from fastapi.responses import FileResponse
 
 from ..auth.dependencies import CurrentUser
+from ..config import get_settings
 from ..models import (
     Attachment,
     DiamondConfidence,
@@ -29,6 +30,7 @@ from ..models import (
     Role,
     SourceCredibility,
     SourceReliability,
+    ioc_type_label,
     utcnow,
 )
 from ..services import (
@@ -194,6 +196,10 @@ def notebook_detail(
             "figures": list(nb.figures),
             "iocs": ioc_service.list_for_notebook(session, nb.id),
             "ioc_types": list(IOCType),
+            "ai_enabled": get_settings().ai_backend != "none",
+            "ai_ioc_type_choices": [
+                {"value": t.value, "label": ioc_type_label(t)} for t in IOCType
+            ],
             "reports": list(nb.reports),
             "diamonds": diamonds,
             "diamond_svgs": {d.id: diamond_service.render_diamond_svg(d) for d in diamonds},
