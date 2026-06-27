@@ -350,6 +350,53 @@
   {% else %}
     <p class="empty">No indicators yet. Add IPs, domains, hashes or URLs observed in your sources.</p>
   {% endif %}
+  {% if ai_enabled and can_write and sources %}
+    <div class="mt-2 pt-5 border-t border-line" x-data="iocReview('ioc-review-data')">
+      <script type="application/json" id="ioc-review-data">
+        {{ {'notebookId': notebook.id, 'iocTypes': ai_ioc_type_choices} | tojson }}
+      </script>
+      <div class="head-row mb-2">
+        <h3 class="text-sm" style="font-weight:600;">Suggest indicators with AI</h3>
+        <span class="eyebrow">advisory</span>
+      </div>
+      <p class="text-xs mb-2" style="color:var(--muted);">Reads a source already in this collection and proposes candidate indicators — review, edit and accept them; nothing is created automatically.</p>
+      <div class="flex gap-2 flex-wrap items-center">
+        <select class="field" style="max-width:280px;" x-model="sourceId">
+          <option value="">— Choose a source to scan…</option>
+          {% for s in sources %}
+            <option value="{{ s.id }}">{{ s.title }}</option>
+          {% endfor %}
+        </select>
+        <button type="button" class="btn btn--ghost btn--sm" @click="suggest()" x-bind:disabled="!sourceId || loading">
+          <span x-show="!loading">Suggest indicators</span>
+          <span x-show="loading">Scanning…</span>
+        </button>
+      </div>
+      <p class="text-xs mt-2" x-show="message" x-text="message" style="color:var(--muted);"></p>
+      <table class="ioc-table text-sm mt-3" x-show="candidates.length">
+        <thead><tr><th>Type</th><th>Indicator</th><th>Context</th><th></th></tr></thead>
+        <tbody>
+          <template x-for="(c, idx) in candidates" :key="idx">
+            <tr>
+              <td>
+                <select class="field" style="max-width:170px;" x-model="c.ioc_type">
+                  <template x-for="t in iocTypes" :key="t.value">
+                    <option :value="t.value" x-text="t.label"></option>
+                  </template>
+                </select>
+              </td>
+              <td><input class="field mono" style="min-width:200px;" x-model="c.value"></td>
+              <td><input class="field" x-model="c.description" placeholder="Context (optional)"></td>
+              <td class="whitespace-nowrap">
+                <button type="button" class="btn btn--ghost btn--sm" @click="accept(idx)" x-bind:disabled="!c.value">Accept</button>
+                <button type="button" class="link-danger" style="background:none;border:0;cursor:pointer;" @click="discard(idx)">Discard</button>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
   {% if can_write %}
     <form method="post" action="/notebooks/{{ notebook.id }}/iocs"
           class="space-y-2.5 mt-2 pt-5 border-t border-line">

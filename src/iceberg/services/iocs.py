@@ -10,11 +10,15 @@ Single source of truth shared by the JSON API and the portal (like
 ``fastapi.HTTPException`` directly so the rules can't drift between the two
 presentation layers).
 
-The ``extract`` function is the **seam for a future LLM/AI phase** that will
-auto-suggest indicators from a source's text — it is deliberately unimplemented
-here (manual entry only in this FR), mirroring ``FeedItem.content`` as the
-"future IOC extraction" seam.
+``normalise_candidates`` is the IOC half of the **AI extraction** path (FR #95):
+the governed ``ioc_extract`` task (``services/ai.py`` + ``api/ai.py``) turns a
+source's text into candidate rows, and this module refangs + constrains them to
+the curated :class:`IOCType` set before the analyst promotes a subset via
+``create_ioc``. The extraction itself reads content already in the notebook —
+there is no server-side fetcher.
 """
+
+import re
 
 from fastapi import HTTPException, status
 from sqlmodel import Session, col, select
@@ -106,11 +110,59 @@ def _scoped_source_id(
 
 
 # --------------------------------------------------------------------------- #
-# Future LLM/AI phase seam — auto-extraction of indicators from source text.
-# Deliberately unimplemented in this FR (manual entry only).
+# AI extraction (FR #95) — normalise candidate indicators suggested by the
+# governed ``ioc_extract`` task into clean, MISP-pushable rows. The text->candidate
+# step happens in the AI backend (services/ai.py); this is the IOC-domain half.
 # --------------------------------------------------------------------------- #
-def extract(text: str) -> list[dict]:  # pragma: no cover - seam, not yet wired
-    """Suggest indicators from free text — the future LLM/AI extraction entry
-    point. Returns ``[{"ioc_type": IOCType, "value": str}, ...]``. Not wired in
-    this FR; indicators are entered manually."""
-    raise NotImplementedError("IOC auto-extraction lands in the LLM/AI phase")
+_DEFANG_SUBS = (
+    (re.compile(r"^h(?:xx|XX)p", re.IGNORECASE), "http"),  # hxxp[s] -> http[s]
+    (re.compile(r"[\[(){}]\s*\.\s*[\])}]"), "."),  # [.] (.) {.} -> .
+    (re.compile(r"[\[(){}]\s*:\s*[\])}]"), ":"),  # [:] -> :
+    (re.compile(r"[\[(){}]\s*(?:@|at)\s*[\])}]", re.IGNORECASE), "@"),  # [at] [@] -> @
+    (re.compile(r"[\[(){}]\s*dot\s*[\])}]", re.IGNORECASE), "."),  # [dot] -> .
+)
+
+
+def refang(value: str) -> str:
+    """Normalise common defanged indicator forms (``hxxp://1[.]2[.]3[.]4`` →
+    ``http://1.2.3.4``). Pure string work — no network, no parsing of arbitrary
+    text. Unknown input is returned stripped but otherwise untouched."""
+    value = (value or "").strip()
+    for pattern, repl in _DEFANG_SUBS:
+        value = pattern.sub(repl, value)
+    return value
+
+
+def normalise_candidates(raw: list[dict]) -> list[dict]:
+    """Clean AI-suggested indicator candidates into promotable rows.
+
+    For each ``{"ioc_type", "value", "description"}`` row: coerce ``ioc_type`` to
+    a valid :class:`IOCType` (dropping non-conforming types so the result stays
+    MISP-pushable), :func:`refang` + strip the value (dropping blanks), keep an
+    optional string ``description``, and dedupe on ``(ioc_type, value)``. Order
+    is preserved (first occurrence wins)."""
+    seen: set[tuple[str, str]] = set()
+    out: list[dict] = []
+    for row in raw if isinstance(raw, list) else []:
+        if not isinstance(row, dict):
+            continue
+        try:
+            ioc_type = IOCType(row.get("ioc_type"))
+        except ValueError:
+            continue
+        value = refang(str(row.get("value") or ""))
+        if not value:
+            continue
+        key = (ioc_type.value, value)
+        if key in seen:
+            continue
+        seen.add(key)
+        description = row.get("description") or ""
+        out.append(
+            {
+                "ioc_type": ioc_type.value,
+                "value": value,
+                "description": str(description).strip(),
+            }
+        )
+    return out
