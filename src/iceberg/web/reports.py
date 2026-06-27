@@ -125,6 +125,11 @@ def report_view(
     is_writer = user.role in (Role.ANALYST, Role.REVIEWER, Role.ADMIN)
     misp_enabled = misp_settings_service.get(session).enabled if is_writer else False
     misp_event = misp_service.get_record(session, report.id) if is_writer else None
+    # Cited indicators above the MISP egress ceiling — the push card prompts the
+    # writer to confirm before they leave the org.
+    misp_over_ceiling = (
+        misp_service.over_ceiling_iocs(list(report.cited_iocs)) if is_writer else []
+    )
 
     return templates.TemplateResponse(
         request,
@@ -139,6 +144,7 @@ def report_view(
             "cited_iocs": list(report.cited_iocs),
             "misp_enabled": misp_enabled,
             "misp_event": misp_event,
+            "misp_over_ceiling": misp_over_ceiling,
             "cited_attachments": list(report.cited_attachments),
             "products": list(report.rendered_products),
             "requirements": list(report.requirements),
@@ -312,11 +318,15 @@ def report_misp_push(
     session: SessionDep,
     user: CurrentUser,
     background_tasks: BackgroundTasks,
+    acknowledge_tlp: Annotated[bool, Form()] = False,
 ):
     _require_writer(user)
     report = ensure_author(_get_report(session, report_id), user)
     record = misp_service.push_report(
-        session, report, proxy_settings=proxy_settings_service.get(session)
+        session,
+        report,
+        proxy_settings=proxy_settings_service.get(session),
+        acknowledge_tlp=acknowledge_tlp,
     )
     audit.record_and_emit(
         session,

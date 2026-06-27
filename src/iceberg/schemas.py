@@ -39,6 +39,7 @@ class SourceCreate(BaseModel):
     reference: str = ""
     summary: str = ""
     content_md: str = ""
+    tlp: TLP = TLP.AMBER
     reliability: SourceReliability | None = None
     credibility: SourceCredibility | None = None
     grading_rationale: str = ""
@@ -55,6 +56,7 @@ class SourceUpdate(BaseModel):
     reference: str | None = None
     summary: str | None = None
     content_md: str | None = None
+    tlp: TLP | None = None
 
 
 class SourceGradeUpdate(BaseModel):
@@ -101,6 +103,7 @@ class IOCCreate(BaseModel):
     value: str
     description: str = ""
     source_id: int | None = None
+    tlp: TLP | None = None  # None = inherit the provenance source's TLP (else AMBER)
 
 
 class IOCUpdate(BaseModel):
@@ -108,6 +111,7 @@ class IOCUpdate(BaseModel):
     value: str | None = None
     description: str | None = None
     source_id: int | None = None
+    tlp: TLP | None = None
 
 
 class IOCCitationsUpdate(BaseModel):

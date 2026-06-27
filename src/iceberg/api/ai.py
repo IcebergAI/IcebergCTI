@@ -150,6 +150,12 @@ def summarise_source(
     _w: Writer,
 ) -> AISuggestionResponse:
     source = _source_or_404(session, body.source_id)
+    if not ai_service.should_send_source(source):
+        result = ai_service.disabled(
+            "summarise_source", "Source TLP exceeds the configured AI egress ceiling"
+        )
+        _record_ai(session, background_tasks, request, user, result, resource_type="source", resource_id=source.id)
+        return AISuggestionResponse(**result.as_dict())
     payload = {
         "title": source.title,
         "reference": source.reference,
@@ -176,9 +182,15 @@ def extract_iocs(
     _w: Writer,
 ) -> AISuggestionResponse:
     """Suggest indicators from a source's text (advisory; the analyst promotes a
-    subset into IOC rows). Source-scoped like summarise-source — a Source carries
-    no TLP, so there is no report egress ceiling to apply here."""
+    subset into IOC rows). Source content egress is gated by the source's own TLP
+    against the configured AI egress ceiling."""
     source = _source_or_404(session, body.source_id)
+    if not ai_service.should_send_source(source):
+        result = ai_service.disabled(
+            "ioc_extract", "Source TLP exceeds the configured AI egress ceiling"
+        )
+        _record_ai(session, background_tasks, request, user, result, resource_type="source", resource_id=source.id)
+        return AISuggestionResponse(**result.as_dict())
     payload = {
         "title": source.title,
         "reference": source.reference,

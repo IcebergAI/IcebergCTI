@@ -23,7 +23,7 @@ import re
 from fastapi import HTTPException, status
 from sqlmodel import Session, col, select
 
-from ..models import IOC, IOCType, Notebook, utcnow
+from ..models import IOC, TLP, IOCType, Notebook, Source, utcnow
 
 
 def get_scoped(session: Session, notebook_id: int, ioc_id: int) -> IOC:
@@ -52,21 +52,26 @@ def create_ioc(
     value: str,
     description: str = "",
     source_id: int | None = None,
+    tlp: TLP | None = None,
 ) -> IOC:
     """Create an indicator under a notebook.
 
     A ``source_id`` is accepted only when it names a source in the *same*
     notebook (provenance can't cross a notebook boundary); anything else is
-    dropped to ``None``."""
+    dropped to ``None``. The ``tlp`` marking defaults to inheriting the
+    provenance source's TLP (an explicit ``tlp`` wins; falls back to AMBER when
+    there is no source)."""
     value = (value or "").strip()
     if not value:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Indicator value is required")
+    scoped_source_id = _scoped_source_id(session, notebook.id, source_id)
     ioc = IOC(
         notebook_id=notebook.id,
         ioc_type=ioc_type,
         value=value,
         description=description,
-        source_id=_scoped_source_id(session, notebook.id, source_id),
+        source_id=scoped_source_id,
+        tlp=_resolve_tlp(session, scoped_source_id, tlp),
     )
     session.add(ioc)
     session.commit()
@@ -84,7 +89,8 @@ def update_ioc(session: Session, ioc: IOC, **fields) -> IOC:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Indicator value is required")
     for key, value in fields.items():
         if value is not None and hasattr(ioc, key):
-            setattr(ioc, key, value.strip() if isinstance(value, str) else value)
+            # `type(value) is str` so StrEnum fields (ioc_type/tlp) keep their type.
+            setattr(ioc, key, value.strip() if type(value) is str else value)
     ioc.updated_at = utcnow()
     session.add(ioc)
     session.commit()
@@ -103,10 +109,22 @@ def _scoped_source_id(
     """Return ``source_id`` only if it names a source in this notebook, else None."""
     if not source_id:
         return None
-    from ..models import Source
-
     src = session.get(Source, source_id)
     return source_id if src and src.notebook_id == notebook_id else None
+
+
+def _resolve_tlp(
+    session: Session, scoped_source_id: int | None, tlp: TLP | None
+) -> TLP:
+    """An explicit ``tlp`` wins; otherwise inherit the (already notebook-scoped)
+    provenance source's TLP; otherwise default to AMBER."""
+    if tlp is not None:
+        return tlp
+    if scoped_source_id is not None:
+        src = session.get(Source, scoped_source_id)
+        if src is not None:
+            return src.tlp
+    return TLP.AMBER
 
 
 # --------------------------------------------------------------------------- #

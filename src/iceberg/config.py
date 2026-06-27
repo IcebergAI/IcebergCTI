@@ -147,6 +147,9 @@ class Settings(BaseSettings):
     misp_api_key: str = ""
     misp_verify_tls: bool = True
     misp_timeout: float = 15.0
+    # Cited IOCs above this TLP prompt the writer to confirm before the push
+    # (MISP still receives them and honours the per-attribute TLP tag).
+    misp_max_tlp: str = "AMBER"
 
     # Security audit logging → SIEM. Runtime routing config lives in the DB
     # (AuditSettings, admin-editable at /admin/audit); these env values are the

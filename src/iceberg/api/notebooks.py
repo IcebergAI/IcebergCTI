@@ -148,6 +148,7 @@ def add_source(
         reference=body.reference,
         summary=body.summary,
         content_md=body.content_md,
+        tlp=body.tlp,
         reliability=body.reliability,
         credibility=body.credibility,
         grading_rationale=body.grading_rationale,
@@ -170,6 +171,7 @@ def update_source(
         reference=body.reference,
         summary=body.summary,
         content_md=body.content_md,
+        tlp=body.tlp,
     )
 
 
@@ -566,6 +568,7 @@ def add_ioc(
         value=body.value,
         description=body.description,
         source_id=body.source_id,
+        tlp=body.tlp,
     )
     _audit_ioc(
         session, background_tasks, request, user, AuditAction.IOC_CREATED, ioc=ioc

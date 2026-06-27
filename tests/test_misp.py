@@ -48,7 +48,7 @@ def test_attribute_type_is_misp_type():
 def test_build_event_payload_maps_attributes():
     report = Report(id=1, notebook_id=1, title="Threat X", tlp=TLP.AMBER, author_id=1)
     iocs = [
-        IOC(notebook_id=1, ioc_type=IOCType.IP_SRC, value="198.51.100.4", description="C2"),
+        IOC(notebook_id=1, ioc_type=IOCType.IP_SRC, value="198.51.100.4", description="C2", tlp=TLP.GREEN),
         IOC(notebook_id=1, ioc_type=IOCType.SHA256, value="abc", description=""),
     ]
     settings = MISPSettings(default_distribution=0, default_threat_level=4)
@@ -61,8 +61,11 @@ def test_build_event_payload_maps_attributes():
     assert attrs[0]["value"] == "198.51.100.4"
     assert attrs[1]["type"] == "sha256"
     assert attrs[1]["category"] == "Payload delivery"
-    # TLP marking is carried as a MISP tag.
+    # The report TLP marking is carried as an event tag.
     assert {"name": "tlp:amber"} in event["Tag"]
+    # Each indicator carries its own TLP marking as a per-attribute tag.
+    assert {"name": "tlp:green"} in attrs[0]["Tag"]
+    assert {"name": "tlp:amber"} in attrs[1]["Tag"]
 
 
 # --------------------------------------------------------------------------- #
