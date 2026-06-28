@@ -436,8 +436,12 @@ needs shared storage (RWX volume or object store) — a follow-on to the datasto
 service, so nothing clashes on host port 8000):
 
 ```bash
-docker compose up                       # app on :8000 + its PostgreSQL database
+docker compose up                       # app on :8000 + its PostgreSQL database (no .env needed)
+cp .env.example .env                     # optional: customise settings, then re-run
 ```
+
+A fresh clone needs no pre-step — `.env` is optional (`env_file` is `required: false`) and is
+merged in automatically when present.
 
 ### TLS / running behind a proxy
 Iceberg always runs behind a **TLS-terminating reverse proxy** — a Kubernetes ingress, a cloud
