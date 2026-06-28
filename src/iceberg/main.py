@@ -27,6 +27,22 @@ from .health import router as health_router
 from .web import web_router
 
 logger = logging.getLogger("iceberg.feeds")
+auth_logger = logging.getLogger("iceberg.auth")
+
+
+def _warn_if_no_login_path(settings) -> None:
+    """Warn (don't crash) when a prod instance has no usable login path — dev
+    auth is hard-disabled in prod and OIDC is unset, so /auth/login is a dead
+    end. Surfacing it in pod logs makes the lockout obvious instead of silent.
+    A safe-but-incomplete state isn't a boot-fail (cf. config._guard_production,
+    which only rejects genuinely-unsafe forgeable-key / SQLite states)."""
+    if settings.is_prod and not settings.dev_login_enabled and not settings.oidc_enabled:
+        auth_logger.warning(
+            "No usable login path: ICEBERG_ENVIRONMENT=prod disables the dev-login "
+            "bypass and OIDC is not enabled (ICEBERG_OIDC_ENABLED). Configure Entra "
+            "OIDC, or apply the evaluation overlay (deploy/k8s/configmap.beta.yaml). "
+            "See deploy/k8s/README.md > Authentication / Login."
+        )
 
 
 async def _rss_poll_loop(interval_seconds: float) -> None:
@@ -53,6 +69,7 @@ async def _rss_poll_loop(interval_seconds: float) -> None:
 async def lifespan(_app: FastAPI):
     init_db()
     settings = get_settings()
+    _warn_if_no_login_path(settings)
     poller: asyncio.Task | None = None
     if settings.rss_poll_enabled and settings.rss_poll_interval_minutes > 0:
         poller = asyncio.create_task(

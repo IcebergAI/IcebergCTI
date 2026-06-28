@@ -26,6 +26,50 @@ kubectl create secret generic iceberg-secrets \
   # ICEBERG_SMTP_PASSWORD, ICEBERG_PROXY_USERNAME/PASSWORD
 ```
 
+## Authentication / Login
+
+A freshly-applied **prod** deployment ([configmap.yaml](configmap.yaml)) ships
+`ICEBERG_ENVIRONMENT=prod` + `ICEBERG_DEV_AUTH=false` and **no OIDC** — which means
+*no usable login path* until you configure Entra (the dev-login bypass is hard-disabled
+in prod). Pick one of the two paths below. (The app also logs a warning on boot when it
+detects this locked-out state.)
+
+### Beta / evaluation login (no OIDC)
+
+For a quick evaluation with **no Entra setup**, apply the eval overlay
+[configmap.beta.yaml](configmap.beta.yaml) *instead of* `configmap.yaml`:
+
+```bash
+kubectl apply -f configmap.beta.yaml   # NOT configmap.yaml
+```
+
+Then browse to `/auth/login`, pick a role (ADMIN/ANALYST/REVIEWER/STAKEHOLDER) and enter —
+no credentials required.
+
+> ⚠️ **Evaluation only.** The overlay runs the non-prod environment to permit the
+> dev-login bypass, which means **anyone reaching the portal can self-select any role
+> (including ADMIN)**, session cookies are no longer `Secure`, HSTS is not sent, and the
+> prod boot-guards (SQLite/weak-key rejection) are off. Use it only behind access
+> controls you trust, never for real data or public exposure.
+
+### Production login — Microsoft Entra OIDC
+
+1. **Register an app** in *Entra ID → App registrations → New registration*.
+2. **Redirect URI** (Web platform): `https://<your-host>/auth/callback`. This must equal
+   `ICEBERG_OIDC_REDIRECT_URI`, which is `ICEBERG_PORTAL_BASE_URL` + `/auth/callback`.
+3. **App roles.** Define app roles whose values are `ADMIN`, `ANALYST`, `REVIEWER`,
+   `STAKEHOLDER` and assign users (Entra → *App roles* + *Enterprise application →
+   Users and groups*). Iceberg reads the `roles` claim by default
+   (`ICEBERG_OIDC_ROLE_CLAIM`); a missing/unrecognised role maps to read-only
+   `STAKEHOLDER`, and a missing `email` claim is rejected.
+4. **Wire the config.** In [configmap.yaml](configmap.yaml) set (uncomment) the OIDC
+   block — `ICEBERG_OIDC_ENABLED=true`, `ICEBERG_OIDC_TENANT_ID`, `ICEBERG_OIDC_CLIENT_ID`,
+   `ICEBERG_OIDC_REDIRECT_URI`. Put the **client secret** in the `iceberg-secrets` Secret
+   as `ICEBERG_OIDC_CLIENT_SECRET` (see [secret.example.yaml](secret.example.yaml)) — it
+   is never in the ConfigMap.
+
+The login page then shows "Continue with Microsoft Entra ID" and the dev bypass stays off.
+
 ## PostgreSQL (recommended for production)
 
 1. **Provision Postgres.** Prefer a **managed** instance. For demo/self-hosted,
@@ -47,6 +91,8 @@ kubectl create secret generic iceberg-secrets \
 ## Apply order
 
 ```bash
+# Apply EITHER configmap.yaml (prod + Entra OIDC) OR configmap.beta.yaml (OIDC-free
+# evaluation) — see "Authentication / Login". They share the ConfigMap name.
 kubectl apply -f configmap.yaml -f service.yaml -f pvc.yaml
 kubectl apply -f secret.yaml          # from secret.example.yaml (sets ICEBERG_DATABASE_URL)
 kubectl apply -f migrate-job.yaml     # alembic upgrade head

@@ -53,3 +53,46 @@ def test_dev_tolerates_default_secret_and_sqlite():
     settings = Settings(environment="dev", secret_key=_INSECURE_DEFAULT_SECRET)
     assert not settings.is_prod
     assert settings.is_sqlite
+
+
+def test_warns_when_prod_has_no_login_path(caplog):
+    # prod disables the dev bypass and OIDC is unset -> /auth/login is a dead end;
+    # the lockout must surface in the logs (issue #103) rather than fail silently.
+    from iceberg.main import _warn_if_no_login_path
+
+    settings = Settings(
+        environment="prod",
+        secret_key=_STRONG_SECRET,
+        database_url=_PG_URL,
+        dev_auth=False,
+        oidc_enabled=False,
+    )
+    with caplog.at_level("WARNING", logger="iceberg.auth"):
+        _warn_if_no_login_path(settings)
+    assert any("No usable login path" in r.message for r in caplog.records)
+
+
+def test_no_login_warning_when_oidc_enabled(caplog):
+    from iceberg.main import _warn_if_no_login_path
+
+    settings = Settings(
+        environment="prod",
+        secret_key=_STRONG_SECRET,
+        database_url=_PG_URL,
+        dev_auth=False,
+        oidc_enabled=True,
+    )
+    with caplog.at_level("WARNING", logger="iceberg.auth"):
+        _warn_if_no_login_path(settings)
+    assert not caplog.records
+
+
+def test_no_login_warning_for_eval_overlay(caplog):
+    # The beta overlay (non-prod + dev_auth) has a working dev-login path.
+    from iceberg.main import _warn_if_no_login_path
+
+    settings = Settings(environment="dev", dev_auth=True)
+    assert settings.dev_login_enabled
+    with caplog.at_level("WARNING", logger="iceberg.auth"):
+        _warn_if_no_login_path(settings)
+    assert not caplog.records

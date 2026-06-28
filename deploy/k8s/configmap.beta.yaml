@@ -1,0 +1,35 @@
+# ⚠️  BETA / EVALUATION ONLY — do NOT use for real data or public exposure.
+#
+# This ConfigMap is a drop-in replacement for configmap.yaml that enables the
+# built-in dev-login bypass so a tester can self-select a role at /auth/login
+# WITHOUT first standing up Microsoft Entra OIDC. To get there it runs the
+# NON-prod environment, which deliberately relaxes the production posture:
+#   * the dev-login bypass is ON (anyone reaching /auth/login picks any role,
+#     including ADMIN — there is no real authentication);
+#   * session cookies are no longer `Secure` and HSTS is not sent;
+#   * the prod boot-guards are off (SQLite URLs and a weak/short secret key are
+#     no longer rejected).
+#
+# Use it only for a closed evaluation behind access controls you trust. For any
+# real deployment apply configmap.yaml (prod) and configure Entra OIDC instead —
+# see "Authentication / Login" in deploy/k8s/README.md.
+#
+# Apply this INSTEAD of configmap.yaml (same ConfigMap name, so it overrides):
+#   kubectl apply -f configmap.beta.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: iceberg-config
+data:
+  # Non-prod so the dev-login bypass is permitted (it is hard-disabled in prod).
+  ICEBERG_ENVIRONMENT: "dev"
+  ICEBERG_DEV_AUTH: "true"
+  ICEBERG_AUTO_MIGRATE: "false"
+  # Datastore: PostgreSQL (ICEBERG_DATABASE_URL carries credentials, so it lives
+  # in the iceberg-secrets Secret). Run the migrate Job before/at rollout. SQLite
+  # would now be accepted (prod guard off) but the image ships no SQLite fallback,
+  # so keep pointing at Postgres. See deploy/k8s/README.md and postgres.yaml.
+  ICEBERG_ATTACHMENTS_DIR: "/data/attachments"
+  ICEBERG_FIGURES_DIR: "/data/figures"
+  ICEBERG_RENDER_OUTPUT_DIR: "/data/rendered"
+  ICEBERG_PORTAL_BASE_URL: "https://iceberg.example.com"
