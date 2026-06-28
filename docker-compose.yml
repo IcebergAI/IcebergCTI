@@ -14,6 +14,10 @@ services:
     restart: unless-stopped
     ports:
       - "8000:8000"
+    # Optional overrides — a fresh clone boots with no .env (the dev defaults in
+    # `environment:` below are sufficient); `required: false` keeps it optional so
+    # Compose doesn't hard-fail on a missing file. Keep `required: false` to avoid
+    # reintroducing the missing-.env boot blocker.
     env_file:
       - path: .env
         required: false
