@@ -117,3 +117,10 @@ def configure_logging(settings: Settings, *, stream: TextIO | None = None) -> No
     logger.addHandler(handler)
     logger.setLevel(logging._nameToLevel[settings.log_level])  # noqa: SLF001 - validated setting
     logger.propagate = False
+
+    # The audit/SIEM stdout path emits each event with `iceberg.audit.info(...)`,
+    # but its records propagate to (and are formatted by) this handler. Pin the
+    # audit logger to INFO so the app-log verbosity knob (ICEBERG_LOG_LEVEL) never
+    # silences security events — what gets shipped is owned solely by the audit
+    # min-severity gate in services/siem.emit, applied before the record is logged.
+    logging.getLogger("iceberg.audit").setLevel(logging.INFO)

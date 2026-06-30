@@ -127,6 +127,18 @@ def test_audit_stdout_payload_is_not_double_encoded():
     assert stream.getvalue().strip() == '{"action":"AUTH_LOGIN","ok":true}'
 
 
+def test_audit_stdout_not_silenced_by_app_log_level():
+    # Raising ICEBERG_LOG_LEVEL (a common prod choice to quiet app noise) must not
+    # drop INFO-severity audit events from the stdout SIEM line — audit emission is
+    # gated only by services/siem.emit's min-severity, not app-log verbosity.
+    from iceberg.logging_config import configure_logging
+
+    stream = io.StringIO()
+    configure_logging(Settings(log_format="json", log_level="WARNING"), stream=stream)
+    logging.getLogger("iceberg.audit").info('{"action":"AUTH_LOGIN","ok":true}')
+    assert stream.getvalue().strip() == '{"action":"AUTH_LOGIN","ok":true}'
+
+
 def test_warns_when_prod_has_no_login_path(caplog):
     # prod disables the dev bypass and OIDC is unset -> /auth/login is a dead end;
     # the lockout must surface in the logs (issue #103) rather than fail silently.
