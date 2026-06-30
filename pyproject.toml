@@ -26,7 +26,7 @@ dependencies = [
     "markdown-it-py>=4.2",
     "mdit-py-plugins>=0.6.1",
     "nh3>=0.3.5",
-    "alembic>=1.18.4",
+    "alembic>=1.18.5",
     "feedparser>=6.0.11",
 ]
 
