@@ -20,6 +20,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
 from .. import db
+from ..logging_config import reset_correlation_id, set_correlation_id
 from ..models import AuditAction, AuditCategory, AuditOutcome, AuditSeverity
 from ..services import audit, audit_settings, siem
 from .csrf import _SAFE_METHODS, _same_origin
@@ -39,12 +40,16 @@ def _looks_like_csrf_block(request: Request) -> bool:
 
 class AuditMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        request.state.correlation_id = uuid.uuid4().hex
-        response = await call_next(request)
-
-        if response.status_code in (401, 403):
-            self._record_denial(request, response)
-        return response
+        correlation_id = uuid.uuid4().hex
+        request.state.correlation_id = correlation_id
+        token = set_correlation_id(correlation_id)
+        try:
+            response = await call_next(request)
+            if response.status_code in (401, 403):
+                self._record_denial(request, response)
+            return response
+        finally:
+            reset_correlation_id(token)
 
     def _record_denial(self, request: Request, response) -> None:
         is_csrf = response.status_code == 403 and _looks_like_csrf_block(request)

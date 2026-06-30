@@ -131,8 +131,19 @@ RSS_XML = b"""<?xml version="1.0"?><rss version="2.0"><channel>
 
 
 def _capture_get(monkeypatch, captured):
+    monkeypatch.setattr(
+        feeds_service.socket,
+        "getaddrinfo",
+        lambda host, port, *a, **k: [
+            (2, 1, 6, "", ("93.184.216.34", port))
+        ],
+    )
+
     class _Resp:
         content = RSS_XML
+        status_code = 200
+        headers = {}
+        url = "https://feeds.example.com/a.xml"
 
         def raise_for_status(self):
             pass

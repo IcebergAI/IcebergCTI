@@ -375,6 +375,13 @@ curl -G -H "Authorization: Bearer $ICEBERG_TOKEN" \
    trail on the same page. A failing/unreachable SIEM never blocks a request — events still persist
    locally and forward off the response path.
 
+General application logs are configured separately from the security-audit emit path:
+`ICEBERG_LOG_FORMAT=auto` keeps local/dev output human-readable and switches production
+(`ICEBERG_ENVIRONMENT=prod`) to JSON app logs with the request `correlation_id`. Set
+`ICEBERG_LOG_FORMAT=text|json` to force either format and `ICEBERG_LOG_LEVEL` to tune verbosity.
+The SIEM `stdout` method remains a raw OWASP-shaped JSON event line for compatibility with log
+shippers.
+
 The starter taxonomy is bundled as data (`src/iceberg/data/starter_tags.json`) and imported
 automatically on first boot. To (re-)import explicitly — e.g. after enriching the catalog or
 to load your own vocabulary — run the idempotent import step:
@@ -392,6 +399,7 @@ All settings use the `ICEBERG_` env prefix and can live in `.env` (see
 | --- | --- |
 | `ICEBERG_SECRET_KEY` | JWT + session signing key (use a random 32+ byte value in prod) |
 | `ICEBERG_DATABASE_URL` | Datastore URL — SQLite (`sqlite:///./iceberg.db`, default) or PostgreSQL (`postgresql+psycopg://user:pass@host:5432/iceberg`); see *Production datastore* |
+| `ICEBERG_LOG_LEVEL` / `ICEBERG_LOG_FORMAT` | App log level and format; `auto` uses text outside prod and JSON in prod |
 | `ICEBERG_DEV_AUTH` | Enable the dev-login bypass (auto-off when `ICEBERG_ENVIRONMENT=prod`) |
 | `ICEBERG_OIDC_ENABLED` + `ICEBERG_OIDC_*` | Microsoft Entra ID OIDC settings |
 | `ICEBERG_OIDC_DEPARTMENT_CLAIM` / `ICEBERG_OIDC_TITLE_CLAIM` / `ICEBERG_OIDC_COMPANY_CLAIM` / `ICEBERG_OIDC_OFFICE_CLAIM` | Optional Entra profile claims persisted on users |

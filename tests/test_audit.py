@@ -7,9 +7,16 @@ via the middleware), and the admin console (role gating, settings round-trip,
 test event, trail rendering).
 """
 
+import io
+import json
+import logging
+
 import pytest
+from fastapi import Request
 from sqlmodel import Session, select
 
+from iceberg.config import Settings
+from iceberg.logging_config import configure_logging
 from iceberg.models import (
     AuditAction,
     AuditCategory,
@@ -246,3 +253,21 @@ def test_admin_audit_trail_renders(client, login):
     body = client.get("/admin/audit").text
     # The login that just happened should appear in the trail.
     assert "AUTH_LOGIN" in body
+
+
+def test_request_logs_receive_correlation_id(client):
+    stream = io.StringIO()
+    configure_logging(Settings(log_format="json"), stream=stream)
+    logger = logging.getLogger("iceberg.test")
+
+    @client.app.get("/_log-probe")
+    def _log_probe(request: Request):
+        logger.info("request probe")
+        return {"correlation_id": request.state.correlation_id}
+
+    resp = client.get("/_log-probe")
+    assert resp.status_code == 200
+    payload = json.loads(stream.getvalue())
+    assert payload["message"] == "request probe"
+    assert payload["correlation_id"] == resp.json()["correlation_id"]
+    assert payload["correlation_id"] != "-"
