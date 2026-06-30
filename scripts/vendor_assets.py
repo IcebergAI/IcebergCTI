@@ -15,8 +15,9 @@ standalone binary" pattern as biome).
 Usage (after editing a pin to bump a version):
     python scripts/vendor_assets.py
 
-CI re-runs this and ``git diff --exit-code``s, so the committed assets can't drift
-from the pins; a pytest guard re-checks the SRI hashes against the lock.
+CI verifies the committed assets offline against their lock/SRI hashes. Run this
+script deliberately when bumping an asset pin, review the visual diff, and commit
+the regenerated files together with ``assets.lock.json``.
 """
 
 from __future__ import annotations
