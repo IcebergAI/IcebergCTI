@@ -154,6 +154,7 @@ def test_authz_denial_recorded_by_middleware(client, login, engine):
     denials = _events(engine, AuditAction.AUTHZ_DENIED)
     assert denials
     assert denials[-1].outcome == AuditOutcome.FAILURE
+    assert denials[-1].actor_email == "ro@example.com"
     assert denials[-1].request_path == "/api/notebooks"
 
 

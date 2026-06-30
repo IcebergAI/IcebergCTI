@@ -21,6 +21,7 @@ from .auth.audit_middleware import AuditMiddleware
 from .auth.csrf import SameOriginCSRFMiddleware
 from .auth.security_headers import SecurityHeadersMiddleware
 from .auth.routes import router as auth_router
+from .auth.signing import session_signing_key
 from .config import get_settings
 from .db import engine, init_db
 from .health import router as health_router
@@ -88,13 +89,19 @@ async def lifespan(_app: FastAPI):
 
 def create_app() -> FastAPI:
     settings = get_settings()
-    app = FastAPI(title=settings.app_name, lifespan=lifespan)
+    app = FastAPI(
+        title=settings.app_name,
+        lifespan=lifespan,
+        docs_url=None if settings.is_prod else "/docs",
+        redoc_url=None if settings.is_prod else "/redoc",
+        openapi_url=None if settings.is_prod else "/openapi.json",
+    )
     # CSRF defence for the cookie-authenticated portal (same-origin check on
     # state-changing requests). Added before SessionMiddleware so it runs after
     # it on the way in — it only needs cookies/headers, both already present.
     app.add_middleware(SameOriginCSRFMiddleware)
     # Used by Authlib for the OIDC state/nonce during the code flow.
-    app.add_middleware(SessionMiddleware, secret_key=settings.secret_key)
+    app.add_middleware(SessionMiddleware, secret_key=session_signing_key(settings))
     # Security audit capture. Added before SecurityHeadersMiddleware so it still
     # observes the final response — including the 403 produced by the CSRF
     # middleware and role-guard denials raised deep in the app.

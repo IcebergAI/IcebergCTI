@@ -12,6 +12,7 @@ import jwt
 
 from ..config import get_settings
 from ..models import utcnow
+from .signing import jwt_signing_key
 
 
 def create_access_token(
@@ -28,11 +29,11 @@ def create_access_token(
         "iat": now,
         "exp": now + timedelta(minutes=settings.jwt_expire_minutes),
     }
-    return jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
+    return jwt.encode(payload, jwt_signing_key(settings), algorithm=settings.jwt_algorithm)
 
 
 def decode_access_token(token: str) -> dict:
     settings = get_settings()
     return jwt.decode(
-        token, settings.secret_key, algorithms=[settings.jwt_algorithm]
+        token, jwt_signing_key(settings), algorithms=[settings.jwt_algorithm]
     )

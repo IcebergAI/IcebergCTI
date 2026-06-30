@@ -10,12 +10,13 @@ from sqlmodel import Session
 
 from ..config import get_settings
 from ..db import get_session
-from ..models import AuditAction, AuditCategory, AuditOutcome, Role, User
+from ..models import AuditAction, AuditCategory, AuditOutcome, Role
 from ..services import audit
 from ..services.users import upsert_user
 from ..templating import templates
-from .dependencies import COOKIE_NAME, _extract_token
-from .tokens import create_access_token, decode_access_token
+from .dependencies import COOKIE_NAME
+from .request_actor import resolve_request_actor
+from .tokens import create_access_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 logger = logging.getLogger("iceberg.auth")
@@ -220,7 +221,7 @@ def logout(
 ):
     # POST (not GET) so logout can't be triggered cross-site by a stray link or
     # prefetch; the nav posts a small same-origin form.
-    actor = _user_from_cookie(request, session)
+    actor = resolve_request_actor(request, session)
     audit.record_and_emit(
         session,
         background_tasks=background_tasks,
@@ -236,17 +237,3 @@ def logout(
     response = RedirectResponse("/auth/login", status_code=status.HTTP_303_SEE_OTHER)
     response.delete_cookie(COOKIE_NAME)
     return response
-
-
-def _user_from_cookie(request: Request, session: Session) -> User | None:
-    """Best-effort actor resolution for logout (no auth dependency on the route)."""
-    import jwt
-
-    token = _extract_token(request)
-    if not token:
-        return None
-    try:
-        payload = decode_access_token(token)
-        return session.get(User, int(payload["sub"]))
-    except (jwt.PyJWTError, KeyError, ValueError):
-        return None
