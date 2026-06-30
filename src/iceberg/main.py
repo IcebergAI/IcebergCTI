@@ -25,6 +25,7 @@ from .auth.signing import session_signing_key
 from .config import get_settings
 from .db import engine, init_db
 from .health import router as health_router
+from .logging_config import configure_logging
 from .web import web_router
 
 logger = logging.getLogger("iceberg.feeds")
@@ -89,6 +90,7 @@ async def lifespan(_app: FastAPI):
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    configure_logging(settings)
     app = FastAPI(
         title=settings.app_name,
         lifespan=lifespan,

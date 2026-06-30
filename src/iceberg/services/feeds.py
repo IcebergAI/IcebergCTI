@@ -21,9 +21,10 @@ failure-isolated, sanitised content. See CLAUDE.md.
 
 import calendar
 import logging
+import socket
 from datetime import datetime, timezone
 from ipaddress import ip_address
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 
 import feedparser
 import httpx
@@ -40,11 +41,21 @@ logger = logging.getLogger("iceberg.feeds")
 
 # A short ceiling guards the poller / "fetch now" against a slow feed host.
 _DEFAULT_TIMEOUT = 10.0
+_MAX_REDIRECTS = 5
+_REDIRECT_STATUSES = {301, 302, 303, 307, 308}
 
 
 # --------------------------------------------------------------------------- #
 # Admin CRUD
 # --------------------------------------------------------------------------- #
+def _parse_feed_url(url: str):
+    url = (url or "").strip()
+    parsed = urlsplit(url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise ValueError("Feed URL must be an http(s) URL")
+    return url, parsed
+
+
 def list_feeds(session: Session) -> list[Feed]:
     return list(
         session.exec(select(Feed).order_by(col(Feed.created_at).desc())).all()
@@ -62,15 +73,15 @@ def _validate_feed_url(url: str) -> str:
     """Require an http(s) URL and (unless allowed) reject private/loopback hosts.
 
     Admin-only input, so this is defence-in-depth against an accidental SSRF
-    target rather than a hostile-user control. DNS is not resolved here (the
-    fetch follows redirects); the check is a best-effort guard on literal
-    private addresses and ``localhost``."""
-    url = (url or "").strip()
-    parsed = urlsplit(url)
-    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+    target rather than a hostile-user control. DNS and redirect targets are also
+    validated at fetch time; this create/update check catches obvious literal
+    private addresses and ``localhost`` early."""
+    try:
+        url, parsed = _parse_feed_url(url)
+    except ValueError as exc:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, "Feed URL must be an http(s) URL"
-        )
+        ) from exc
     if get_settings().rss_allow_private_hosts:
         return url
     host = parsed.hostname
@@ -83,6 +94,73 @@ def _validate_feed_url(url: str) -> str:
     if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Feed host is not allowed")
     return url
+
+
+def _port(parsed) -> int:
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("Feed URL port is invalid") from exc
+    return port or (443 if parsed.scheme == "https" else 80)
+
+
+def _unsafe_ip(value) -> bool:
+    return (
+        value.is_private
+        or value.is_loopback
+        or value.is_link_local
+        or value.is_reserved
+        or value.is_multicast
+        or value.is_unspecified
+    )
+
+
+def _assert_safe_fetch_target(url: str) -> str:
+    """Validate the concrete outbound target, including DNS resolution."""
+    url, parsed = _parse_feed_url(url)
+    if get_settings().rss_allow_private_hosts:
+        return url
+    host = parsed.hostname
+
+    try:
+        literal = ip_address(host)
+    except ValueError:
+        literal = None
+    if literal is not None:
+        if _unsafe_ip(literal):
+            raise ValueError("Feed host resolved to a private/internal address")
+        return url
+
+    try:
+        infos = socket.getaddrinfo(host, _port(parsed), type=socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        raise ValueError(f"Feed host could not be resolved: {host}") from exc
+    resolved = {ip_address(info[4][0]) for info in infos if info and info[4]}
+    if not resolved:
+        raise ValueError(f"Feed host could not be resolved: {host}")
+    if any(_unsafe_ip(ip) for ip in resolved):
+        raise ValueError("Feed host resolved to a private/internal address")
+    return url
+
+
+def _get_feed_url(url: str, *, timeout: float, proxy_config) -> httpx.Response:
+    current = _assert_safe_fetch_target(url)
+    for _ in range(_MAX_REDIRECTS + 1):
+        resp = httpx.get(
+            current,
+            timeout=timeout,
+            follow_redirects=False,
+            headers={"User-Agent": "Iceberg-CTI/feed-fetcher"},
+            **proxy.resolve(proxy_config, current),
+        )
+        if resp.status_code not in _REDIRECT_STATUSES:
+            return resp
+        location = resp.headers.get("location")
+        if not location:
+            raise ValueError("Feed redirect missing Location header")
+        base = str(getattr(resp, "url", current) or current)
+        current = _assert_safe_fetch_target(urljoin(base, location))
+    raise ValueError("Feed redirect limit exceeded")
 
 
 def create_feed(
@@ -173,14 +251,12 @@ def fetch_feed(session: Session, feed: Feed) -> int:
     "fetch all" loop stay isolated from one bad feed (mirrors the dissemination
     per-recipient pattern)."""
     settings = get_settings()
-    proxy_kwargs = proxy.resolve(proxy_settings.get(session), feed.url)
+    proxy_config = proxy_settings.get(session)
     try:
-        resp = httpx.get(
+        resp = _get_feed_url(
             feed.url,
             timeout=settings.rss_fetch_timeout or _DEFAULT_TIMEOUT,
-            follow_redirects=True,
-            headers={"User-Agent": "Iceberg-CTI/feed-fetcher"},
-            **proxy_kwargs,
+            proxy_config=proxy_config,
         )
         resp.raise_for_status()
         parsed = feedparser.parse(resp.content)

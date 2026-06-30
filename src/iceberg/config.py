@@ -1,11 +1,13 @@
 """Application configuration loaded from environment / .env (ICEBERG_ prefix)."""
 
+import logging
 from functools import lru_cache
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _AI_BACKENDS = {"none", "openai-compatible", "claude", "bedrock"}
+_LOG_FORMATS = {"auto", "text", "json"}
 
 # The default signing key shipped for local dev. It is public (it's in source
 # control), so running with it in production would let anyone forge JWTs.
@@ -22,6 +24,11 @@ class Settings(BaseSettings):
     environment: str = "dev"
     secret_key: str = _INSECURE_DEFAULT_SECRET
     database_url: str = "sqlite:///./iceberg.db"
+
+    # Application logs. ``auto`` keeps local/dev readable and makes production
+    # container logs structured by default; uvicorn.* loggers are left alone.
+    log_level: str = "INFO"
+    log_format: str = "auto"  # auto | text | json
 
     # Schema migrations. When true, init_db() runs `alembic upgrade head` on boot
     # (idempotent) — convenient for local dev. Set false in production so the
@@ -209,6 +216,24 @@ class Settings(BaseSettings):
                 f"ICEBERG_AI_BACKEND must be one of {sorted(_AI_BACKENDS)}; got {value!r}."
             )
         return value
+
+    @field_validator("log_level")
+    @classmethod
+    def _validate_log_level(cls, value: str) -> str:
+        level = (value or "").upper()
+        if level not in logging._nameToLevel:  # noqa: SLF001 - stdlib's canonical level map
+            raise ValueError(f"ICEBERG_LOG_LEVEL must be a standard logging level; got {value!r}.")
+        return level
+
+    @field_validator("log_format")
+    @classmethod
+    def _validate_log_format(cls, value: str) -> str:
+        fmt = (value or "").lower()
+        if fmt not in _LOG_FORMATS:
+            raise ValueError(
+                f"ICEBERG_LOG_FORMAT must be one of {sorted(_LOG_FORMATS)}; got {value!r}."
+            )
+        return fmt
 
     @model_validator(mode="after")
     def _guard_production(self) -> "Settings":

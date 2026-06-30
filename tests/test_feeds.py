@@ -6,6 +6,8 @@ reusing the notebook source path) and the portal routes (admin-only config,
 writer-only reader, send-to-notebook into an existing or new notebook).
 """
 
+import socket
+
 import httpx
 import pytest
 from sqlmodel import Session, select
@@ -46,14 +48,42 @@ ATOM_XML = b"""<?xml version="1.0" encoding="utf-8"?>
 
 
 class _FakeResponse:
-    def __init__(self, content: bytes):
+    def __init__(
+        self,
+        content: bytes = b"",
+        *,
+        status_code: int = 200,
+        headers: dict[str, str] | None = None,
+        url: str = "https://example.com/feed.xml",
+    ):
         self.content = content
+        self.status_code = status_code
+        self.headers = headers or {}
+        self.url = url
 
     def raise_for_status(self):
-        pass
+        if self.status_code >= 400:
+            raise httpx.HTTPStatusError(
+                "bad status",
+                request=httpx.Request("GET", self.url),
+                response=httpx.Response(self.status_code),
+            )
+
+
+def _mock_dns(monkeypatch, mapping: dict[str, str] | None = None):
+    mapping = mapping or {}
+
+    def _getaddrinfo(host, port, *args, **kwargs):
+        ip = mapping.get(host, "93.184.216.34")
+        family = socket.AF_INET6 if ":" in ip else socket.AF_INET
+        sockaddr = (ip, port, 0, 0) if family == socket.AF_INET6 else (ip, port)
+        return [(family, socket.SOCK_STREAM, 6, "", sockaddr)]
+
+    monkeypatch.setattr(feeds_service.socket, "getaddrinfo", _getaddrinfo)
 
 
 def _mock_get(monkeypatch, content: bytes):
+    _mock_dns(monkeypatch)
     monkeypatch.setattr(
         feeds_service.httpx, "get", lambda *a, **k: _FakeResponse(content)
     )
@@ -148,6 +178,8 @@ def test_fetch_feed_parses_atom(engine, monkeypatch):
 
 
 def test_fetch_feed_isolates_network_error(engine, monkeypatch):
+    _mock_dns(monkeypatch)
+
     def _boom(*a, **k):
         raise httpx.ConnectError("unreachable")
 
@@ -171,6 +203,101 @@ def test_fetch_feed_tolerates_malformed(engine, monkeypatch):
         )
         # feedparser sets bozo but yields no entries — no crash, no items.
         assert feeds_service.fetch_feed(session, feed) == 0
+
+
+def test_fetch_feed_blocks_hostname_resolving_to_private_ip(engine, monkeypatch):
+    _mock_dns(monkeypatch, {"feeds.example.com": "10.0.0.9"})
+    monkeypatch.setattr(
+        feeds_service.httpx,
+        "get",
+        lambda *a, **k: pytest.fail("unsafe target should not be fetched"),
+    )
+    with _new_session(engine) as session:
+        feed = feeds_service.create_feed(
+            session, url="https://feeds.example.com/feed.xml", title="Private"
+        )
+        assert feeds_service.fetch_feed(session, feed) == 0
+        session.refresh(feed)
+        assert "private/internal" in feed.fetch_error
+
+
+def test_fetch_feed_blocks_redirect_to_cloud_metadata(engine, monkeypatch):
+    _mock_dns(monkeypatch)
+    calls: list[str] = []
+
+    def _get(url, **kwargs):
+        calls.append(url)
+        return _FakeResponse(
+            status_code=302,
+            headers={"location": "http://169.254.169.254/latest/meta-data"},
+            url=url,
+        )
+
+    monkeypatch.setattr(feeds_service.httpx, "get", _get)
+    with _new_session(engine) as session:
+        feed = feeds_service.create_feed(
+            session, url="https://example.com/feed.xml", title="Redirect"
+        )
+        assert feeds_service.fetch_feed(session, feed) == 0
+        session.refresh(feed)
+        assert calls == ["https://example.com/feed.xml"]
+        assert "private/internal" in feed.fetch_error
+
+
+def test_fetch_feed_allows_relative_redirect_to_public_target(engine, monkeypatch):
+    _mock_dns(monkeypatch)
+    calls: list[str] = []
+
+    def _get(url, **kwargs):
+        calls.append(url)
+        if len(calls) == 1:
+            return _FakeResponse(
+                status_code=302,
+                headers={"location": "/rss.xml"},
+                url="https://example.com/start.xml",
+            )
+        return _FakeResponse(RSS_XML, url=url)
+
+    monkeypatch.setattr(feeds_service.httpx, "get", _get)
+    with _new_session(engine) as session:
+        feed = feeds_service.create_feed(
+            session, url="https://example.com/start.xml", title="Redirect"
+        )
+        assert feeds_service.fetch_feed(session, feed) == 2
+        assert calls == ["https://example.com/start.xml", "https://example.com/rss.xml"]
+
+
+def test_fetch_feed_records_excessive_redirects(engine, monkeypatch):
+    _mock_dns(monkeypatch)
+
+    def _get(url, **kwargs):
+        return _FakeResponse(
+            status_code=302,
+            headers={"location": "/again.xml"},
+            url=url,
+        )
+
+    monkeypatch.setattr(feeds_service.httpx, "get", _get)
+    with _new_session(engine) as session:
+        feed = feeds_service.create_feed(
+            session, url="https://example.com/start.xml", title="Loop"
+        )
+        assert feeds_service.fetch_feed(session, feed) == 0
+        session.refresh(feed)
+        assert "redirect limit" in feed.fetch_error
+
+
+def test_fetch_feed_private_hosts_escape_hatch(engine, monkeypatch):
+    monkeypatch.setattr(feeds_service.get_settings(), "rss_allow_private_hosts", True)
+    _mock_dns(monkeypatch, {"internal.example": "10.0.0.5"})
+    monkeypatch.setattr(
+        feeds_service.httpx, "get", lambda *a, **k: _FakeResponse(RSS_XML)
+    )
+    with _new_session(engine) as session:
+        feed = feeds_service.create_feed(
+            session, url="https://internal.example/feed.xml", title="Internal"
+        )
+        assert feeds_service.fetch_feed(session, feed) == 2
 
 
 def test_fetch_all_enabled_skips_disabled(engine, monkeypatch):
