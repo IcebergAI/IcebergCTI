@@ -2,8 +2,8 @@
 
 These run offline (no network): they prove the committed vendored assets match
 the recorded SRI hashes (tamper / lock-mismatch guard) and that no template has
-regressed back to a third-party CDN. The full rebuild-from-pins drift check lives
-in CI (re-runs scripts/vendor_assets.py and git-diffs).
+regressed back to a third-party CDN. The CI asset job runs this focused guard
+without rebuilding the visual Tailwind bundle.
 """
 
 import base64

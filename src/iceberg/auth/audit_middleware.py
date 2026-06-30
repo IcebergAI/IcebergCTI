@@ -14,18 +14,17 @@ request can be tied together in the SIEM.
 
 import uuid
 
-import jwt
 from sqlmodel import Session
 from starlette.background import BackgroundTask
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
 from .. import db
-from ..models import AuditAction, AuditCategory, AuditOutcome, AuditSeverity, User
+from ..models import AuditAction, AuditCategory, AuditOutcome, AuditSeverity
 from ..services import audit, audit_settings, siem
 from .csrf import _SAFE_METHODS, _same_origin
-from .dependencies import COOKIE_NAME, _extract_token
-from .tokens import decode_access_token
+from .dependencies import COOKIE_NAME
+from .request_actor import resolve_request_actor
 
 
 def _looks_like_csrf_block(request: Request) -> bool:
@@ -36,17 +35,6 @@ def _looks_like_csrf_block(request: Request) -> bool:
     has_session = COOKIE_NAME in request.cookies
     is_bearer = request.headers.get("authorization", "").lower().startswith("bearer ")
     return has_session and not is_bearer and not _same_origin(request)
-
-
-def _resolve_actor(request: Request, session: Session) -> User | None:
-    token = _extract_token(request)
-    if not token:
-        return None
-    try:
-        payload = decode_access_token(token)
-        return session.get(User, int(payload["sub"]))
-    except (jwt.PyJWTError, KeyError, ValueError):
-        return None
 
 
 class AuditMiddleware(BaseHTTPMiddleware):
@@ -62,7 +50,7 @@ class AuditMiddleware(BaseHTTPMiddleware):
         is_csrf = response.status_code == 403 and _looks_like_csrf_block(request)
         action = AuditAction.CSRF_BLOCKED if is_csrf else AuditAction.AUTHZ_DENIED
         with Session(db.engine) as session:
-            actor = _resolve_actor(request, session)
+            actor = resolve_request_actor(request, session)
             event = audit.record(
                 session,
                 action=action,
