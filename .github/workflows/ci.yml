@@ -26,7 +26,7 @@ jobs:
           python-version: "3.14"
           cache: pip
           cache-dependency-path: uv.lock
-      - uses: astral-sh/setup-uv@4959332f0f014c5280e7eac8b70c90cb574c9f9b # v6.9.0
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v6.9.0
         with:
           version: "0.11.23"
       # Lets tests/test_render.py exercise the real Typst PDF path instead of
@@ -67,7 +67,7 @@ jobs:
           python-version: "3.14"
           cache: pip
           cache-dependency-path: uv.lock
-      - uses: astral-sh/setup-uv@4959332f0f014c5280e7eac8b70c90cb574c9f9b # v6.9.0
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v6.9.0
         with:
           version: "0.11.23"
       - run: uv sync --locked --extra dev --extra postgres
@@ -87,7 +87,7 @@ jobs:
           python-version: "3.14"
           cache: pip
           cache-dependency-path: uv.lock
-      - uses: astral-sh/setup-uv@4959332f0f014c5280e7eac8b70c90cb574c9f9b # v6.9.0
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v6.9.0
         with:
           version: "0.11.23"
       - run: uv sync --locked --extra dev
@@ -122,7 +122,7 @@ jobs:
           python-version: "3.14"
           cache: pip
           cache-dependency-path: uv.lock
-      - uses: astral-sh/setup-uv@4959332f0f014c5280e7eac8b70c90cb574c9f9b # v6.9.0
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v6.9.0
         with:
           version: "0.11.23"
       - run: uv sync --locked --extra dev
