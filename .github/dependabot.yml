@@ -18,3 +18,12 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+
+  # The Docker base image in the Dockerfile (digest-pinned FROM lines).
+  # Dependabot bumps the python:3.14-slim @sha256 digest so base-image security
+  # patches surface as PRs — the last untracked link in the supply chain.
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

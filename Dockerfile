@@ -3,8 +3,10 @@
 # Builder: resolve the *locked* dependency graph (uv.lock) into a venv and fetch
 # the Typst binary. Build-only tooling (uv, curl, xz) stays out of the runtime.
 # ---------------------------------------------------------------------------- #
-FROM python:3.14-slim AS builder
+FROM python:3.14-slim@sha256:b877e50bd90de10af8d82c57a022fc2e0dc731c5320d762a27986facfc3355c1 AS builder
 
+# Bumping TYPST_VERSION requires updating the per-arch typst_sha checksums below
+# (the build verifies the tarball and fails closed on a mismatch).
 ARG TYPST_VERSION=0.15.0
 # Pinned to match CI (.github/workflows/ci.yml) so the image deps == tested graph.
 COPY --from=ghcr.io/astral-sh/uv:0.11.23 /uv /usr/local/bin/uv
@@ -27,21 +29,24 @@ RUN set -eux; \
     apt-get install -y --no-install-recommends curl xz-utils ca-certificates; \
     arch="$(dpkg --print-architecture)"; \
     case "$arch" in \
-      amd64) typst_arch="x86_64-unknown-linux-musl" ;; \
-      arm64) typst_arch="aarch64-unknown-linux-musl" ;; \
+      amd64) typst_arch="x86_64-unknown-linux-musl"; \
+             typst_sha="59b207df01be2dab9f13e80f73d04d7ff8273ffd46b3dd1b9eef5c60f3eeabea" ;; \
+      arm64) typst_arch="aarch64-unknown-linux-musl"; \
+             typst_sha="cdf50ffc7b8ba759ed02200632eda3d78eb8b99aacb6611f4f75684990647620" ;; \
       *) echo "unsupported architecture: $arch" >&2; exit 1 ;; \
     esac; \
     curl -fsSL "https://github.com/typst/typst/releases/download/v${TYPST_VERSION}/typst-${typst_arch}.tar.xz" -o /tmp/typst.tar.xz; \
+    echo "${typst_sha}  /tmp/typst.tar.xz" | sha256sum -c -; \
     tar -xJf /tmp/typst.tar.xz -C /tmp; \
     mv "/tmp/typst-${typst_arch}/typst" /usr/local/bin/typst; \
     rm -rf /tmp/typst* /var/lib/apt/lists/*
 
 # ---------------------------------------------------------------------------- #
 # Runtime: slim image with only the venv, the Typst binary and the source tree.
-# Pin the base by digest for production (e.g. python:3.14-slim@sha256:<digest>)
-# via your registry/policy; tag-pinned here so the build is reproducible offline.
+# Base pinned by digest (tag + @sha256) so the build is reproducible and the exact
+# bytes are auditable; Dependabot (docker ecosystem) bumps the digest as PRs.
 # ---------------------------------------------------------------------------- #
-FROM python:3.14-slim AS runtime
+FROM python:3.14-slim@sha256:b877e50bd90de10af8d82c57a022fc2e0dc731c5320d762a27986facfc3355c1 AS runtime
 
 # No ICEBERG_DATABASE_URL default: the container datastore is PostgreSQL and the
 # prod app refuses to boot on SQLite (config._guard_production), so the operator
