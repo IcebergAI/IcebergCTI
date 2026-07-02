@@ -1,0 +1,47 @@
+name: Feature request
+description: Suggest an enhancement or new capability
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping shape Iceberg. Please check the roadmap in
+        [`CLAUDE.md`](../blob/main/CLAUDE.md) and existing issues first.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What are you trying to do, and what makes it hard today?
+      placeholder: As an analyst, I want ... so that ...
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would you like Iceberg to do?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you weighed, and why they fall short.
+    validations:
+      required: false
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of Iceberg does this touch?
+      options:
+        - Collection (notebooks, sources, RSS)
+        - Authoring (reports, analytic models, rendering)
+        - Dissemination (feed, requirements, feedback)
+        - Tagging & search / ATT&CK
+        - Integrations (MISP, SIEM, webhook, AI, STIX/TAXII)
+        - Auth / security / audit
+        - Admin / deployment / config
+        - Other
+    validations:
+      required: false
