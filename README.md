@@ -1,6 +1,6 @@
 # Iceberg 🧊
 
-[![CI](https://github.com/TheSlopBucket/iceberg/actions/workflows/ci.yml/badge.svg)](https://github.com/TheSlopBucket/iceberg/actions/workflows/ci.yml)
+[![CI](https://github.com/IcebergAI/iceberg/actions/workflows/ci.yml/badge.svg)](https://github.com/IcebergAI/iceberg/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.14-blue.svg)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
@@ -691,3 +691,16 @@ chmod +x ~/.local/bin/biome
 
 ## Project layout
 See the structure diagram in [CLAUDE.md](CLAUDE.md).
+
+## Contributing
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for local
+setup, the test/lint gates, and PR expectations. All participants are expected to
+follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Security
+Found a vulnerability? Please report it privately — **do not open a public
+issue**. See [SECURITY.md](SECURITY.md) for the disclosure process.
+
+## License
+Iceberg is licensed under the [Apache License 2.0](LICENSE). See [NOTICE](NOTICE)
+for attribution.

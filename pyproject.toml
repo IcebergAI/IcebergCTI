@@ -6,7 +6,22 @@ build-backend = "setuptools.build_meta"
 name = "iceberg"
 version = "0.1.0"
 description = "Cyber threat intelligence collection, authoring and dissemination platform"
+readme = "README.md"
 requires-python = ">=3.14"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "IcebergAI and the Iceberg contributors" }]
+keywords = ["cti", "threat-intelligence", "security", "misp", "stix", "attack"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: FastAPI",
+    "Intended Audience :: Information Technology",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Security",
+]
+
 # Version floors are anchored at the tested baseline so a fresh install can't
 # silently pull an ancient (potentially vulnerable) release. The committed
 # uv.lock pins the tested transitive graph for CI and repeatable installs.
@@ -29,6 +44,11 @@ dependencies = [
     "alembic>=1.18.5",
     "feedparser>=6.0.12",
 ]
+
+[project.urls]
+Homepage = "https://github.com/IcebergAI/iceberg"
+Repository = "https://github.com/IcebergAI/iceberg"
+Issues = "https://github.com/IcebergAI/iceberg/issues"
 
 [project.optional-dependencies]
 # Production datastore driver (PostgreSQL). Optional so the default/dev install
