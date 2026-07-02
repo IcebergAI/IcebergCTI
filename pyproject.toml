@@ -42,10 +42,10 @@ postgres = [
 # `bedrock` backend additionally needs the SDK's AWS auth deps. See CLAUDE.md
 # *Governed AI assist*.
 anthropic = [
-    "anthropic>=0.115.0",
+    "anthropic>=0.116.0",
 ]
 bedrock = [
-    "anthropic[bedrock]>=0.115.0",
+    "anthropic[bedrock]>=0.116.0",
 ]
 dev = [
     "pytest>=9.1.1",
@@ -56,7 +56,7 @@ dev = [
     "vulture>=2.16",
     "pip-audit>=2.10.1",
     "pre-commit>=4.6.0",
-    "djlint>=1.39.6",
+    "djlint>=1.40.1",
 ]
 
 [project.scripts]
