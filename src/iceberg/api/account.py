@@ -24,10 +24,15 @@ def get_me(user: CurrentUser) -> User:
 def update_me(
     body: PreferencesUpdate, session: SessionDep, user: CurrentUser
 ) -> User:
-    user.preferred_intel_level = body.preferred_intel_level
+    # PATCH semantics: an omitted field is left untouched (an explicit null still
+    # clears). Assigning unconditionally would wipe preferred_intel_level whenever
+    # a client patches only subscribed_tag_ids (#156).
+    data = body.model_dump(exclude_unset=True)
+    if "preferred_intel_level" in data:
+        user.preferred_intel_level = data["preferred_intel_level"]
     session.add(user)
     session.commit()
-    if body.subscribed_tag_ids is not None:
-        tag_service.set_user_subscriptions(session, user, body.subscribed_tag_ids)
+    if "subscribed_tag_ids" in data and data["subscribed_tag_ids"] is not None:
+        tag_service.set_user_subscriptions(session, user, data["subscribed_tag_ids"])
     session.refresh(user)
     return user

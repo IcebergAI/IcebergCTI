@@ -96,6 +96,44 @@ def test_source_provenance_must_be_same_notebook(client, login):
     assert ioc2["source_id"] == src1["id"]
 
 
+def test_update_ioc_provenance_clear_and_scope(client, login):
+    """#158: an explicit null clears provenance; a cross-notebook source_id
+    resolves to None (consistent with create); an omitted source_id is untouched."""
+    login("ANALYST")
+    nb1 = _notebook(client, "one")
+    nb2 = _notebook(client, "two")
+    src1 = client.post(
+        f"/api/notebooks/{nb1['id']}/sources", json={"title": "s1"}
+    ).json()
+    ioc = _ioc(client, nb1["id"], source_id=src1["id"]).json()
+    assert ioc["source_id"] == src1["id"]
+
+    # Omitting source_id leaves provenance untouched.
+    upd = client.patch(
+        f"/api/notebooks/{nb1['id']}/iocs/{ioc['id']}", json={"description": "x"}
+    ).json()
+    assert upd["source_id"] == src1["id"]
+
+    # An explicit null clears provenance (previously impossible).
+    upd = client.patch(
+        f"/api/notebooks/{nb1['id']}/iocs/{ioc['id']}", json={"source_id": None}
+    ).json()
+    assert upd["source_id"] is None
+
+    # A cross-notebook source_id resolves to None, matching create (previously
+    # the old value was silently retained).
+    src2 = client.post(
+        f"/api/notebooks/{nb2['id']}/sources", json={"title": "s2"}
+    ).json()
+    client.patch(
+        f"/api/notebooks/{nb1['id']}/iocs/{ioc['id']}", json={"source_id": src1["id"]}
+    )
+    upd = client.patch(
+        f"/api/notebooks/{nb1['id']}/iocs/{ioc['id']}", json={"source_id": src2["id"]}
+    ).json()
+    assert upd["source_id"] is None
+
+
 # --------------------------------------------------------------------------- #
 # Access control
 # --------------------------------------------------------------------------- #

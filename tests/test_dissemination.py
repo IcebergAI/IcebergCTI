@@ -122,6 +122,20 @@ def test_preferences_api_roundtrip(client, login):
     )
 
 
+def test_patch_me_omitting_intel_level_preserves_it(client, login):
+    """#156: PATCH semantics — omitting preferred_intel_level must not wipe it
+    (only an explicit null clears). A client patching only subscriptions kept
+    its dissemination preference."""
+    login("STAKEHOLDER", email="s@example.com")
+    client.patch("/api/me", json={"preferred_intel_level": "STRATEGIC"})
+    # Patch only subscriptions — preferred_intel_level is omitted, not cleared.
+    resp = client.patch("/api/me", json={"subscribed_tag_ids": []})
+    assert resp.json()["preferred_intel_level"] == "STRATEGIC"
+    # An explicit null still clears it.
+    resp = client.patch("/api/me", json={"preferred_intel_level": None})
+    assert resp.json()["preferred_intel_level"] is None
+
+
 # --------------------------------------------------------------------------- #
 # Portal
 # --------------------------------------------------------------------------- #

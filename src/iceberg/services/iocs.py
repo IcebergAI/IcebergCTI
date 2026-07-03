@@ -80,10 +80,16 @@ def create_ioc(
 
 
 def update_ioc(session: Session, ioc: IOC, **fields) -> IOC:
-    """Apply non-None fields (a ``source_id`` is re-validated against the notebook)."""
+    """Apply supplied fields (callers pass ``exclude_unset`` so a present key is a
+    deliberate write). ``source_id`` is re-validated against the notebook and,
+    when present, always applied — an explicit ``None`` clears provenance and an
+    out-of-notebook id resolves to ``None``, identical to :func:`create_ioc` (#158).
+    Other fields keep the skip-``None`` apply (``None`` there is Pydantic's default
+    'omitted' sentinel, never a meaningful clear)."""
     if "source_id" in fields:
-        fields["source_id"] = _scoped_source_id(
-            session, ioc.notebook_id, fields["source_id"]
+        # Pop out of the generic loop so the scoped value (incl. None) is honoured.
+        ioc.source_id = _scoped_source_id(
+            session, ioc.notebook_id, fields.pop("source_id")
         )
     if (value := fields.get("value")) is not None and not value.strip():
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Indicator value is required")

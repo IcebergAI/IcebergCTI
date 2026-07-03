@@ -118,6 +118,9 @@ def suggest_judgements(
             "intel_level": report.intel_level.value,
             "tlp": report.tlp.value,
         },
+        # Per-source TLP gate: a source above the AI egress ceiling must not ride
+        # along even when the report clears it (#155, the source-axis analogue of
+        # #97). Notes carry no TLP today, so they stay ungated deliberately.
         "sources": [
             {
                 "title": s.title,
@@ -125,7 +128,7 @@ def suggest_judgements(
                 "summary": s.summary,
                 "content_md": s.content_md,
             }
-            for s in notebook.sources
+            for s in ai_service.sendable_sources(notebook.sources)
         ],
         "notes": [n.body_md for n in notebook.notes],
     }
