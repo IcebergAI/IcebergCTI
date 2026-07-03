@@ -26,7 +26,7 @@ classifiers = [
 # silently pull an ancient (potentially vulnerable) release. The committed
 # uv.lock pins the tested transitive graph for CI and repeatable installs.
 dependencies = [
-    "fastapi>=0.138.2",
+    "fastapi>=0.139.0",
     "uvicorn>=0.49",
     "sqlmodel>=0.0.39",
     "jinja2>=3.1.6",
@@ -40,7 +40,7 @@ dependencies = [
     "itsdangerous>=2.2",
     "markdown-it-py>=4.2",
     "mdit-py-plugins>=0.6.1",
-    "nh3>=0.3.5",
+    "nh3>=0.3.6",
     "alembic>=1.18.5",
     "feedparser>=6.0.12",
 ]
@@ -62,10 +62,10 @@ postgres = [
 # `bedrock` backend additionally needs the SDK's AWS auth deps. See CLAUDE.md
 # *Governed AI assist*.
 anthropic = [
-    "anthropic>=0.115.0",
+    "anthropic>=0.116.0",
 ]
 bedrock = [
-    "anthropic[bedrock]>=0.115.0",
+    "anthropic[bedrock]>=0.116.0",
 ]
 dev = [
     "pytest>=9.1.1",
@@ -76,7 +76,7 @@ dev = [
     "vulture>=2.16",
     "pip-audit>=2.10.1",
     "pre-commit>=4.6.0",
-    "djlint>=1.39.6",
+    "djlint>=1.40.1",
 ]
 
 [project.scripts]
