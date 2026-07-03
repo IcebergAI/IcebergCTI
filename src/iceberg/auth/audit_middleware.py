@@ -22,7 +22,7 @@ from starlette.requests import Request
 from .. import db
 from ..logging_config import reset_correlation_id, set_correlation_id
 from ..models import AuditAction, AuditCategory, AuditOutcome, AuditSeverity
-from ..services import audit, audit_settings, siem
+from ..services import audit, audit_settings, proxy_settings, siem
 from .csrf import _SAFE_METHODS, _same_origin
 from .dependencies import COOKIE_NAME
 from .request_actor import resolve_request_actor
@@ -69,5 +69,11 @@ class AuditMiddleware(BaseHTTPMiddleware):
             )
             payload = audit.to_owasp_dict(event)
             snapshot = audit_settings.get(session).model_copy()
+            # Snapshot the proxy row so the HTTP SIEM sink honours the global
+            # outbound proxy off the response path — matching audit.schedule_emit
+            # (without this the denial events bypass the proxy, #157).
+            proxy_snapshot = proxy_settings.get(session).model_copy()
         # Emit off the response path; never block the (already-formed) response.
-        response.background = BackgroundTask(siem.emit, payload, snapshot)
+        response.background = BackgroundTask(
+            siem.emit, payload, snapshot, proxy_snapshot
+        )

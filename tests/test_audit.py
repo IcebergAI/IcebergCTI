@@ -25,7 +25,8 @@ from iceberg.models import (
     AuditSeverity,
     AuditSettings,
 )
-from iceberg.services import audit, audit_settings, siem
+from iceberg.models import ProxyMode
+from iceberg.services import audit, audit_settings, proxy_settings, siem
 
 
 @pytest.fixture(autouse=True)
@@ -163,6 +164,28 @@ def test_authz_denial_recorded_by_middleware(client, login, engine):
     assert denials[-1].outcome == AuditOutcome.FAILURE
     assert denials[-1].actor_email == "ro@example.com"
     assert denials[-1].request_path == "/api/notebooks"
+
+
+def test_denial_emit_carries_proxy_snapshot(client, login, engine, monkeypatch):
+    """#157: the middleware's SIEM emit for a denial must thread the global
+    outbound proxy, like audit.schedule_emit — otherwise the HTTP sink posts
+    direct and the denial events silently never reach the SIEM behind a proxy."""
+    with Session(engine) as session:
+        proxy_settings.update(
+            session, mode=ProxyMode.EXPLICIT, proxy_url="http://p:3128", no_proxy=""
+        )
+    captured: dict = {}
+    monkeypatch.setattr(
+        siem,
+        "emit",
+        lambda payload, settings, proxy=None: captured.update(proxy=proxy),
+    )
+    login("STAKEHOLDER", email="ro@example.com")
+    resp = client.get("/api/notebooks")  # writer-only -> 403 -> AUTHZ_DENIED
+    assert resp.status_code == 403
+    assert captured.get("proxy") is not None
+    assert captured["proxy"].mode == ProxyMode.EXPLICIT
+    assert captured["proxy"].proxy_url == "http://p:3128"
 
 
 def test_csrf_block_recorded(client, login, engine):

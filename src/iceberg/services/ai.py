@@ -91,6 +91,19 @@ def should_send_source(source: Source, settings: Settings | None = None) -> bool
     return is_disseminable(TLP(source.tlp), _max_tlp(settings))
 
 
+def sendable_sources(
+    sources: list[Source], settings: Settings | None = None
+) -> list[Source]:
+    """Filter a collection of sources to those within the AI egress ceiling.
+
+    The ``judgements`` task builds its payload from *all* of a notebook's
+    sources, so each source must clear its own TLP ceiling independently — the
+    source-axis analogue of ``sendable_reports`` (#97). Returns the sources that
+    may egress, in input order."""
+    settings = settings or get_settings()
+    return [s for s in sources if should_send_source(s, settings)]
+
+
 def disabled(task: str, message: str = "AI assist is unavailable") -> AISuggestion:
     return AISuggestion(task=task, available=False, message=message)
 

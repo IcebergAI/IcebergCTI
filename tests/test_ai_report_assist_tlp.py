@@ -116,6 +116,39 @@ def test_all_over_ceiling_fails_closed_no_egress(
     assert captured == []  # nothing egressed — httpx.post was never reached
 
 
+# --------------------------------------------------------------------------- #
+# Endpoint payload — judgements (source-axis gate, #155)
+# --------------------------------------------------------------------------- #
+def test_over_ceiling_source_excluded_from_judgements_payload(
+    client, login, monkeypatch
+):
+    """#155: the judgements task egresses notebook source content, so an
+    over-ceiling source must be filtered out even when the report clears the
+    ceiling — the source-axis analogue of the #97 report gate."""
+    login("ANALYST")
+    nb = _notebook(client)
+    rid = _report(client, nb["id"], title="Prod", tlp="AMBER", body_md="report-body")
+    client.post(
+        f"/api/notebooks/{nb['id']}/sources",
+        json={"title": "Open", "content_md": "AMBER-SOURCE-BODY", "tlp": "AMBER"},
+    )
+    client.post(
+        f"/api/notebooks/{nb['id']}/sources",
+        json={"title": "Secret", "content_md": "RED-SOURCE-BODY", "tlp": "RED"},
+    )
+    captured = _enable_ai_capturing(monkeypatch)
+
+    resp = client.post("/api/ai/judgements", json={"report_id": rid})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["available"] is True
+
+    assert len(captured) == 1
+    titles = [s["title"] for s in captured[0]["sources"]]
+    bodies = [s["content_md"] for s in captured[0]["sources"]]
+    assert titles == ["Open"]  # the RED source is filtered out
+    assert "RED-SOURCE-BODY" not in bodies
+
+
 def test_audited_even_when_fail_closed(client, login, monkeypatch, engine):
     login("ANALYST")
     nb = _notebook(client)
