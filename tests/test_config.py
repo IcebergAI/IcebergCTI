@@ -180,3 +180,41 @@ def test_no_login_warning_for_eval_overlay(caplog):
     with caplog.at_level("WARNING", logger="iceberg.auth"):
         _warn_if_no_login_path(settings)
     assert not caplog.records
+
+
+def test_warns_when_prod_uses_console_email_backend(caplog):
+    from iceberg.main import _warn_if_console_email_backend_in_prod
+
+    settings = Settings(
+        environment="prod",
+        secret_key=_STRONG_SECRET,
+        database_url=_PG_URL,
+        email_backend="console",
+    )
+    with caplog.at_level("WARNING", logger="iceberg.email"):
+        _warn_if_console_email_backend_in_prod(settings)
+    assert any("console backend" in r.message for r in caplog.records)
+    assert any("not delivered" in r.message for r in caplog.records)
+
+
+def test_no_console_email_warning_when_prod_uses_smtp(caplog):
+    from iceberg.main import _warn_if_console_email_backend_in_prod
+
+    settings = Settings(
+        environment="prod",
+        secret_key=_STRONG_SECRET,
+        database_url=_PG_URL,
+        email_backend="smtp",
+    )
+    with caplog.at_level("WARNING", logger="iceberg.email"):
+        _warn_if_console_email_backend_in_prod(settings)
+    assert not caplog.records
+
+
+def test_no_console_email_warning_in_dev(caplog):
+    from iceberg.main import _warn_if_console_email_backend_in_prod
+
+    settings = Settings(environment="dev", email_backend="console")
+    with caplog.at_level("WARNING", logger="iceberg.email"):
+        _warn_if_console_email_backend_in_prod(settings)
+    assert not caplog.records
