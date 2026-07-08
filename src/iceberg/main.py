@@ -30,6 +30,7 @@ from .web import web_router
 
 logger = logging.getLogger("iceberg.feeds")
 auth_logger = logging.getLogger("iceberg.auth")
+email_logger = logging.getLogger("iceberg.email")
 
 
 def _warn_if_no_login_path(settings) -> None:
@@ -44,6 +45,20 @@ def _warn_if_no_login_path(settings) -> None:
             "bypass and OIDC is not enabled (ICEBERG_OIDC_ENABLED). Configure Entra "
             "OIDC, or apply the evaluation overlay (deploy/k8s/configmap.beta.yaml). "
             "See deploy/k8s/README.md > Authentication / Login."
+        )
+
+
+def _warn_if_console_email_backend_in_prod(settings) -> None:
+    """Warn when prod is still using the dev/test console email backend.
+
+    Dissemination itself still succeeds in this mode, but stakeholder email
+    notifications are only logged/outboxed rather than delivered.
+    """
+    if settings.is_prod and settings.email_backend.strip().lower() == "console":
+        email_logger.warning(
+            "Email notifications are using the console backend: dissemination "
+            "emails are logged but not delivered. Set ICEBERG_EMAIL_BACKEND=smtp "
+            "and configure ICEBERG_SMTP_* settings for real delivery."
         )
 
 
@@ -72,6 +87,7 @@ async def lifespan(_app: FastAPI):
     init_db()
     settings = get_settings()
     _warn_if_no_login_path(settings)
+    _warn_if_console_email_backend_in_prod(settings)
     poller: asyncio.Task | None = None
     if settings.rss_poll_enabled and settings.rss_poll_interval_minutes > 0:
         poller = asyncio.create_task(
