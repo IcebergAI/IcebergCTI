@@ -2,7 +2,7 @@
 # zero-dependency local dev/test default only; it is NOT a container deployment
 # option — the app refuses to boot on SQLite when ICEBERG_ENVIRONMENT=prod.)
 #
-#   docker compose up                  # app on :8000 + its PostgreSQL database
+#   docker compose up                  # app on localhost:8000 + PostgreSQL
 #   ICEBERG_DOMAIN=intel.example.com \
 #     docker compose --profile tls up  # add a Caddy TLS reverse proxy on :80/:443
 #
@@ -13,7 +13,7 @@ services:
     build: .
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     # Optional overrides — a fresh clone boots with no .env (the dev defaults in
     # `environment:` below are sufficient); `required: false` keeps it optional so
     # Compose doesn't hard-fail on a missing file. Keep `required: false` to avoid
@@ -22,11 +22,12 @@ services:
       - path: .env
         required: false
     environment:
-      ICEBERG_ENVIRONMENT: dev
-      ICEBERG_AUTO_MIGRATE: "true"
+      ICEBERG_ENVIRONMENT: ${ICEBERG_ENVIRONMENT:-dev}
+      ICEBERG_AUTO_MIGRATE: ${ICEBERG_AUTO_MIGRATE:-true}
       # PostgreSQL is the container datastore. Override the credentials/host via
       # the shell or .env; the default targets the bundled `postgres` service.
-      ICEBERG_DATABASE_URL: ${ICEBERG_DATABASE_URL:-postgresql+psycopg://iceberg:iceberg@postgres:5432/iceberg}
+      # URL-encode complex passwords, or set ICEBERG_DATABASE_URL explicitly.
+      ICEBERG_DATABASE_URL: ${ICEBERG_DATABASE_URL:-postgresql+psycopg://${POSTGRES_USER:-iceberg}:${POSTGRES_PASSWORD:-iceberg}@postgres:5432/${POSTGRES_DB:-iceberg}}
       ICEBERG_ATTACHMENTS_DIR: /data/attachments
       ICEBERG_FIGURES_DIR: /data/figures
       ICEBERG_RENDER_OUTPUT_DIR: /data/rendered
@@ -55,9 +56,9 @@ services:
     image: postgres:17
     restart: unless-stopped
     environment:
-      POSTGRES_USER: iceberg
-      POSTGRES_PASSWORD: iceberg
-      POSTGRES_DB: iceberg
+      POSTGRES_USER: ${POSTGRES_USER:-iceberg}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-iceberg}
+      POSTGRES_DB: ${POSTGRES_DB:-iceberg}
     volumes:
       - iceberg-pg-data:/var/lib/postgresql/data
     healthcheck:
@@ -71,10 +72,9 @@ services:
   # Caddy terminates TLS (automatic Let's Encrypt for a real domain; a local-CA
   # cert for the default `localhost`) and proxies to the app over the compose
   # network. For real production also set ICEBERG_ENVIRONMENT=prod in .env
-  # (Secure cookies + HSTS) — uvicorn's --proxy-headers makes the app trust
-  # Caddy's X-Forwarded-Proto so the scheme is correct. (For a locked-down host
-  # you can also drop the `iceberg` service's published 8000 port so the app is
-  # only reachable via Caddy.)
+  # (Secure cookies + HSTS), ICEBERG_AUTO_MIGRATE=false, a real
+  # ICEBERG_SECRET_KEY and non-default Postgres credentials. The app's plain HTTP
+  # port is bound to loopback, so Caddy is the public entry point.
   caddy:
     profiles: ["tls"]
     image: caddy:2

@@ -440,16 +440,18 @@ rendered PDFs are still written to a local filesystem dir, so running more than 
 needs shared storage (RWX volume or object store) — a follow-on to the datastore work. Container
 + Kubernetes manifests (including an optional self-hosted Postgres `StatefulSet`) are under
 [`deploy/k8s/`](deploy/k8s/) and [`docker-compose.yml`](docker-compose.yml). Compose runs a
-**single** app service always paired with its `postgres` database container (no second app
-service, so nothing clashes on host port 8000):
+**single** app service always paired with its `postgres` database container. The default
+Compose path exposes the app on loopback only:
 
 ```bash
-docker compose up                       # app on :8000 + its PostgreSQL database (no .env needed)
+docker compose up                       # app on http://localhost:8000 + PostgreSQL (no .env needed)
 cp .env.example .env                     # optional: customise settings, then re-run
 ```
 
 A fresh clone needs no pre-step — `.env` is optional (`env_file` is `required: false`) and is
-merged in automatically when present.
+merged in automatically when present. For production-style Compose, set
+`ICEBERG_ENVIRONMENT=prod`, a real `ICEBERG_SECRET_KEY`, `ICEBERG_AUTO_MIGRATE=false`, and
+non-default `POSTGRES_*` credentials.
 
 ### TLS / running behind a proxy
 Iceberg always runs behind a **TLS-terminating reverse proxy** — a Kubernetes ingress, a cloud
@@ -460,7 +462,8 @@ ICEBERG_DOMAIN=intel.example.com docker compose --profile tls up   # auto Let's 
 ```
 
 Caddy ([`deploy/Caddyfile`](deploy/Caddyfile)) terminates TLS and proxies to the app; pair it with
-`ICEBERG_ENVIRONMENT=prod` for `Secure` cookies + HSTS. The container starts uvicorn with
+`ICEBERG_ENVIRONMENT=prod` for `Secure` cookies + HSTS. In this profile Caddy publishes
+`:80`/`:443`, while the app's plain-HTTP `:8000` publish remains loopback-only. The container starts uvicorn with
 `--proxy-headers` and trusts `X-Forwarded-*` (`FORWARDED_ALLOW_IPS`, default `*` — scope it to the
 proxy/pod CIDR for a stricter posture) so the request scheme is correct and the **audit log records
 the real client IP** rather than the proxy's. On **Kubernetes**, terminate TLS at an Ingress
@@ -607,11 +610,12 @@ flowchart LR
 ```
 
 **2. Docker Compose (default)** — one app service paired with its own PostgreSQL container on the
-compose network; only the app publishes a host port (`:8000`). Each service has its own named volume.
+compose network; only the app publishes a host port, bound to loopback (`localhost:8000`). Each
+service has its own named volume.
 
 ```mermaid
 flowchart TB
-  Client["Browser / API client"] -->|"host :8000"| App
+  Client["Browser / API client"] -->|"localhost:8000"| App
 
   subgraph net["docker compose — default bridge network"]
     App["iceberg service<br/>FastAPI + uvicorn --proxy-headers<br/>container :8000"]
@@ -625,7 +629,7 @@ flowchart TB
 
 **3. Docker Compose + TLS (`--profile tls`)** — adds a Caddy reverse proxy that terminates TLS and
 forwards `X-Forwarded-*`; the app trusts those headers (`--proxy-headers`) so the scheme and client
-IP are correct. Only Caddy publishes `:80`/`:443`; the app port stays on the internal network.
+IP are correct. Caddy publishes `:80`/`:443`; the app's plain-HTTP publish remains loopback-only.
 
 ```mermaid
 flowchart TB
