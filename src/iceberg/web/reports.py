@@ -124,6 +124,7 @@ def report_view(
     # last push outcome and whether the integration is configured/enabled.
     is_writer = user.role in (Role.ANALYST, Role.REVIEWER, Role.ADMIN)
     misp_enabled = misp_settings_service.get(session).enabled if is_writer else False
+    misp_can_push = misp_service.can_push_report(report) if is_writer else False
     misp_event = misp_service.get_record(session, report.id) if is_writer else None
     # Cited indicators above the MISP egress ceiling — the push card prompts the
     # writer to confirm before they leave the org.
@@ -143,6 +144,7 @@ def report_view(
             "cited_sources": list(report.cited_sources),
             "cited_iocs": list(report.cited_iocs),
             "misp_enabled": misp_enabled,
+            "misp_can_push": misp_can_push,
             "misp_event": misp_event,
             "misp_over_ceiling": misp_over_ceiling,
             "cited_attachments": list(report.cited_attachments),

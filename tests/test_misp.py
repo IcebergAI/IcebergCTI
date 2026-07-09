@@ -36,6 +36,19 @@ def _report(client, nb_id):
     return client.post("/api/reports", json={"notebook_id": nb_id, "title": "R"}).json()
 
 
+def _approve_report(client, login, rid):
+    submitted = client.post(
+        f"/api/reports/{rid}/transition", json={"target": "IN_REVIEW"}
+    )
+    assert submitted.status_code == 200, submitted.text
+    login("REVIEWER", email="reviewer@example.com")
+    approved = client.post(
+        f"/api/reports/{rid}/transition", json={"target": "APPROVED"}
+    )
+    assert approved.status_code == 200, approved.text
+    login("ANALYST")
+
+
 # --------------------------------------------------------------------------- #
 # Payload mapping
 # --------------------------------------------------------------------------- #
@@ -69,7 +82,7 @@ def test_build_event_payload_maps_attributes():
 
 
 # --------------------------------------------------------------------------- #
-# push_report — config guards (failure isolation, never raises)
+# Test helpers
 # --------------------------------------------------------------------------- #
 def _setup_report_with_ioc(client, login):
     login("ANALYST")
@@ -82,8 +95,55 @@ def _setup_report_with_ioc(client, login):
     return report["id"]
 
 
+# --------------------------------------------------------------------------- #
+# push_report — lifecycle egress gate
+# --------------------------------------------------------------------------- #
+def test_push_draft_records_error_without_egress(client, login, engine, monkeypatch):
+    rid = _setup_report_with_ioc(client, login)
+    monkeypatch.setattr(get_settings(), "misp_api_key", "KEY")
+    calls = []
+    monkeypatch.setattr(
+        misp.httpx, "post", lambda *a, **k: calls.append(a) or _FakeResp({})
+    )
+
+    with Session(engine) as session:
+        misp_settings.update(session, enabled=True, url="https://misp.example")
+        report = session.get(Report, rid)
+        record = misp.push_report(session, report)
+
+    assert record.last_status == "error"
+    assert "approved or published" in record.error
+    assert calls == []
+
+
+def test_push_in_review_records_error_without_egress(client, login, engine, monkeypatch):
+    rid = _setup_report_with_ioc(client, login)
+    submitted = client.post(
+        f"/api/reports/{rid}/transition", json={"target": "IN_REVIEW"}
+    )
+    assert submitted.status_code == 200, submitted.text
+    monkeypatch.setattr(get_settings(), "misp_api_key", "KEY")
+    calls = []
+    monkeypatch.setattr(
+        misp.httpx, "post", lambda *a, **k: calls.append(a) or _FakeResp({})
+    )
+
+    with Session(engine) as session:
+        misp_settings.update(session, enabled=True, url="https://misp.example")
+        report = session.get(Report, rid)
+        record = misp.push_report(session, report)
+
+    assert record.last_status == "error"
+    assert "approved or published" in record.error
+    assert calls == []
+
+
+# --------------------------------------------------------------------------- #
+# push_report — config guards (failure isolation, never raises)
+# --------------------------------------------------------------------------- #
 def test_push_disabled_records_error(client, login, engine):
     rid = _setup_report_with_ioc(client, login)
+    _approve_report(client, login, rid)
     with Session(engine) as session:
         report = session.get(Report, rid)
         record = misp.push_report(session, report)  # settings default: disabled
@@ -93,6 +153,7 @@ def test_push_disabled_records_error(client, login, engine):
 
 def test_push_missing_key_records_error(client, login, engine, monkeypatch):
     rid = _setup_report_with_ioc(client, login)
+    _approve_report(client, login, rid)
     monkeypatch.setattr(get_settings(), "misp_api_key", "")
     with Session(engine) as session:
         misp_settings.update(session, enabled=True, url="https://misp.example")
@@ -106,6 +167,7 @@ def test_push_no_indicators_records_error(client, login, engine, monkeypatch):
     login("ANALYST")
     nb = _notebook(client)
     report = _report(client, nb["id"])
+    _approve_report(client, login, report["id"])
     monkeypatch.setattr(get_settings(), "misp_api_key", "KEY")
     with Session(engine) as session:
         misp_settings.update(session, enabled=True, url="https://misp.example")
@@ -120,6 +182,7 @@ def test_push_no_indicators_records_error(client, login, engine, monkeypatch):
 # --------------------------------------------------------------------------- #
 def test_push_creates_then_updates(client, login, engine, monkeypatch):
     rid = _setup_report_with_ioc(client, login)
+    _approve_report(client, login, rid)
     monkeypatch.setattr(get_settings(), "misp_api_key", "KEY")
     calls = []
 
@@ -148,6 +211,7 @@ def test_push_creates_then_updates(client, login, engine, monkeypatch):
 
 def test_push_transport_failure_isolated(client, login, engine, monkeypatch):
     rid = _setup_report_with_ioc(client, login)
+    _approve_report(client, login, rid)
     monkeypatch.setattr(get_settings(), "misp_api_key", "KEY")
 
     def boom(*a, **k):
@@ -167,6 +231,7 @@ def test_push_transport_failure_isolated(client, login, engine, monkeypatch):
 # --------------------------------------------------------------------------- #
 def test_api_misp_push_endpoint(client, login, engine, monkeypatch):
     rid = _setup_report_with_ioc(client, login)
+    _approve_report(client, login, rid)
     monkeypatch.setattr(get_settings(), "misp_api_key", "KEY")
     monkeypatch.setattr(
         misp.httpx, "post", lambda *a, **k: _FakeResp({"Event": {"uuid": "x", "id": "7"}})
@@ -178,12 +243,67 @@ def test_api_misp_push_endpoint(client, login, engine, monkeypatch):
     assert resp.json()["last_status"] == "ok"
 
 
+def test_api_misp_push_blocks_draft_without_egress(client, login, engine, monkeypatch):
+    rid = _setup_report_with_ioc(client, login)
+    monkeypatch.setattr(get_settings(), "misp_api_key", "KEY")
+    calls = []
+    monkeypatch.setattr(
+        misp.httpx, "post", lambda *a, **k: calls.append(a) or _FakeResp({})
+    )
+    with Session(engine) as session:
+        misp_settings.update(session, enabled=True, url="https://misp.example")
+
+    resp = client.post(f"/api/reports/{rid}/misp-push")
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["last_status"] == "error"
+    assert "approved or published" in resp.json()["error"]
+    assert calls == []
+
+
 def test_api_misp_push_writer_only(client, login):
     login("ANALYST")
     nb = _notebook(client)
     report = _report(client, nb["id"])
     login("STAKEHOLDER")
     assert client.post(f"/api/reports/{report['id']}/misp-push").status_code == 403
+
+
+# --------------------------------------------------------------------------- #
+# Portal MISP push
+# --------------------------------------------------------------------------- #
+def test_portal_misp_push_blocks_draft_without_egress(
+    client, login, engine, monkeypatch
+):
+    rid = _setup_report_with_ioc(client, login)
+    monkeypatch.setattr(get_settings(), "misp_api_key", "KEY")
+    calls = []
+    monkeypatch.setattr(
+        misp.httpx, "post", lambda *a, **k: calls.append(a) or _FakeResp({})
+    )
+    with Session(engine) as session:
+        misp_settings.update(session, enabled=True, url="https://misp.example")
+
+    resp = client.post(f"/reports/{rid}/misp-push", data={}, follow_redirects=False)
+
+    assert resp.status_code in (302, 303)
+    assert calls == []
+    with Session(engine) as session:
+        record = misp.get_record(session, rid)
+    assert record.last_status == "error"
+    assert "approved or published" in record.error
+
+
+def test_portal_hides_misp_push_before_review(client, login, engine):
+    rid = _setup_report_with_ioc(client, login)
+    with Session(engine) as session:
+        misp_settings.update(session, enabled=True, url="https://misp.example")
+
+    resp = client.get(f"/reports/{rid}")
+
+    assert resp.status_code == 200, resp.text
+    assert "MISP push is available after this report is approved or published" in resp.text
+    assert f'action="/reports/{rid}/misp-push"' not in resp.text
 
 
 # --------------------------------------------------------------------------- #

@@ -204,12 +204,26 @@ def _report_citing(client, nb_id, ioc_id):
     return report["id"]
 
 
+def _approve_report(client, login, rid):
+    submitted = client.post(
+        f"/api/reports/{rid}/transition", json={"target": "IN_REVIEW"}
+    )
+    assert submitted.status_code == 200, submitted.text
+    login("REVIEWER", email="reviewer@example.com")
+    approved = client.post(
+        f"/api/reports/{rid}/transition", json={"target": "APPROVED"}
+    )
+    assert approved.status_code == 200, approved.text
+    login("ANALYST")
+
+
 def test_misp_push_prompts_when_over_ceiling(client, login, engine, monkeypatch):
     login("ANALYST")
     nb = _notebook(client)
     src = _source(client, nb["id"], tlp="RED")
     ioc = _ioc(client, nb["id"], source_id=src["id"])  # inherits RED
     rid = _report_citing(client, nb["id"], ioc["id"])
+    _approve_report(client, login, rid)
     monkeypatch.setattr(get_settings(), "misp_api_key", "KEY")
 
     posted = {"n": 0}
@@ -244,6 +258,7 @@ def test_portal_push_is_server_gated_over_ceiling(client, login, engine, monkeyp
     src = _source(client, nb["id"], tlp="RED")
     ioc = _ioc(client, nb["id"], source_id=src["id"])  # inherits RED
     rid = _report_citing(client, nb["id"], ioc["id"])
+    _approve_report(client, login, rid)
     monkeypatch.setattr(get_settings(), "misp_api_key", "KEY")
 
     posted = {"n": 0}
@@ -276,6 +291,7 @@ def test_misp_push_no_prompt_under_ceiling(client, login, engine, monkeypatch):
     src = _source(client, nb["id"], tlp="GREEN")
     ioc = _ioc(client, nb["id"], source_id=src["id"])  # inherits GREEN
     rid = _report_citing(client, nb["id"], ioc["id"])
+    _approve_report(client, login, rid)
     monkeypatch.setattr(get_settings(), "misp_api_key", "KEY")
     monkeypatch.setattr(misp.httpx, "post", lambda *a, **k: _FakeResp())
 
