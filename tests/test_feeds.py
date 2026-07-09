@@ -60,6 +60,13 @@ class _FakeResponse:
         self.status_code = status_code
         self.headers = headers or {}
         self.url = url
+        self.iterated = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
 
     def raise_for_status(self):
         if self.status_code >= 400:
@@ -68,6 +75,12 @@ class _FakeResponse:
                 request=httpx.Request("GET", self.url),
                 response=httpx.Response(self.status_code),
             )
+
+    def iter_bytes(self, chunk_size=None):
+        self.iterated = True
+        chunk_size = chunk_size or len(self.content) or 1
+        for i in range(0, len(self.content), chunk_size):
+            yield self.content[i : i + chunk_size]
 
 
 def _mock_dns(monkeypatch, mapping: dict[str, str] | None = None):
@@ -82,10 +95,10 @@ def _mock_dns(monkeypatch, mapping: dict[str, str] | None = None):
     monkeypatch.setattr(feeds_service.socket, "getaddrinfo", _getaddrinfo)
 
 
-def _mock_get(monkeypatch, content: bytes):
+def _mock_stream(monkeypatch, content: bytes):
     _mock_dns(monkeypatch)
     monkeypatch.setattr(
-        feeds_service.httpx, "get", lambda *a, **k: _FakeResponse(content)
+        feeds_service.httpx, "stream", lambda *a, **k: _FakeResponse(content)
     )
 
 
@@ -132,7 +145,7 @@ def test_create_feed_accepts_public_url_and_dedups(engine):
 # Fetch / parse / sanitise / dedup
 # --------------------------------------------------------------------------- #
 def test_fetch_feed_creates_sanitised_items(engine, monkeypatch):
-    _mock_get(monkeypatch, RSS_XML)
+    _mock_stream(monkeypatch, RSS_XML)
     with _new_session(engine) as session:
         feed = feeds_service.create_feed(
             session, url="https://example.com/feed.xml", title="Sample"
@@ -154,7 +167,7 @@ def test_fetch_feed_creates_sanitised_items(engine, monkeypatch):
 
 
 def test_fetch_feed_is_idempotent(engine, monkeypatch):
-    _mock_get(monkeypatch, RSS_XML)
+    _mock_stream(monkeypatch, RSS_XML)
     with _new_session(engine) as session:
         feed = feeds_service.create_feed(
             session, url="https://example.com/feed.xml", title="Sample"
@@ -166,7 +179,7 @@ def test_fetch_feed_is_idempotent(engine, monkeypatch):
 
 
 def test_fetch_feed_parses_atom(engine, monkeypatch):
-    _mock_get(monkeypatch, ATOM_XML)
+    _mock_stream(monkeypatch, ATOM_XML)
     with _new_session(engine) as session:
         feed = feeds_service.create_feed(
             session, url="https://example.com/atom.xml", title="Atom"
@@ -183,7 +196,7 @@ def test_fetch_feed_isolates_network_error(engine, monkeypatch):
     def _boom(*a, **k):
         raise httpx.ConnectError("unreachable")
 
-    monkeypatch.setattr(feeds_service.httpx, "get", _boom)
+    monkeypatch.setattr(feeds_service.httpx, "stream", _boom)
     with _new_session(engine) as session:
         feed = feeds_service.create_feed(
             session, url="https://example.com/down.xml", title="Down"
@@ -196,7 +209,7 @@ def test_fetch_feed_isolates_network_error(engine, monkeypatch):
 
 
 def test_fetch_feed_tolerates_malformed(engine, monkeypatch):
-    _mock_get(monkeypatch, b"<<<not xml at all>>>")
+    _mock_stream(monkeypatch, b"<<<not xml at all>>>")
     with _new_session(engine) as session:
         feed = feeds_service.create_feed(
             session, url="https://example.com/junk.xml", title="Junk"
@@ -205,11 +218,77 @@ def test_fetch_feed_tolerates_malformed(engine, monkeypatch):
         assert feeds_service.fetch_feed(session, feed) == 0
 
 
+@pytest.mark.parametrize("extra_bytes", [0, 1])
+def test_fetch_feed_accepts_payload_at_or_under_byte_cap(
+    engine, monkeypatch, extra_bytes
+):
+    monkeypatch.setattr(
+        feeds_service.get_settings(),
+        "rss_max_response_bytes",
+        len(RSS_XML) + extra_bytes,
+    )
+    _mock_stream(monkeypatch, RSS_XML)
+    with _new_session(engine) as session:
+        feed = feeds_service.create_feed(
+            session, url="https://example.com/feed.xml", title="Sample"
+        )
+        assert feeds_service.fetch_feed(session, feed) == 2
+        assert len(feeds_service.list_items(session, feed_id=feed.id)) == 2
+
+
+def test_fetch_feed_rejects_payload_over_byte_cap(engine, monkeypatch):
+    monkeypatch.setattr(
+        feeds_service.get_settings(), "rss_max_response_bytes", len(RSS_XML) - 1
+    )
+    _mock_stream(monkeypatch, RSS_XML)
+    monkeypatch.setattr(
+        feeds_service.feedparser,
+        "parse",
+        lambda *a, **k: pytest.fail("oversized feeds should not be parsed"),
+    )
+    with _new_session(engine) as session:
+        feed = feeds_service.create_feed(
+            session, url="https://example.com/feed.xml", title="Too big"
+        )
+        assert feeds_service.fetch_feed(session, feed) == 0
+        session.refresh(feed)
+        assert "byte limit" in feed.fetch_error
+        assert feeds_service.list_items(session, feed_id=feed.id) == []
+
+
+def test_fetch_feed_rejects_oversized_content_length_before_read(
+    engine, monkeypatch
+):
+    monkeypatch.setattr(
+        feeds_service.get_settings(), "rss_max_response_bytes", len(RSS_XML)
+    )
+    _mock_dns(monkeypatch)
+    response = _FakeResponse(
+        b"",
+        headers={"content-length": str(len(RSS_XML) + 1)},
+    )
+    monkeypatch.setattr(feeds_service.httpx, "stream", lambda *a, **k: response)
+    monkeypatch.setattr(
+        feeds_service.feedparser,
+        "parse",
+        lambda *a, **k: pytest.fail("oversized feeds should not be parsed"),
+    )
+    with _new_session(engine) as session:
+        feed = feeds_service.create_feed(
+            session, url="https://example.com/feed.xml", title="Too big"
+        )
+        assert feeds_service.fetch_feed(session, feed) == 0
+        session.refresh(feed)
+        assert "byte limit" in feed.fetch_error
+        assert response.iterated is False
+        assert feeds_service.list_items(session, feed_id=feed.id) == []
+
+
 def test_fetch_feed_blocks_hostname_resolving_to_private_ip(engine, monkeypatch):
     _mock_dns(monkeypatch, {"feeds.example.com": "10.0.0.9"})
     monkeypatch.setattr(
         feeds_service.httpx,
-        "get",
+        "stream",
         lambda *a, **k: pytest.fail("unsafe target should not be fetched"),
     )
     with _new_session(engine) as session:
@@ -225,7 +304,7 @@ def test_fetch_feed_blocks_redirect_to_cloud_metadata(engine, monkeypatch):
     _mock_dns(monkeypatch)
     calls: list[str] = []
 
-    def _get(url, **kwargs):
+    def _stream(method, url, **kwargs):
         calls.append(url)
         return _FakeResponse(
             status_code=302,
@@ -233,7 +312,7 @@ def test_fetch_feed_blocks_redirect_to_cloud_metadata(engine, monkeypatch):
             url=url,
         )
 
-    monkeypatch.setattr(feeds_service.httpx, "get", _get)
+    monkeypatch.setattr(feeds_service.httpx, "stream", _stream)
     with _new_session(engine) as session:
         feed = feeds_service.create_feed(
             session, url="https://example.com/feed.xml", title="Redirect"
@@ -248,7 +327,7 @@ def test_fetch_feed_allows_relative_redirect_to_public_target(engine, monkeypatc
     _mock_dns(monkeypatch)
     calls: list[str] = []
 
-    def _get(url, **kwargs):
+    def _stream(method, url, **kwargs):
         calls.append(url)
         if len(calls) == 1:
             return _FakeResponse(
@@ -258,7 +337,7 @@ def test_fetch_feed_allows_relative_redirect_to_public_target(engine, monkeypatc
             )
         return _FakeResponse(RSS_XML, url=url)
 
-    monkeypatch.setattr(feeds_service.httpx, "get", _get)
+    monkeypatch.setattr(feeds_service.httpx, "stream", _stream)
     with _new_session(engine) as session:
         feed = feeds_service.create_feed(
             session, url="https://example.com/start.xml", title="Redirect"
@@ -270,14 +349,14 @@ def test_fetch_feed_allows_relative_redirect_to_public_target(engine, monkeypatc
 def test_fetch_feed_records_excessive_redirects(engine, monkeypatch):
     _mock_dns(monkeypatch)
 
-    def _get(url, **kwargs):
+    def _stream(method, url, **kwargs):
         return _FakeResponse(
             status_code=302,
             headers={"location": "/again.xml"},
             url=url,
         )
 
-    monkeypatch.setattr(feeds_service.httpx, "get", _get)
+    monkeypatch.setattr(feeds_service.httpx, "stream", _stream)
     with _new_session(engine) as session:
         feed = feeds_service.create_feed(
             session, url="https://example.com/start.xml", title="Loop"
@@ -291,7 +370,7 @@ def test_fetch_feed_private_hosts_escape_hatch(engine, monkeypatch):
     monkeypatch.setattr(feeds_service.get_settings(), "rss_allow_private_hosts", True)
     _mock_dns(monkeypatch, {"internal.example": "10.0.0.5"})
     monkeypatch.setattr(
-        feeds_service.httpx, "get", lambda *a, **k: _FakeResponse(RSS_XML)
+        feeds_service.httpx, "stream", lambda *a, **k: _FakeResponse(RSS_XML)
     )
     with _new_session(engine) as session:
         feed = feeds_service.create_feed(
@@ -301,7 +380,7 @@ def test_fetch_feed_private_hosts_escape_hatch(engine, monkeypatch):
 
 
 def test_fetch_all_enabled_skips_disabled(engine, monkeypatch):
-    _mock_get(monkeypatch, RSS_XML)
+    _mock_stream(monkeypatch, RSS_XML)
     with _new_session(engine) as session:
         feeds_service.create_feed(
             session, url="https://example.com/on.xml", title="On", enabled=True
@@ -408,7 +487,7 @@ def test_admin_feeds_crud_flow(client, login, engine):
 
 
 def test_admin_fetch_now(client, login, engine, monkeypatch):
-    _mock_get(monkeypatch, RSS_XML)
+    _mock_stream(monkeypatch, RSS_XML)
     login("ADMIN", email="admin@example.com")
     client.post(
         "/admin/feeds",

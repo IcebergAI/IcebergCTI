@@ -22,6 +22,7 @@ failure-isolated, sanitised content. See CLAUDE.md.
 import calendar
 import logging
 import socket
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from ipaddress import ip_address
 from urllib.parse import urljoin, urlsplit
@@ -43,6 +44,7 @@ logger = logging.getLogger("iceberg.feeds")
 _DEFAULT_TIMEOUT = 10.0
 _MAX_REDIRECTS = 5
 _REDIRECT_STATUSES = {301, 302, 303, 307, 308}
+_READ_CHUNK = 64 * 1024
 
 
 # --------------------------------------------------------------------------- #
@@ -143,23 +145,59 @@ def _assert_safe_fetch_target(url: str) -> str:
     return url
 
 
-def _get_feed_url(url: str, *, timeout: float, proxy_config) -> httpx.Response:
+class _ResponseTooLarge(ValueError):
+    pass
+
+
+def _assert_response_size(headers: Mapping[str, str], *, max_bytes: int) -> None:
+    raw = headers.get("content-length")
+    if not raw:
+        return
+    try:
+        size = int(raw)
+    except ValueError:
+        return
+    if size > max_bytes:
+        raise _ResponseTooLarge(
+            f"Feed response exceeds the {max_bytes} byte limit"
+        )
+
+
+def _read_bounded_response(resp: httpx.Response, *, max_bytes: int) -> bytes:
+    _assert_response_size(resp.headers, max_bytes=max_bytes)
+    chunks: list[bytes] = []
+    size = 0
+    for chunk in resp.iter_bytes(chunk_size=_READ_CHUNK):
+        size += len(chunk)
+        if size > max_bytes:
+            raise _ResponseTooLarge(
+                f"Feed response exceeds the {max_bytes} byte limit"
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def _get_feed_payload(
+    url: str, *, timeout: float, proxy_config, max_bytes: int
+) -> bytes:
     current = _assert_safe_fetch_target(url)
     for _ in range(_MAX_REDIRECTS + 1):
-        resp = httpx.get(
+        with httpx.stream(
+            "GET",
             current,
             timeout=timeout,
             follow_redirects=False,
             headers={"User-Agent": "Iceberg-CTI/feed-fetcher"},
             **proxy.resolve(proxy_config, current),
-        )
-        if resp.status_code not in _REDIRECT_STATUSES:
-            return resp
-        location = resp.headers.get("location")
-        if not location:
-            raise ValueError("Feed redirect missing Location header")
-        base = str(getattr(resp, "url", current) or current)
-        current = _assert_safe_fetch_target(urljoin(base, location))
+        ) as resp:
+            if resp.status_code not in _REDIRECT_STATUSES:
+                resp.raise_for_status()
+                return _read_bounded_response(resp, max_bytes=max_bytes)
+            location = resp.headers.get("location")
+            if not location:
+                raise ValueError("Feed redirect missing Location header")
+            base = str(getattr(resp, "url", current) or current)
+            current = _assert_safe_fetch_target(urljoin(base, location))
     raise ValueError("Feed redirect limit exceeded")
 
 
@@ -253,13 +291,13 @@ def fetch_feed(session: Session, feed: Feed) -> int:
     settings = get_settings()
     proxy_config = proxy_settings.get(session)
     try:
-        resp = _get_feed_url(
+        payload = _get_feed_payload(
             feed.url,
             timeout=settings.rss_fetch_timeout or _DEFAULT_TIMEOUT,
             proxy_config=proxy_config,
+            max_bytes=settings.rss_max_response_bytes,
         )
-        resp.raise_for_status()
-        parsed = feedparser.parse(resp.content)
+        parsed = feedparser.parse(payload)
 
         existing = set(
             session.exec(
