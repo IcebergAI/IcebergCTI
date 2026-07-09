@@ -203,7 +203,16 @@
     {% if misp_enabled %}
     <div class="side-card">
       <div class="side-card-label">MISP</div>
-      {% if cited_iocs %}
+      {% if not misp_can_push %}
+        <div class="inline-notice mb-2" role="status">
+          MISP push is available after this report is approved or published.
+        </div>
+        {% if cited_iocs %}
+          <p class="eyebrow">Reviewed reports can push {{ cited_iocs | length }} cited indicator{{ '' if cited_iocs | length == 1 else 's' }} as one event.</p>
+        {% else %}
+          <p class="eyebrow">Cite indicators on the report before pushing to MISP.</p>
+        {% endif %}
+      {% elif cited_iocs %}
         {% if misp_over_ceiling %}
           <div class="inline-notice mb-2" role="status">
             {{ misp_over_ceiling | length }} cited indicator{{ '' if misp_over_ceiling | length == 1 else 's' }} above the MISP TLP ceiling

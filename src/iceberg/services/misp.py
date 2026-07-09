@@ -27,6 +27,7 @@ from ..models import (
     ProxySettings,
     Report,
     ReportMispEvent,
+    ReportStatus,
     Tag,
     is_disseminable,
     tlp_label,
@@ -40,6 +41,15 @@ logger = logging.getLogger("iceberg.misp")
 
 class MISPError(Exception):
     """A configuration or transport failure during a MISP push (caught + recorded)."""
+
+
+_PUSHABLE_REPORT_STATUSES = {ReportStatus.APPROVED, ReportStatus.PUBLISHED}
+_LIFECYCLE_ERROR = "Report must be approved or published before MISP push"
+
+
+def can_push_report(report: Report) -> bool:
+    """True when a report has completed review enough for MISP egress."""
+    return ReportStatus(report.status) in _PUSHABLE_REPORT_STATUSES
 
 
 # IOC type → MISP attribute category (a valid category is required per type).
@@ -161,12 +171,12 @@ def push_report(
     When cited indicators exceed the configured MISP egress ceiling and
     ``acknowledge_tlp`` is False, nothing is pushed and the record is returned
     with ``last_status="needs_confirmation"`` so the writer can confirm."""
-    settings = settings or misp_settings_service.get(session)
     record = _get_or_create_record(session, report.id)
-    iocs = list(report.cited_iocs)
-    max_tlp = _misp_max_tlp()
-    over = over_ceiling_iocs(iocs, max_tlp)
     try:
+        if not can_push_report(report):
+            raise MISPError(_LIFECYCLE_ERROR)
+
+        settings = settings or misp_settings_service.get(session)
         if not settings.enabled:
             raise MISPError("MISP push is disabled")
         if not settings.url.strip():
@@ -174,9 +184,13 @@ def push_report(
         api_key = get_settings().misp_api_key
         if not api_key:
             raise MISPError("MISP API key is not configured (ICEBERG_MISP_API_KEY)")
+
+        iocs = list(report.cited_iocs)
         if not iocs:
             raise MISPError("Report cites no indicators to push")
 
+        max_tlp = _misp_max_tlp()
+        over = over_ceiling_iocs(iocs, max_tlp)
         if over and not acknowledge_tlp:
             # Don't egress over-ceiling indicators without explicit confirmation.
             record.last_status = "needs_confirmation"
