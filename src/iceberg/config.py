@@ -129,6 +129,7 @@ class Settings(BaseSettings):
     rss_poll_enabled: bool = False
     rss_poll_interval_minutes: int = 30
     rss_fetch_timeout: float = 10.0
+    rss_max_response_bytes: int = 2 * 1024 * 1024
     rss_max_items_per_feed: int = 100
     rss_allow_private_hosts: bool = False
 
@@ -234,6 +235,13 @@ class Settings(BaseSettings):
                 f"ICEBERG_LOG_FORMAT must be one of {sorted(_LOG_FORMATS)}; got {value!r}."
             )
         return fmt
+
+    @field_validator("rss_max_response_bytes")
+    @classmethod
+    def _validate_rss_max_response_bytes(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("ICEBERG_RSS_MAX_RESPONSE_BYTES must be at least 1 byte.")
+        return value
 
     @model_validator(mode="after")
     def _guard_production(self) -> "Settings":

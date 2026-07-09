@@ -130,7 +130,7 @@ RSS_XML = b"""<?xml version="1.0"?><rss version="2.0"><channel>
 </channel></rss>"""
 
 
-def _capture_get(monkeypatch, captured):
+def _capture_stream(monkeypatch, captured):
     monkeypatch.setattr(
         feeds_service.socket,
         "getaddrinfo",
@@ -145,19 +145,28 @@ def _capture_get(monkeypatch, captured):
         headers = {}
         url = "https://feeds.example.com/a.xml"
 
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
         def raise_for_status(self):
             pass
 
-    def _get(url, **kwargs):
+        def iter_bytes(self, chunk_size=None):
+            yield self.content
+
+    def _stream(method, url, **kwargs):
         captured.update(kwargs)
         return _Resp()
 
-    monkeypatch.setattr(feeds_service.httpx, "get", _get)
+    monkeypatch.setattr(feeds_service.httpx, "stream", _stream)
 
 
 def test_feed_fetch_uses_proxy(engine, monkeypatch):
     captured: dict = {}
-    _capture_get(monkeypatch, captured)
+    _capture_stream(monkeypatch, captured)
     with Session(engine) as session:
         proxy_settings.update(
             session,
@@ -175,7 +184,7 @@ def test_feed_fetch_uses_proxy(engine, monkeypatch):
 
 def test_feed_fetch_bypasses_excluded_host(engine, monkeypatch):
     captured: dict = {}
-    _capture_get(monkeypatch, captured)
+    _capture_stream(monkeypatch, captured)
     with Session(engine) as session:
         proxy_settings.update(
             session,

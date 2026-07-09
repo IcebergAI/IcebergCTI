@@ -414,7 +414,7 @@ All settings use the `ICEBERG_` env prefix and can live in `.env` (see
 | `ICEBERG_PORTAL_BASE_URL` | Base URL used in notification email links |
 | `ICEBERG_AI_BACKEND` + `ICEBERG_AI_*` | Governed AI assist backend (`none`/`openai-compatible`/`claude`/`bedrock`), model, key/`ICEBERG_AI_AWS_REGION`, TLP egress ceiling and timeout (off by default) |
 | `ICEBERG_RSS_POLL_ENABLED` / `ICEBERG_RSS_POLL_INTERVAL_MINUTES` | Opt-in RSS poller switch and interval |
-| `ICEBERG_RSS_FETCH_TIMEOUT` / `ICEBERG_RSS_MAX_ITEMS_PER_FEED` | RSS/Atom fetch timeout and per-feed item cap |
+| `ICEBERG_RSS_FETCH_TIMEOUT` / `ICEBERG_RSS_MAX_RESPONSE_BYTES` / `ICEBERG_RSS_MAX_ITEMS_PER_FEED` | RSS/Atom fetch timeout, response byte cap, and per-feed item cap |
 | `ICEBERG_RSS_ALLOW_PRIVATE_HOSTS` | Allow private/internal feed hosts for trusted deployments |
 | `ICEBERG_AUDIT_ENABLED` + `ICEBERG_AUDIT_METHODS` | Master switch + default SIEM emit methods (`stdout`/`syslog`/`http`); editable live at `/admin/audit` |
 | `ICEBERG_AUDIT_SYSLOG_*` / `ICEBERG_AUDIT_HTTP_ENDPOINT` | syslog (RFC 5424) host/port/protocol + HTTP event-collector endpoint defaults |

@@ -85,6 +85,11 @@ def test_invalid_log_level_is_rejected():
         Settings(log_level="chatty")
 
 
+def test_invalid_rss_response_byte_cap_is_rejected():
+    with pytest.raises(ValidationError):
+        Settings(rss_max_response_bytes=0)
+
+
 def test_json_app_logs_include_correlation_id():
     from iceberg.logging_config import (
         configure_logging,
