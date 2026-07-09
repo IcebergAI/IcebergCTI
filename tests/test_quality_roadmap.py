@@ -13,6 +13,7 @@ from iceberg.models import (
     ProductFormat,
     RenderedProduct,
     Report,
+    Source,
     TLP,
     User,
 )
@@ -49,6 +50,17 @@ def _tag(client, login, label):
     resp = client.post("/api/tags", json={"kind": "ACTOR", "label": label})
     assert resp.status_code == 201
     return resp.json()
+
+
+def _accept_provenance(client, *, resource_type, resource_id, fields):
+    return client.post(
+        "/api/ai/accept-provenance",
+        json={
+            "resource_type": resource_type,
+            "resource_id": resource_id,
+            "fields": fields,
+        },
+    )
 
 
 def test_logout_revokes_cookie_token(client, login):
@@ -90,6 +102,80 @@ def test_ai_disabled_is_writer_only_and_audited(client, login, engine):
         assert session.exec(
             select(AuditEvent).where(AuditEvent.action == AuditAction.AI_ASSIST)
         ).first()
+
+
+def test_accept_report_ai_provenance_author_can_stamp_unpublished_report(client, login, engine):
+    _, report = _make_report(client, login)
+    login("ANALYST", email="author@example.com")
+
+    resp = _accept_provenance(
+        client,
+        resource_type="report",
+        resource_id=report["id"],
+        fields=["body_md"],
+    )
+
+    assert resp.status_code == 200
+    with Session(engine) as session:
+        saved = session.get(Report, report["id"])
+        assert saved.ai_provenance["body_md"]["origin"] == "AI"
+
+
+def test_accept_report_ai_provenance_requires_report_author(client, login, engine):
+    _, report = _make_report(client, login)
+    login("ANALYST", email="other@example.com")
+
+    resp = _accept_provenance(
+        client,
+        resource_type="report",
+        resource_id=report["id"],
+        fields=["body_md"],
+    )
+
+    assert resp.status_code == 403
+    with Session(engine) as session:
+        saved = session.get(Report, report["id"])
+        assert "body_md" not in (saved.ai_provenance or {})
+
+
+def test_accept_report_ai_provenance_rejects_published_report(client, login, engine):
+    _, report = _make_report(client, login)
+    _publish(client, login, report["id"])
+    login("ANALYST", email="author@example.com")
+
+    resp = _accept_provenance(
+        client,
+        resource_type="report",
+        resource_id=report["id"],
+        fields=["key_judgements"],
+    )
+
+    assert resp.status_code == 409
+    with Session(engine) as session:
+        saved = session.get(Report, report["id"])
+        assert "key_judgements" not in (saved.ai_provenance or {})
+
+
+def test_accept_source_ai_provenance_remains_writer_wide(client, login, engine):
+    nb, _ = _make_report(client, login)
+    login("ANALYST", email="author@example.com")
+    source = client.post(
+        f"/api/notebooks/{nb['id']}/sources",
+        json={"title": "Shared source"},
+    ).json()
+    login("ANALYST", email="other@example.com")
+
+    resp = _accept_provenance(
+        client,
+        resource_type="source",
+        resource_id=source["id"],
+        fields=["summary"],
+    )
+
+    assert resp.status_code == 200
+    with Session(engine) as session:
+        saved = session.get(Source, source["id"])
+        assert saved.ai_provenance["summary"]["origin"] == "AI"
 
 
 def test_tag_subscription_narrows_dissemination(client, login):
