@@ -38,6 +38,7 @@ from ..services import ai as ai_service
 from ..services import audit
 from ..services import iocs as ioc_service
 from ..services import proxy_settings as proxy_settings_service
+from ..services import reports as report_service
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 SessionDep = Annotated[Session, Depends(get_session)]
@@ -374,7 +375,9 @@ def accept_provenance(
         "fields": body.fields,
     }
     if body.resource_type == "report":
-        report = _report_or_404(session, body.resource_id)
+        report = report_service.ensure_editable(
+            _report_or_404(session, body.resource_id), user
+        )
         report.ai_provenance = {**(report.ai_provenance or {}), **{f: stamp for f in body.fields}}
         session.add(report)
     elif body.resource_type == "source":
