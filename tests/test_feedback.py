@@ -74,6 +74,37 @@ def test_feedback_on_undelivered_product_is_forbidden(client, login):
     assert resp.status_code == 403
 
 
+def test_feedback_api_respects_current_audience_scope_after_delivery(client, login):
+    _make_stakeholder(client, login, "allowed@example.com", "STRATEGIC")
+    allowed_id = client.get("/api/me").json()["id"]
+    _make_stakeholder(client, login, "removed@example.com", "STRATEGIC")
+
+    rid = _publish(client, login)
+
+    login("ADMIN", email="admin@example.com")
+    group = client.post(
+        "/api/audience-groups",
+        json={"name": "Feedback audience", "member_user_ids": [allowed_id]},
+    ).json()
+    scoped = client.put(
+        f"/api/audience-groups/reports/{rid}",
+        json={"group_ids": [group["id"]]},
+    )
+    assert scoped.status_code == 200, scoped.text
+
+    login("STAKEHOLDER", email="removed@example.com")
+    resp = client.post(
+        f"/api/reports/{rid}/feedback", json={"usefulness": "USEFUL"}
+    )
+    assert resp.status_code == 404
+
+    login("STAKEHOLDER", email="allowed@example.com")
+    resp = client.post(
+        f"/api/reports/{rid}/feedback", json={"usefulness": "USEFUL"}
+    )
+    assert resp.status_code == 201, resp.text
+
+
 def test_resubmit_upserts(client, login):
     _make_stakeholder(client, login, "s@example.com", "STRATEGIC")
     rid = _publish(client, login)

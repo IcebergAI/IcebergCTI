@@ -22,6 +22,7 @@ from ..models import (
     User,
     utcnow,
 )
+from . import reports as report_service
 from . import requirements as req_service
 
 
@@ -71,6 +72,8 @@ def submit_feedback(
     requirement the stakeholder owns *and* the report satisfies advances that
     requirement to ``SATISFIED`` (closing the loop). Other verdicts only signal.
     """
+    report_service.ensure_visible(report, stakeholder)
+
     if not was_delivered(session, report, stakeholder):
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
