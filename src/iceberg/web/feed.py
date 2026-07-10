@@ -1,11 +1,9 @@
 """Dissemination feed, preferences & help portal routes."""
 
-from sqlmodel import select
 from typing import Annotated
 
 from fastapi import (
     Form,
-    HTTPException,
     Query,
     Request,
 )
@@ -13,13 +11,11 @@ from fastapi import (
 from .. import help_content
 from ..auth.dependencies import CurrentUser
 from ..models import (
-    DisseminationEvent,
     IntelLevel,
     Role,
     TagKind,
-    utcnow,
 )
-from ..services import reports as report_service
+from ..services import feed as feed_service
 from ..services import tags as tag_service
 from ..templating import templates
 from .common import (
@@ -30,26 +26,10 @@ from .common import (
 
 @router.get("/feed")
 def feed_view(request: Request, session: SessionDep, user: CurrentUser):
-    events = list(
-        session.exec(
-            select(DisseminationEvent)
-            .where(DisseminationEvent.stakeholder_id == user.id)
-            .order_by(DisseminationEvent.created_at.desc())
-        ).all()
-    )
-    items = []
-    for event in events:
-        try:
-            items.append({"event": event, "report": report_service.ensure_visible(event.report, user)})
-        except HTTPException:
-            continue
+    items = feed_service.visible_items(session, user)
     unread_ids = {item["event"].id for item in items if item["event"].read_at is None}
-    # Viewing the feed marks everything read.
-    for e in events:
-        if e.read_at is None:
-            e.read_at = utcnow()
-            session.add(e)
-    session.commit()
+    # Viewing the feed marks currently visible items read.
+    feed_service.mark_visible_read(session, user)
     return templates.TemplateResponse(
         request,
         "feed.html",
