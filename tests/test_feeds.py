@@ -6,6 +6,7 @@ reusing the notebook source path) and the portal routes (admin-only config,
 writer-only reader, send-to-notebook into an existing or new notebook).
 """
 
+from contextlib import contextmanager
 import socket
 
 import httpx
@@ -390,6 +391,51 @@ def test_fetch_all_enabled_skips_disabled(engine, monkeypatch):
         )
         # Only the enabled feed is fetched (2 items each if both ran).
         assert feeds_service.fetch_all_enabled(session) == 2
+
+
+def test_fetch_all_enabled_once_skips_when_poll_lock_is_held(
+    engine, monkeypatch, caplog
+):
+    @contextmanager
+    def _blocked_lock():
+        yield False
+
+    def _unexpected_fetch(_session):
+        pytest.fail("locked RSS poll cycles must not fetch feeds")
+
+    monkeypatch.setattr(feeds_service, "_rss_poll_lock", _blocked_lock)
+    monkeypatch.setattr(feeds_service, "fetch_all_enabled", _unexpected_fetch)
+    with _new_session(engine) as session, caplog.at_level(
+        "INFO", logger="iceberg.feeds"
+    ):
+        assert feeds_service.fetch_all_enabled_once(session) == 0
+    assert "another worker holds the lock" in caplog.text
+
+
+def test_feed_item_duplicate_insert_is_skipped_and_session_remains_usable(engine):
+    with _new_session(engine) as session:
+        feed = feeds_service.create_feed(
+            session, url="https://example.com/feed.xml", title="Sample"
+        )
+        session.add(FeedItem(feed_id=feed.id, guid="g1", title="Original"))
+        session.commit()
+
+        assert (
+            feeds_service._add_feed_item_if_new(
+                session, FeedItem(feed_id=feed.id, guid="g1", title="Duplicate")
+            )
+            is False
+        )
+        assert feeds_service._add_feed_item_if_new(
+            session, FeedItem(feed_id=feed.id, guid="g2", title="New")
+        )
+        session.commit()
+
+        items = session.exec(
+            select(FeedItem).where(FeedItem.feed_id == feed.id)
+        ).all()
+        assert {item.guid for item in items} == {"g1", "g2"}
+        assert session.get(Feed, feed.id).title == "Sample"
 
 
 # --------------------------------------------------------------------------- #

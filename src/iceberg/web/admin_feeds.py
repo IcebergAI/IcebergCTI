@@ -68,7 +68,7 @@ def admin_feeds_fetch(
     the poll interval). Declared before ``/admin/feeds/{feed_id}`` so the literal
     path wins over the int path-param."""
     _require_admin(user)
-    count = feeds_service.fetch_all_enabled(session)
+    count = feeds_service.fetch_all_enabled_once(session)
     audit.record_and_emit(
         session,
         background_tasks=background_tasks,
