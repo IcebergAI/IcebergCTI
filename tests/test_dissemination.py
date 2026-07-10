@@ -2,7 +2,9 @@
 read tracking, and preferences."""
 
 import pytest
+from sqlmodel import Session, select
 
+from iceberg.models import DisseminationEvent
 from iceberg.services import dissemination as dissemination_service
 from iceberg.services import email as email_service
 
@@ -21,6 +23,7 @@ def _make_stakeholder(client, login, email, level=None):
         resp = client.patch("/api/me", json={"preferred_intel_level": level})
         assert resp.status_code == 200
         assert resp.json()["preferred_intel_level"] == level
+    return client.get("/api/me").json()["id"]
 
 
 def _publish(client, login, level="STRATEGIC", tlp="AMBER", title="Brief"):
@@ -36,6 +39,17 @@ def _publish(client, login, level="STRATEGIC", tlp="AMBER", title="Brief"):
     pub = client.post(f"/api/reports/{rid}/transition", json={"target": "PUBLISHED"})
     assert pub.status_code == 200 and pub.json()["status"] == "PUBLISHED"
     return rid
+
+
+def _event_read_at(engine, stakeholder_id: int, report_id: int):
+    with Session(engine) as session:
+        event = session.exec(
+            select(DisseminationEvent).where(
+                DisseminationEvent.stakeholder_id == stakeholder_id,
+                DisseminationEvent.report_id == report_id,
+            )
+        ).one()
+        return event.read_at
 
 
 # --------------------------------------------------------------------------- #
@@ -105,6 +119,34 @@ def test_feed_read_marking(client, login):
     assert client.get("/api/feed").json()[0]["event"]["read_at"] is not None
 
 
+def test_feed_read_marking_respects_current_audience_scope(client, login, engine):
+    allowed_id = _make_stakeholder(client, login, "allowed@example.com", "STRATEGIC")
+    removed_id = _make_stakeholder(client, login, "removed@example.com", "STRATEGIC")
+    rid = _publish(client, login)
+
+    login("ADMIN", email="admin@example.com")
+    group = client.post(
+        "/api/audience-groups",
+        json={"name": "Feed audience", "member_user_ids": [allowed_id]},
+    ).json()
+    scoped = client.put(
+        f"/api/audience-groups/reports/{rid}",
+        json={"group_ids": [group["id"]]},
+    )
+    assert scoped.status_code == 200, scoped.text
+
+    login("STAKEHOLDER", email="removed@example.com")
+    assert client.get("/api/feed").json() == []
+    assert client.post("/api/feed/read").json()["marked_read"] == 0
+    assert _event_read_at(engine, removed_id, rid) is None
+
+    login("STAKEHOLDER", email="allowed@example.com")
+    feed = client.get("/api/feed").json()
+    assert [item["report"]["id"] for item in feed] == [rid]
+    assert client.post("/api/feed/read").json()["marked_read"] == 1
+    assert _event_read_at(engine, allowed_id, rid) is not None
+
+
 def test_preferences_api_roundtrip(client, login):
     login("STAKEHOLDER", email="s@example.com")
     assert client.get("/api/me").json()["preferred_intel_level"] is None
@@ -162,6 +204,42 @@ def test_portal_feed_flow(client, login):
     feed = client.get("/feed")
     assert feed.status_code == 200 and "Portal brief" in feed.text
     assert "new item" not in client.get("/").text  # banner cleared after viewing
+
+
+def test_portal_feed_read_marking_respects_current_audience_scope(
+    client, login, engine
+):
+    allowed_id = _make_stakeholder(
+        client, login, "portal-allowed@example.com", "STRATEGIC"
+    )
+    removed_id = _make_stakeholder(
+        client, login, "portal-removed@example.com", "STRATEGIC"
+    )
+    rid = _publish(client, login, title="Hidden portal brief")
+
+    login("ADMIN", email="admin@example.com")
+    group = client.post(
+        "/api/audience-groups",
+        json={"name": "Portal feed audience", "member_user_ids": [allowed_id]},
+    ).json()
+    scoped = client.put(
+        f"/api/audience-groups/reports/{rid}",
+        json={"group_ids": [group["id"]]},
+    )
+    assert scoped.status_code == 200, scoped.text
+
+    login("STAKEHOLDER", email="portal-removed@example.com")
+    assert "new item" not in client.get("/").text
+    feed = client.get("/feed")
+    assert feed.status_code == 200
+    assert "Hidden portal brief" not in feed.text
+    assert _event_read_at(engine, removed_id, rid) is None
+
+    login("STAKEHOLDER", email="portal-allowed@example.com")
+    assert "new item" in client.get("/").text
+    feed = client.get("/feed")
+    assert feed.status_code == 200 and "Hidden portal brief" in feed.text
+    assert _event_read_at(engine, allowed_id, rid) is not None
 
 
 # --------------------------------------------------------------------------- #

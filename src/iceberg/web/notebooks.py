@@ -18,7 +18,6 @@ from ..auth.dependencies import CurrentUser
 from ..models import (
     Attachment,
     DiamondConfidence,
-    DisseminationEvent,
     Figure,
     IOCType,
     Notebook,
@@ -38,6 +37,7 @@ from ..services import (
     ai as ai_service,
     attachments as attachment_service,
     diamond as diamond_service,
+    feed as feed_service,
     figures as figure_service,
     iocs as ioc_service,
     notebooks as notebook_service,
@@ -109,14 +109,7 @@ def dashboard(request: Request, session: SessionDep, user: CurrentUser):
     )
     feed_unread = 0
     if user.role == Role.STAKEHOLDER:
-        feed_unread = len(
-            session.exec(
-                select(DisseminationEvent).where(
-                    DisseminationEvent.stakeholder_id == user.id,
-                    col(DisseminationEvent.read_at).is_(None),
-                )
-            ).all()
-        )
+        feed_unread = feed_service.visible_unread_count(session, user)
     # KPI strip counts (writers only) — derived cheaply for the dashboard stats.
     open_tasking = 0
     published_30d = 0
@@ -486,5 +479,4 @@ def delete_figure(
     fig = _get_figure(session, notebook_id, figure_id)
     figure_service.delete_figure(session, fig)
     return _redirect(f"/notebooks/{notebook_id}#figures")
-
 
