@@ -412,6 +412,8 @@ All settings use the `ICEBERG_` env prefix and can live in `.env` (see
 | `ICEBERG_EMAIL_BACKEND` + `ICEBERG_SMTP_*` | `console` (dev) or `smtp`; SMTP server settings |
 | `ICEBERG_WEBHOOK_URL` / `ICEBERG_WEBHOOK_TOKEN` | Optional generic report-publication webhook (seeds the row; URL/enabled/timeout editable live at `/admin/webhook`); token is env-only |
 | `ICEBERG_PORTAL_BASE_URL` | Base URL used in notification email links |
+| `ICEBERG_RATE_LIMIT_ENABLED` / `ICEBERG_RATE_LIMIT_STORE` / `ICEBERG_RATE_LIMIT_REDIS_URL` | Abuse protection for auth, AI, render, outbound tests/pushes, and search; enabled by default in prod, Redis-backed for shared worker state |
+| `ICEBERG_RATE_LIMIT_*` | Per-surface rate-limit tunables (auth/dev-login, OIDC, AI, render, outbound actions, search) |
 | `ICEBERG_AI_BACKEND` + `ICEBERG_AI_*` | Governed AI assist backend (`none`/`openai-compatible`/`claude`/`bedrock`), model, key/`ICEBERG_AI_AWS_REGION`, TLP egress ceiling and timeout (off by default) |
 | `ICEBERG_RSS_POLL_ENABLED` / `ICEBERG_RSS_POLL_INTERVAL_MINUTES` | Opt-in RSS poller switch and interval |
 | `ICEBERG_RSS_FETCH_TIMEOUT` / `ICEBERG_RSS_MAX_RESPONSE_BYTES` / `ICEBERG_RSS_MAX_ITEMS_PER_FEED` | RSS/Atom fetch timeout, response byte cap, and per-feed item cap |
@@ -441,7 +443,8 @@ needs shared storage (RWX volume or object store) — a follow-on to the datasto
 + Kubernetes manifests (including an optional self-hosted Postgres `StatefulSet`) are under
 [`deploy/k8s/`](deploy/k8s/) and [`docker-compose.yml`](docker-compose.yml). Compose runs a
 **single** app service always paired with its `postgres` database container. The default
-Compose path exposes the app on loopback only:
+Compose path also includes Redis for rate-limit buckets shared across uvicorn workers
+(`ICEBERG_RATE_LIMIT_REDIS_URL=redis://redis:6379/0`) and exposes the app on loopback only:
 
 ```bash
 docker compose up                       # app on http://localhost:8000 + PostgreSQL (no .env needed)

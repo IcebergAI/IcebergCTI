@@ -23,7 +23,8 @@ kubectl create secret generic iceberg-secrets \
   --from-literal=ICEBERG_DATABASE_URL="postgresql+psycopg://iceberg:CHANGEME@postgres:5432/iceberg"
   # plus any of: ICEBERG_OIDC_CLIENT_SECRET, ICEBERG_AUDIT_HTTP_TOKEN,
   # ICEBERG_MISP_API_KEY, ICEBERG_WEBHOOK_TOKEN, ICEBERG_AI_API_KEY,
-  # ICEBERG_SMTP_PASSWORD, ICEBERG_PROXY_USERNAME/PASSWORD
+  # ICEBERG_SMTP_PASSWORD, ICEBERG_PROXY_USERNAME/PASSWORD,
+  # ICEBERG_RATE_LIMIT_REDIS_URL
 ```
 
 ## Authentication / Login
@@ -208,3 +209,10 @@ or object storage) — a separate follow-on. Until then keep `replicas: 1` +
 The pod runs as non-root (uid 10001) with a read-only root filesystem, dropped
 capabilities and `RuntimeDefault` seccomp; `/tmp` and the Typst cache (`/cache`)
 are `emptyDir` mounts, and `/data` is the PVC.
+
+## Rate limiting
+
+Rate limiting is enabled automatically when `ICEBERG_ENVIRONMENT=prod`. Point
+`ICEBERG_RATE_LIMIT_REDIS_URL` at a managed Redis instance so auth, AI, render,
+outbound-test/push, and search buckets are shared across the container's uvicorn
+workers. If the URL carries credentials, keep it in `iceberg-secrets`.

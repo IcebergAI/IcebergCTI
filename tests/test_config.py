@@ -59,6 +59,32 @@ def test_dev_tolerates_default_secret_and_sqlite():
     assert settings.is_sqlite
 
 
+def test_rate_limit_default_active_only_in_prod():
+    assert not Settings(environment="dev", secret_key=_STRONG_SECRET).rate_limit_active
+    prod = Settings(
+        environment="prod",
+        secret_key=_STRONG_SECRET,
+        database_url=_PG_URL,
+    )
+    assert prod.rate_limit_active
+    assert not Settings(
+        environment="prod",
+        secret_key=_STRONG_SECRET,
+        database_url=_PG_URL,
+        rate_limit_enabled=False,
+    ).rate_limit_active
+
+
+def test_invalid_rate_limit_store_is_rejected():
+    with pytest.raises(ValidationError):
+        Settings(rate_limit_store="memcached")
+
+
+def test_invalid_rate_limit_values_are_rejected():
+    with pytest.raises(ValidationError):
+        Settings(rate_limit_ai_per_hour=0)
+
+
 def test_log_format_auto_is_text_in_dev_json_in_prod():
     from iceberg.logging_config import effective_log_format
 

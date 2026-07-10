@@ -8,6 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _AI_BACKENDS = {"none", "openai-compatible", "claude", "bedrock"}
 _LOG_FORMATS = {"auto", "text", "json"}
+_RATE_LIMIT_STORES = {"auto", "redis", "memory"}
 
 # The default signing key shipped for local dev. It is public (it's in source
 # control), so running with it in production would let anyone forge JWTs.
@@ -109,6 +110,24 @@ class Settings(BaseSettings):
     webhook_token: str = ""
     webhook_timeout: float = 5.0
 
+    # Rate limiting / abuse protection. ``None`` means "enabled in prod, off in
+    # dev/test"; Redis is the production-grade shared store across uvicorn
+    # workers, while memory is for local/dev/test isolation.
+    rate_limit_enabled: bool | None = None
+    rate_limit_store: str = "auto"  # auto | redis | memory
+    rate_limit_redis_url: str = ""
+    rate_limit_fail_open: bool = True
+    rate_limit_auth_dev_login_per_minute: int = 5
+    rate_limit_auth_oidc_per_minute: int = 20
+    rate_limit_ai_per_hour: int = 60
+    rate_limit_ai_burst: int = 10
+    rate_limit_render_per_hour: int = 12
+    rate_limit_render_burst: int = 3
+    rate_limit_outbound_per_hour: int = 20
+    rate_limit_outbound_burst: int = 5
+    rate_limit_search_per_minute: int = 120
+    rate_limit_search_burst: int = 60
+
     # Governed AI analyst assist. Off by default; every feature routes through
     # services/ai.py so advisory behavior, TLP egress and audit stay consistent.
     ai_backend: str = "none"  # none | openai-compatible | claude | bedrock
@@ -206,6 +225,12 @@ class Settings(BaseSettings):
         return self.dev_auth and not self.is_prod
 
     @property
+    def rate_limit_active(self) -> bool:
+        if self.rate_limit_enabled is None:
+            return self.is_prod
+        return self.rate_limit_enabled
+
+    @property
     def is_sqlite(self) -> bool:
         return self.database_url.lower().startswith("sqlite")
 
@@ -235,6 +260,35 @@ class Settings(BaseSettings):
                 f"ICEBERG_LOG_FORMAT must be one of {sorted(_LOG_FORMATS)}; got {value!r}."
             )
         return fmt
+
+    @field_validator("rate_limit_store")
+    @classmethod
+    def _validate_rate_limit_store(cls, value: str) -> str:
+        store = (value or "").lower()
+        if store not in _RATE_LIMIT_STORES:
+            raise ValueError(
+                "ICEBERG_RATE_LIMIT_STORE must be one of "
+                f"{sorted(_RATE_LIMIT_STORES)}; got {value!r}."
+            )
+        return store
+
+    @field_validator(
+        "rate_limit_auth_dev_login_per_minute",
+        "rate_limit_auth_oidc_per_minute",
+        "rate_limit_ai_per_hour",
+        "rate_limit_ai_burst",
+        "rate_limit_render_per_hour",
+        "rate_limit_render_burst",
+        "rate_limit_outbound_per_hour",
+        "rate_limit_outbound_burst",
+        "rate_limit_search_per_minute",
+        "rate_limit_search_burst",
+    )
+    @classmethod
+    def _validate_positive_rate_limit(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("ICEBERG_RATE_LIMIT_* values must be at least 1.")
+        return value
 
     @field_validator("rss_max_response_bytes")
     @classmethod

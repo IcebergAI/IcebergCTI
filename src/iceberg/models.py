@@ -284,6 +284,7 @@ class AuditAction(StrEnum):
     # Authentication
     AUTH_LOGIN = "AUTH_LOGIN"
     AUTH_LOGOUT = "AUTH_LOGOUT"
+    RATE_LIMITED = "RATE_LIMITED"
     # Authorization (failure outcomes captured centrally)
     AUTHZ_DENIED = "AUTHZ_DENIED"
     CSRF_BLOCKED = "CSRF_BLOCKED"

@@ -116,6 +116,7 @@ def test_compose_prod_overrides_and_loopback_port(tmp_path):
 
     iceberg = config["services"]["iceberg"]
     postgres = config["services"]["postgres"]
+    redis = config["services"]["redis"]
 
     assert iceberg["environment"]["ICEBERG_ENVIRONMENT"] == "prod"
     assert iceberg["environment"]["ICEBERG_AUTO_MIGRATE"] == "false"
@@ -123,9 +124,12 @@ def test_compose_prod_overrides_and_loopback_port(tmp_path):
         iceberg["environment"]["ICEBERG_DATABASE_URL"]
         == "postgresql+psycopg://iceberg_app:testpass@postgres:5432/iceberg_prod"
     )
+    assert iceberg["environment"]["ICEBERG_RATE_LIMIT_REDIS_URL"] == "redis://redis:6379/0"
+    assert "redis" in iceberg["depends_on"]
     assert postgres["environment"]["POSTGRES_PASSWORD"] == "testpass"
     assert postgres["environment"]["POSTGRES_USER"] == "iceberg_app"
     assert postgres["environment"]["POSTGRES_DB"] == "iceberg_prod"
+    assert redis["image"] == "redis:8-alpine"
     assert iceberg["ports"] == [
         {
             "mode": "ingress",
