@@ -24,3 +24,6 @@ data:
   # ICEBERG_OIDC_TENANT_ID: "<tenant-guid>"
   # ICEBERG_OIDC_CLIENT_ID: "<app-client-id>"
   # ICEBERG_OIDC_REDIRECT_URI: "https://iceberg.example.com/auth/callback"
+  # Rate limiting: enabled automatically in prod. Keep any credential-bearing
+  # ICEBERG_RATE_LIMIT_REDIS_URL in the iceberg-secrets Secret.
+  ICEBERG_RATE_LIMIT_STORE: "auto"

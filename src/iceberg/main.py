@@ -19,6 +19,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from .api import api_router
 from .auth.audit_middleware import AuditMiddleware
 from .auth.csrf import SameOriginCSRFMiddleware
+from .auth.rate_limit import RateLimitMiddleware
 from .auth.security_headers import SecurityHeadersMiddleware
 from .auth.routes import router as auth_router
 from .auth.signing import session_signing_key
@@ -120,6 +121,10 @@ def create_app() -> FastAPI:
     app.add_middleware(SameOriginCSRFMiddleware)
     # Used by Authlib for the OIDC state/nonce during the code flow.
     app.add_middleware(SessionMiddleware, secret_key=session_signing_key(settings))
+    # Abuse protection. Added after SessionMiddleware so it runs before
+    # session/CSRF work on the way in, but before AuditMiddleware so the audit
+    # correlation id is already stamped and security headers still wrap 429s.
+    app.add_middleware(RateLimitMiddleware, settings=settings)
     # Security audit capture. Added before SecurityHeadersMiddleware so it still
     # observes the final response — including the 403 produced by the CSRF
     # middleware and role-guard denials raised deep in the app.
