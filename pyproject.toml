@@ -89,7 +89,19 @@ iceberg-rebuild-related = "iceberg.maintenance:rebuild_related_main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-iceberg = ["data/*.json", "migrations/script.py.mako", "migrations/versions/*.py"]
+iceberg = [
+    "data/*.json",
+    "migrations/script.py.mako",
+    "migrations/versions/*.py",
+    "static/assets.lock.json",
+    "static/css/*.css",
+    "static/css/vendor/*.css",
+    "static/fonts/*.woff2",
+    "static/js/*.js",
+    "static/js/vendor/*.js",
+    "templates/*.html",
+    "typst/*.typ",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
