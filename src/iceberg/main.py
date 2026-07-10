@@ -22,8 +22,8 @@ from .auth.csrf import SameOriginCSRFMiddleware
 from .auth.security_headers import SecurityHeadersMiddleware
 from .auth.routes import router as auth_router
 from .auth.signing import session_signing_key
+from . import db
 from .config import get_settings
-from .db import engine, init_db
 from .health import router as health_router
 from .logging_config import configure_logging
 from .web import web_router
@@ -70,8 +70,8 @@ async def _rss_poll_loop(interval_seconds: float) -> None:
     from .services import feeds as feeds_service
 
     def _cycle() -> int:
-        with Session(engine) as session:
-            return feeds_service.fetch_all_enabled(session)
+        with Session(db.engine) as session:
+            return feeds_service.fetch_all_enabled_once(session)
 
     while True:
         await asyncio.sleep(interval_seconds)
@@ -84,7 +84,7 @@ async def _rss_poll_loop(interval_seconds: float) -> None:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    init_db()
+    db.init_db()
     settings = get_settings()
     _warn_if_no_login_path(settings)
     _warn_if_console_email_backend_in_prod(settings)

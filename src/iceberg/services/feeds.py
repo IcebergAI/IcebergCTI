@@ -23,6 +23,7 @@ import calendar
 import logging
 import socket
 from collections.abc import Mapping
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from ipaddress import ip_address
 from urllib.parse import urljoin, urlsplit
@@ -31,6 +32,8 @@ import feedparser
 import httpx
 import nh3
 from fastapi import HTTPException, status
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
 
 from ..config import get_settings
@@ -45,6 +48,7 @@ _DEFAULT_TIMEOUT = 10.0
 _MAX_REDIRECTS = 5
 _REDIRECT_STATUSES = {301, 302, 303, 307, 308}
 _READ_CHUNK = 64 * 1024
+_RSS_POLL_LOCK_KEY = 0x1CEB_0002
 
 
 # --------------------------------------------------------------------------- #
@@ -281,6 +285,58 @@ def _entry_content(entry) -> str:
     return entry.get("summary", "")
 
 
+@contextmanager
+def _rss_poll_lock():
+    """Try to take the process-wide RSS poll lock.
+
+    PostgreSQL deployments can run multiple uvicorn workers / replicas. A
+    session-level advisory lock lets exactly one worker fetch feeds while the
+    others skip the cycle. SQLite is the local dev/test backend and keeps the
+    previous no-op behavior.
+    """
+    from .. import db
+
+    if db.engine.dialect.name != "postgresql":
+        yield True
+        return
+
+    conn = db.engine.connect()
+    acquired = False
+    try:
+        acquired = bool(
+            conn.execute(
+                text("SELECT pg_try_advisory_lock(:k)"),
+                {"k": _RSS_POLL_LOCK_KEY},
+            ).scalar()
+        )
+        conn.commit()  # session-level advisory lock persists past commit
+        yield acquired
+    finally:
+        if acquired:
+            conn.execute(
+                text("SELECT pg_advisory_unlock(:k)"),
+                {"k": _RSS_POLL_LOCK_KEY},
+            )
+            conn.commit()
+        conn.close()
+
+
+def _add_feed_item_if_new(session: Session, item: FeedItem) -> bool:
+    """Insert one feed item, tolerating a concurrent duplicate insert."""
+    try:
+        with session.begin_nested():
+            session.add(item)
+            session.flush()
+        return True
+    except IntegrityError:
+        logger.info(
+            "Feed item already exists for feed_id=%s guid=%s; skipping",
+            item.feed_id,
+            item.guid,
+        )
+        return False
+
+
 def fetch_feed(session: Session, feed: Feed) -> int:
     """Fetch one feed and upsert its items (deduped on ``(feed_id, guid)``).
 
@@ -310,7 +366,8 @@ def fetch_feed(session: Session, feed: Feed) -> int:
             if not guid or guid in existing:
                 continue
             existing.add(guid)
-            session.add(
+            if _add_feed_item_if_new(
+                session,
                 FeedItem(
                     feed_id=feed.id,
                     guid=guid,
@@ -320,9 +377,9 @@ def fetch_feed(session: Session, feed: Feed) -> int:
                     content=_sanitize_html(_entry_content(entry)),
                     author=entry.get("author", ""),
                     published_at=_entry_published(entry),
-                )
-            )
-            new_count += 1
+                ),
+            ):
+                new_count += 1
 
         feed.last_fetched_at = utcnow()
         feed.last_status = f"ok: {new_count} new, {len(parsed.entries)} total"
@@ -344,6 +401,15 @@ def fetch_all_enabled(session: Session) -> int:
     """Fetch every enabled feed; returns the total new-item count."""
     feeds = session.exec(select(Feed).where(Feed.enabled == True)).all()  # noqa: E712
     return sum(fetch_feed(session, feed) for feed in feeds)
+
+
+def fetch_all_enabled_once(session: Session) -> int:
+    """Fetch every enabled feed if this process wins the poll-cycle lock."""
+    with _rss_poll_lock() as acquired:
+        if not acquired:
+            logger.info("RSS poll cycle skipped: another worker holds the lock")
+            return 0
+        return fetch_all_enabled(session)
 
 
 # --------------------------------------------------------------------------- #
