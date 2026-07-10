@@ -29,6 +29,7 @@ from sqlmodel import Session, col, select
 from ..config import get_settings
 from ..embeds import FIGURE_TOKEN_RE  # noqa: F401 — re-exported for callers
 from ..models import Figure, Notebook, Report
+from .upload_validation import validate_builtin_bytes
 
 # Canonical MIME -> allowed file extensions. PNG/JPEG/GIF only (browser data-URI
 # ∩ Typst image()): WebP isn't renderable by Typst, SVG is scriptable.
@@ -111,6 +112,12 @@ def save_upload(
         )
     finally:
         upload.file.close()
+
+    try:
+        validate_builtin_bytes(dest, content_type)
+    except HTTPException:
+        dest.unlink(missing_ok=True)
+        raise
 
     figure = Figure(
         notebook_id=notebook.id,

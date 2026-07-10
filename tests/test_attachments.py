@@ -90,6 +90,50 @@ def test_reject_extension_type_mismatch(client, login):
     assert resp.status_code == 415
 
 
+def test_reject_pdf_byte_mismatch(client, login, _attachments_dir):
+    login("ANALYST")
+    nb = _notebook(client)
+    resp = _upload(client, nb["id"], name="ref.pdf", content=b"not a pdf")
+    assert resp.status_code == 415
+    assert _count_files(_attachments_dir) == 0
+    assert client.get(f"/api/notebooks/{nb['id']}").json()["attachments"] == []
+
+
+def test_reject_image_attachment_byte_mismatch(client, login, _attachments_dir):
+    login("ANALYST")
+    nb = _notebook(client)
+    resp = _upload(
+        client,
+        nb["id"],
+        name="shot.png",
+        content=b"%PDF-1.4 not a png",
+        ctype="image/png",
+    )
+    assert resp.status_code == 415
+    assert _count_files(_attachments_dir) == 0
+
+
+def test_custom_attachment_type_remains_mime_only(client, login, monkeypatch):
+    login("ANALYST")
+    nb = _notebook(client)
+    settings = get_settings()
+    monkeypatch.setattr(
+        settings,
+        "attachment_allowed_types",
+        settings.attachment_allowed_types + ",application/x-iceberg-custom",
+    )
+
+    resp = _upload(
+        client,
+        nb["id"],
+        name="evidence.bin",
+        content=b"\x00custom bytes",
+        ctype="application/x-iceberg-custom",
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["content_type"] == "application/x-iceberg-custom"
+
+
 def test_reject_oversize(client, login, _attachments_dir, monkeypatch):
     login("ANALYST")
     nb = _notebook(client)

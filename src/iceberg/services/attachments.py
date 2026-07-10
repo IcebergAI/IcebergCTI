@@ -6,8 +6,9 @@ the rules can't drift between the two presentation layers).
 
 Files are stored under ``settings.attachments_dir`` with a server-generated UUID
 name; the client-supplied filename is metadata only and never used to build a
-path. Uploads are validated against a MIME whitelist + extension, streamed to
-disk with a hard size cap, and served with ``Content-Disposition: attachment``.
+path. Uploads are validated against a MIME whitelist + extension + lightweight
+byte sniffing, streamed to disk with a hard size cap, and served with
+``Content-Disposition: attachment``.
 """
 
 import uuid
@@ -18,6 +19,7 @@ from sqlmodel import Session, col, select
 
 from ..config import get_settings
 from ..models import Attachment, Notebook, Report, utcnow
+from .upload_validation import validate_builtin_bytes
 
 # Canonical MIME -> allowed file extensions. Used to reject uploads whose
 # declared type and extension disagree. Custom types added via the env whitelist
@@ -100,6 +102,12 @@ def save_upload(
         )
     finally:
         upload.file.close()
+
+    try:
+        validate_builtin_bytes(dest, content_type)
+    except HTTPException:
+        dest.unlink(missing_ok=True)
+        raise
 
     attachment = Attachment(
         notebook_id=notebook.id,

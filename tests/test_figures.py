@@ -89,6 +89,39 @@ def test_reject_extension_type_mismatch(client, login):
     assert resp.status_code == 415
 
 
+def test_reject_png_byte_mismatch(client, login, _figures_dir):
+    login("ANALYST")
+    nb = _notebook(client)
+    resp = _upload(client, nb["id"], content=b"not a png")
+    assert resp.status_code == 415
+    assert _count_files(_figures_dir) == 0
+    assert client.get(f"/api/notebooks/{nb['id']}").json()["figures"] == []
+
+
+def test_reject_jpeg_and_gif_byte_mismatch(client, login, _figures_dir):
+    login("ANALYST")
+    nb = _notebook(client)
+
+    jpeg = _upload(
+        client,
+        nb["id"],
+        name="photo.jpg",
+        content=b"GIF89a not a jpeg",
+        ctype="image/jpeg",
+    )
+    gif = _upload(
+        client,
+        nb["id"],
+        name="anim.gif",
+        content=b"\xff\xd8\xff not a gif",
+        ctype="image/gif",
+    )
+
+    assert jpeg.status_code == 415
+    assert gif.status_code == 415
+    assert _count_files(_figures_dir) == 0
+
+
 def test_reject_oversize(client, login, _figures_dir, monkeypatch):
     login("ANALYST")
     nb = _notebook(client)
