@@ -55,6 +55,7 @@ def test_update_source(client, login):
     resp = client.patch(
         f"/api/notebooks/{nb['id']}/sources/{src['id']}",
         json={
+            "version": 1,
             "title": "Updated source",
             "reference": "https://example.test/updated",
             "summary": "kept for older records",
@@ -87,7 +88,7 @@ def test_report_create_update_and_citations(client, login):
     assert report.status_code == 201, report.text
     rid = report.json()["id"]
 
-    upd = client.patch(f"/api/reports/{rid}", json={"body_md": "# Heading\n\ntext"})
+    upd = client.patch(f"/api/reports/{rid}", json={"body_md": "# Heading\n\ntext", "version": 1})
     assert upd.status_code == 200
     assert upd.json()["body_md"].startswith("# Heading")
 
@@ -195,6 +196,7 @@ def test_report_judgement_scaffolding(client, login):
     upd = client.patch(
         f"/api/reports/{rid}",
         json={
+            "version": 1,
             "key_judgements": "- We assess **with high confidence**…",
             "key_assumptions": "Logs are authentic.",
             "intelligence_gaps": "Attribution unconfirmed.",
@@ -213,8 +215,9 @@ def test_report_judgement_scaffolding(client, login):
     client.post(f"/api/reports/{rid}/transition", json={"target": "PUBLISHED"})
 
     login("ANALYST", email="author@example.com")
+    version = client.get(f"/api/reports/{rid}").json()["report"]["version"]
     locked = client.patch(
-        f"/api/reports/{rid}", json={"key_judgements": "tampered"}
+        f"/api/reports/{rid}", json={"key_judgements": "tampered", "version": version}
     )
     assert locked.status_code == 409
 
@@ -235,19 +238,19 @@ def test_report_analytic_confidence(client, login):
     ] is None
 
     set_high = client.patch(
-        f"/api/reports/{rid}", json={"analytic_confidence": "HIGH"}
+        f"/api/reports/{rid}", json={"analytic_confidence": "HIGH", "version": 1}
     )
     assert set_high.status_code == 200, set_high.text
     assert set_high.json()["analytic_confidence"] == "HIGH"
 
     # Explicit null clears it back to "not stated".
     cleared = client.patch(
-        f"/api/reports/{rid}", json={"analytic_confidence": None}
+        f"/api/reports/{rid}", json={"analytic_confidence": None, "version": 2}
     )
     assert cleared.status_code == 200
     assert cleared.json()["analytic_confidence"] is None
 
-    client.patch(f"/api/reports/{rid}", json={"analytic_confidence": "MODERATE"})
+    client.patch(f"/api/reports/{rid}", json={"analytic_confidence": "MODERATE", "version": 3})
 
     # Publish, then confirm the marking is locked like the rest of the product.
     client.post(f"/api/reports/{rid}/transition", json={"target": "IN_REVIEW"})
@@ -256,8 +259,9 @@ def test_report_analytic_confidence(client, login):
     client.post(f"/api/reports/{rid}/transition", json={"target": "PUBLISHED"})
 
     login("ANALYST", email="author@example.com")
+    version = client.get(f"/api/reports/{rid}").json()["report"]["version"]
     locked = client.patch(
-        f"/api/reports/{rid}", json={"analytic_confidence": "LOW"}
+        f"/api/reports/{rid}", json={"analytic_confidence": "LOW", "version": version}
     )
     assert locked.status_code == 409
 

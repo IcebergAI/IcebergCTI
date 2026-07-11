@@ -196,7 +196,9 @@ def test_push_creates_then_updates(client, login, engine, monkeypatch):
         report = session.get(Report, rid)
         first = misp.push_report(session, report)
     assert first.last_status == "ok"
-    assert first.event_uuid == "u-123"
+    event_uuid = first.event_uuid
+    assert event_uuid
+    assert event_uuid != "u-123"  # local UUID is stable across ambiguous retries
     assert first.event_id == "42"
     assert first.attribute_count == 1
     assert calls[0].endswith("/events/add")
@@ -206,7 +208,7 @@ def test_push_creates_then_updates(client, login, engine, monkeypatch):
         report = session.get(Report, rid)
         second = misp.push_report(session, report)
     assert second.last_status == "ok"
-    assert calls[1].endswith("/events/edit/u-123")
+    assert calls[1].endswith(f"/events/edit/{event_uuid}")
 
 
 def test_push_transport_failure_isolated(client, login, engine, monkeypatch):

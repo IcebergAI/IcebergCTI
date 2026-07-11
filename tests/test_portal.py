@@ -81,6 +81,7 @@ def test_full_authoring_flow_through_portal(client, login):
     resp = client.post(
         f"/reports/{rid}",
         data={
+            "version": "1",
             "title": "LockBit update",
             "body_md": "# Summary\n\nNew affiliate activity.",
             "intel_level": "TACTICAL",
@@ -249,6 +250,7 @@ def test_report_judgement_scaffolding_persists_and_renders(client, login):
     saved = client.post(
         f"/reports/{rid}",
         data={
+            "version": "1",
             "title": "Assessment",
             "body_md": "Narrative body.",
             "key_judgements": "We assess the intrusion is ongoing.",
@@ -290,7 +292,7 @@ def test_report_analytic_confidence_via_portal(client, login):
     # Setting a value persists it and renders the masthead chip.
     saved = client.post(
         f"/reports/{rid}",
-        data={"title": "Assessment", "analytic_confidence": "HIGH"},
+        data={"version": "1", "title": "Assessment", "analytic_confidence": "HIGH"},
     )
     assert saved.status_code == 200, saved.text
     assert client.get(f"/api/reports/{rid}").json()["report"][
@@ -306,7 +308,8 @@ def test_report_analytic_confidence_via_portal(client, login):
 
     # The "— Not stated —" option posts "", which clears the field.
     client.post(
-        f"/reports/{rid}", data={"title": "Assessment", "analytic_confidence": ""}
+        f"/reports/{rid}",
+        data={"version": "2", "title": "Assessment", "analytic_confidence": ""},
     )
     assert client.get(f"/api/reports/{rid}").json()["report"][
         "analytic_confidence"

@@ -1,6 +1,7 @@
 """Liveness/readiness probes: unauthenticated, cheap, and readiness reflects DB
 connectivity (regression for FR #61)."""
 
+from iceberg import db
 from iceberg.db import get_session
 
 
@@ -19,7 +20,8 @@ def test_healthz_not_redirected_for_html_clients(client):
     assert resp.status_code == 200
 
 
-def test_readyz_ready_with_db(client):
+def test_readyz_ready_with_db(client, monkeypatch):
+    monkeypatch.setattr(db, "schema_is_current", lambda _bind=None: True)
     resp = client.get("/readyz")
     assert resp.status_code == 200
     assert resp.json() == {"status": "ready"}

@@ -130,7 +130,8 @@ def test_tags_editable_after_publish(client, login):
     _publish(client, login, rid)
     login("ANALYST", email="author@example.com")
     # content edits are blocked once published...
-    assert client.patch(f"/api/reports/{rid}", json={"title": "x"}).status_code == 409
+    version = client.get(f"/api/reports/{rid}").json()["report"]["version"]
+    assert client.patch(f"/api/reports/{rid}", json={"title": "x", "version": version}).status_code == 409
     # ...but tags can still be set.
     resp = client.put(f"/api/reports/{rid}/tags", json={"tag_ids": [tag["id"]]})
     assert resp.status_code == 200

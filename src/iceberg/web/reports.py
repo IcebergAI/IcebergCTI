@@ -2,6 +2,7 @@
 
 import logging
 
+from sqlalchemy import update
 from sqlmodel import Session, select
 from pathlib import Path
 from typing import Annotated
@@ -14,7 +15,7 @@ from fastapi import (
     Response,
     status,
 )
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from .. import help_content
 from ..auth.dependencies import CurrentUser, ensure_role
@@ -267,7 +268,9 @@ def report_save(
     report_id: int,
     session: SessionDep,
     user: CurrentUser,
+    request: Request,
     title: Annotated[str, Form()],
+    version: Annotated[int, Form()],
     body_md: Annotated[str, Form()] = "",
     key_judgements: Annotated[str, Form()] = "",
     key_assumptions: Annotated[str, Form()] = "",
@@ -279,19 +282,35 @@ def report_save(
 ):
     _require_writer(user)
     report = ensure_editable(_get_report(session, report_id), user)
-    report.title = title
-    report.body_md = body_md
-    report.key_judgements = key_judgements
-    report.key_assumptions = key_assumptions
-    report.intelligence_gaps = intelligence_gaps
-    report.analytic_confidence = (
+    confidence = (
         AnalyticConfidence(analytic_confidence) if analytic_confidence else None
     )
-    report.intel_level = intel_level
-    report.tlp = tlp
-    report.updated_at = utcnow()
-    session.add(report)
+    result = session.execute(
+        update(Report)
+        .where(
+            Report.id == report.id,
+            Report.version == version,
+            Report.status != ReportStatus.PUBLISHED,
+        )
+        .values(
+            title=title,
+            body_md=body_md,
+            key_judgements=key_judgements,
+            key_assumptions=key_assumptions,
+            intelligence_gaps=intelligence_gaps,
+            analytic_confidence=confidence,
+            intel_level=intel_level,
+            tlp=tlp,
+            updated_at=utcnow(),
+            version=version + 1,
+        )
+    )
+    if not result.rowcount:
+        session.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, "Report revision is stale")
     session.commit()
+    if request.headers.get("X-Requested-With") == "fetch":
+        return JSONResponse({"version": version + 1})
     return _redirect(f"/reports/{report_id}/edit")
 
 

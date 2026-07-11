@@ -45,6 +45,12 @@ def _cached_bundle(report: Report) -> dict:
         report.id,
         report.updated_at.isoformat() if report.updated_at else "",
         report.published_at.isoformat() if report.published_at else "",
+        tuple(
+            sorted(
+                (tag.id, tag.updated_at.isoformat())
+                for tag in report.tags
+            )
+        ),
     )
     cached = _BUNDLE_CACHE.get(key)
     if cached is not None:
@@ -212,7 +218,10 @@ def _visible_object_records(session: Session, user: User) -> list[_ObjectRecord]
     for report in visible_published_reports(session, user):
         bundle = _cached_bundle(report)
         report_obj = _report_object(bundle)
-        date_added = _normalise_dt(report.published_at or report.updated_at)
+        date_added = max(
+            [_normalise_dt(report.published_at or report.updated_at),
+             *(_normalise_dt(tag.updated_at) for tag in report.tags)]
+        )
         for obj in bundle["objects"]:
             obj_id = obj.get("id")
             if obj_id:

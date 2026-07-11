@@ -25,10 +25,10 @@ def search(
     intel_level: IntelLevel | None = None,
     tlp: TLP | None = None,
     status: ReportStatus | None = None,
-    limit: int = 50,
-    offset: int = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> dict:
-    results = search_service.search_reports(
+    page = search_service.search_page(
         session,
         user=user,
         q=q,
@@ -42,12 +42,15 @@ def search(
     )
     return {
         "query": q or "",
-        "count": len(results),
+        "count": len(page.results),
+        "total": page.total,
+        "limit": page.limit,
+        "offset": page.offset,
         "results": [
             {
                 "report": report_summary(r),
                 "tags": list(r.tags),
             }
-            for r in results
+            for r in page.results
         ],
     }

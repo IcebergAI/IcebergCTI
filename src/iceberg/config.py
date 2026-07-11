@@ -1,6 +1,7 @@
 """Application configuration loaded from environment / .env (ICEBERG_ prefix)."""
 
 import logging
+import os
 from functools import lru_cache
 
 from pydantic import field_validator, model_validator
@@ -9,6 +10,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 _AI_BACKENDS = {"none", "openai-compatible", "claude", "bedrock"}
 _LOG_FORMATS = {"auto", "text", "json"}
 _RATE_LIMIT_STORES = {"auto", "redis", "memory"}
+_ENVIRONMENTS = {"dev", "test", "prod"}
+_EMAIL_BACKENDS = {"console", "smtp"}
+_TLP_VALUES = {"CLEAR", "GREEN", "AMBER", "AMBER_STRICT", "RED"}
 
 # The default signing key shipped for local dev. It is public (it's in source
 # control), so running with it in production would let anyone forge JWTs.
@@ -25,6 +29,9 @@ class Settings(BaseSettings):
     environment: str = "dev"
     secret_key: str = _INSECURE_DEFAULT_SECRET
     database_url: str = "sqlite:///./iceberg.db"
+    # Socket peers allowed to supply X-Forwarded-* to uvicorn. Wildcard trust is
+    # rejected in production because client IPs key auth limits and audit data.
+    forwarded_allow_ips: str = "127.0.0.1"
 
     # Application logs. ``auto`` keeps local/dev readable and makes production
     # container logs structured by default; uvicorn.* loggers are left alone.
@@ -261,6 +268,39 @@ class Settings(BaseSettings):
             )
         return value
 
+    @field_validator("environment")
+    @classmethod
+    def _validate_environment(cls, value: str) -> str:
+        environment = (value or "").strip().lower()
+        if environment == "production":
+            environment = "prod"
+        if environment not in _ENVIRONMENTS:
+            raise ValueError(
+                f"ICEBERG_ENVIRONMENT must be one of {sorted(_ENVIRONMENTS)}; got {value!r}."
+            )
+        return environment
+
+    @field_validator("email_backend")
+    @classmethod
+    def _validate_email_backend(cls, value: str) -> str:
+        backend = (value or "").strip().lower()
+        if backend not in _EMAIL_BACKENDS:
+            raise ValueError(
+                f"ICEBERG_EMAIL_BACKEND must be one of {sorted(_EMAIL_BACKENDS)}; got {value!r}."
+            )
+        return backend
+
+    @field_validator("ai_max_tlp", "dissemination_max_tlp", "misp_max_tlp")
+    @classmethod
+    def _validate_tlp_ceiling(cls, value: str) -> str:
+        ceiling = (value or "").strip().upper().replace("+", "_STRICT")
+        ceiling = ceiling.replace("-", "_")
+        if ceiling not in _TLP_VALUES:
+            raise ValueError(
+                f"TLP ceilings must be one of {sorted(_TLP_VALUES)}; got {value!r}."
+            )
+        return ceiling
+
     @field_validator("log_level")
     @classmethod
     def _validate_log_level(cls, value: str) -> str:
@@ -333,6 +373,16 @@ class Settings(BaseSettings):
             raise ValueError(
                 "ICEBERG_DATABASE_URL must be a PostgreSQL URL in production "
                 "(postgresql+psycopg://…); SQLite is for local dev/test only."
+            )
+        forwarded_allow_ips = os.getenv(
+            "FORWARDED_ALLOW_IPS", self.forwarded_allow_ips
+        )
+        if self.is_prod and "*" in {
+            item.strip() for item in forwarded_allow_ips.split(",")
+        }:
+            raise ValueError(
+                "FORWARDED_ALLOW_IPS cannot contain '*' in production; configure "
+                "only the reverse-proxy addresses or CIDRs."
             )
         return self
 

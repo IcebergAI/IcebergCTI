@@ -62,6 +62,7 @@ def test_fts_matches_judgement_scaffolding(client, login):
     client.patch(
         f"/api/reports/{rid}",
         json={
+            "version": 1,
             "key_judgements": "We assess uniquejudgementterm with high confidence.",
             "intelligence_gaps": "uniquegapterm remains unknown.",
         },
@@ -69,7 +70,7 @@ def test_fts_matches_judgement_scaffolding(client, login):
     assert client.get("/api/search", params={"q": "uniquejudgementterm"}).json()["count"] == 1
     assert client.get("/api/search", params={"q": "uniquegapterm"}).json()["count"] == 1
     # Sync on update: clearing the field removes it from the index.
-    client.patch(f"/api/reports/{rid}", json={"key_judgements": ""})
+    client.patch(f"/api/reports/{rid}", json={"key_judgements": "", "version": 2})
     assert client.get("/api/search", params={"q": "uniquejudgementterm"}).json()["count"] == 0
 
 
@@ -175,7 +176,7 @@ def test_fts_sync_on_update(client, login):
     rid = _report(client, login, "Initial", "originalkeyword in body")
     login("ANALYST", email="author@example.com")
     assert client.get("/api/search", params={"q": "originalkeyword"}).json()["count"] == 1
-    client.patch(f"/api/reports/{rid}", json={"body_md": "replacedkeyword now"})
+    client.patch(f"/api/reports/{rid}", json={"body_md": "replacedkeyword now", "version": 1})
     assert client.get("/api/search", params={"q": "originalkeyword"}).json()["count"] == 0
     assert client.get("/api/search", params={"q": "replacedkeyword"}).json()["count"] == 1
 

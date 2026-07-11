@@ -294,7 +294,7 @@ def test_render_includes_cited_attachment(client, login, tmp_path, monkeypatch):
         "/api/reports",
         json={"notebook_id": nb["id"], "title": "R", "tlp": "GREEN"},
     ).json()["id"]
-    client.patch(f"/api/reports/{rid}", json={"body_md": "# Body"})
+    client.patch(f"/api/reports/{rid}", json={"body_md": "# Body", "version": 1})
     client.put(
         f"/api/reports/{rid}/attachments", json={"attachment_ids": [att["id"]]}
     )

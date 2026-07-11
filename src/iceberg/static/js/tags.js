@@ -115,6 +115,7 @@ document.addEventListener('alpine:init', () => {
     ...readJSON(dataId),  // body, kj, ka, gaps, previewHtml, warnings, reportId, canEdit
     tab: 'cite', insertOpen: false, justSaved: false,
     tabOrder: [], dirty: false, saving: false, timer: null, saveTimer: null,
+    generation: 0, savedGeneration: 0, savePromise: null, saveQueued: false,
     aiLoading: '', aiApplying: false, aiStatus: '', aiStatusKind: '',
     aiJudgements: null, aiTagIds: [], aiChallenge: '',
 
@@ -136,21 +137,43 @@ document.addEventListener('alpine:init', () => {
     firstTab() { if (this.tabOrder.length) this.selectTab(this.tabOrder[0], true); },
     lastTab() { if (this.tabOrder.length) this.selectTab(this.tabOrder[this.tabOrder.length - 1], true); },
 
-    markDirty() { this.dirty = true; this.scheduleSave(); },
-    schedule() { this.dirty = true; clearTimeout(this.timer); this.timer = setTimeout(() => this.refresh(), 350); this.scheduleSave(); },
+    markDirty() { this.generation += 1; this.dirty = true; this.scheduleSave(); },
+    schedule() { this.generation += 1; this.dirty = true; clearTimeout(this.timer); this.timer = setTimeout(() => this.refresh(), 350); this.scheduleSave(); },
     scheduleSave() { clearTimeout(this.saveTimer); this.saveTimer = setTimeout(() => this.autosave(), 1200); },
     async saveNow() {
       const form = document.getElementById('reportform');
       if (!form) return false;
+      if (this.savePromise) {
+        this.saveQueued = true;
+        return this.savePromise;
+      }
+      const generation = this.generation;
       this.saving = true;
-      try {
-        const res = await fetch(form.action, { method: 'POST', body: new FormData(form), headers: { 'X-Requested-With': 'fetch' } });
-        this.dirty = !res.ok;
-        return res.ok;
-      } catch {
-        this.dirty = true;
-        return false; // Leave the manual save path available.
-      } finally { this.saving = false; }
+      this.savePromise = (async () => {
+        try {
+          const res = await fetch(form.action, {
+            method: 'POST', body: new FormData(form), redirect: 'manual',
+            headers: { 'X-Requested-With': 'fetch' },
+          });
+          if (!res.ok) return false;
+          const data = await res.json();
+          this.version = data.version;
+          this.savedGeneration = generation;
+          this.dirty = this.generation !== generation;
+          return true;
+        } catch {
+          this.dirty = true;
+          return false;
+        } finally {
+          this.saving = false;
+          this.savePromise = null;
+          if (this.saveQueued || this.generation !== generation) {
+            this.saveQueued = false;
+            this.saveTimer = setTimeout(() => this.autosave(), 0);
+          }
+        }
+      })();
+      return this.savePromise;
     },
     async autosave() { await this.saveNow(); },
     async refresh() {

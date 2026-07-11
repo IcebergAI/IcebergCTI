@@ -470,8 +470,8 @@ ICEBERG_DOMAIN=intel.example.com docker compose --profile tls up   # auto Let's 
 Caddy ([`deploy/Caddyfile`](deploy/Caddyfile)) terminates TLS and proxies to the app; pair it with
 `ICEBERG_ENVIRONMENT=prod` for `Secure` cookies + HSTS. In this profile Caddy publishes
 `:80`/`:443`, while the app's plain-HTTP `:8000` publish remains loopback-only. The container starts uvicorn with
-`--proxy-headers` and trusts `X-Forwarded-*` (`FORWARDED_ALLOW_IPS`, default `*` — scope it to the
-proxy/pod CIDR for a stricter posture) so the request scheme is correct and the **audit log records
+`--proxy-headers` and trusts `X-Forwarded-*` only from `FORWARDED_ALLOW_IPS` (Compose scopes this
+to its dedicated proxy network; Kubernetes requires the ingress pod CIDR) so the request scheme is correct and the **audit log records
 the real client IP** rather than the proxy's. On **Kubernetes**, terminate TLS at an Ingress
 instead — [`deploy/k8s/ingress.yaml`](deploy/k8s/ingress.yaml) is a commented ingress-nginx example
 with a cert-manager note (edit the host + TLS secret and apply). An nginx sidecar isn't bundled —
@@ -480,17 +480,21 @@ the ingress / Caddy covers TLS, and the app sets its own security headers.
 ### Backup & restore
 Persistent state lives in two places: **PostgreSQL** (all reports, requirements, tags, audit
 events, settings) and a **local filesystem dir** (uploaded attachments/figures + rendered PDFs,
-the `iceberg-data` volume in Compose / the `iceberg-data` PVC in k8s). Back up **both** from the
-same window — the PDFs regenerate, but attachments/figures are original material. For Compose:
+the `iceberg-data` volume in Compose / the `iceberg-data` PVC in k8s). Back up **both** while
+application writers are stopped — the PDFs regenerate, but attachments/figures are original material. For Compose:
 
 ```bash
+docker compose stop iceberg
 docker compose exec postgres pg_dump -U iceberg -d iceberg -Fc > iceberg-$(date +%F).dump
 docker run --rm -v iceberg_iceberg-data:/data -v "$PWD":/out busybox \
   tar cf /out/iceberg-data-$(date +%F).tar -C /data .
+docker compose start iceberg
 ```
 
-Restore reverses each (stop the app first so nothing writes mid-restore): `pg_restore -U iceberg
--d iceberg --clean --if-exists` for the database, and untar back into the `iceberg-data` volume.
+Restore keeps the app stopped, restores PostgreSQL, clears the attachment, figure,
+and rendered-product directories before extracting the archive, applies required
+migrations, and runs `iceberg-verify-files` before restart. Do not restart if any
+step fails; extraction over existing data is not a valid restore.
 Full copy-pasteable k8s steps (`VolumeSnapshot` / `kubectl`-piped tar + `pg_dump`/`pg_restore`)
 are in [`deploy/k8s/README.md`](deploy/k8s/README.md#backup--restore).
 

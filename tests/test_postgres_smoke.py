@@ -157,10 +157,10 @@ def test_pg_fts_indexes_judgement_scaffolding(client, login):
     login("ANALYST", email="author@example.com")
     client.patch(
         f"/api/reports/{rid}",
-        json={"key_judgements": "We assess uniquejudgementterm with high confidence."},
+        json={"key_judgements": "We assess uniquejudgementterm with high confidence.", "version": 1},
     )
     assert client.get("/api/search", params={"q": "uniquejudgementterm"}).json()["count"] == 1
-    client.patch(f"/api/reports/{rid}", json={"key_judgements": ""})
+    client.patch(f"/api/reports/{rid}", json={"key_judgements": "", "version": 2})
     assert client.get("/api/search", params={"q": "uniquejudgementterm"}).json()["count"] == 0
 
 

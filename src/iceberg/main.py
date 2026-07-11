@@ -100,8 +100,15 @@ async def _rss_poll_loop(interval_seconds: float) -> None:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    db.init_db()
     settings = get_settings()
+    try:
+        db.init_db()
+    except Exception:
+        if settings.auto_migrate:
+            raise
+        logger.exception(
+            "Database bootstrap unavailable; process remains live but unready"
+        )
     _warn_if_no_login_path(settings)
     _warn_if_console_email_backend_in_prod(settings)
     poller: asyncio.Task | None = None

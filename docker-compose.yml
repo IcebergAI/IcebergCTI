@@ -32,6 +32,8 @@ services:
       ICEBERG_FIGURES_DIR: /data/figures
       ICEBERG_RENDER_OUTPUT_DIR: /data/rendered
       ICEBERG_RATE_LIMIT_REDIS_URL: ${ICEBERG_RATE_LIMIT_REDIS_URL:-redis://redis:6379/0}
+      # Only peers on the dedicated Compose network may supply forwarding headers.
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-172.30.0.0/24}
     volumes:
       - iceberg-data:/data
     depends_on:
@@ -54,6 +56,7 @@ services:
       # uvicorn serves, so /healthz isn't answerable immediately — don't count
       # failures (or report unhealthy) during the warm-up window.
       start_period: 40s
+    networks: [iceberg-internal]
 
   postgres:
     image: postgres:17
@@ -69,6 +72,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    networks: [iceberg-internal]
 
   redis:
     image: redis:8-alpine
@@ -79,6 +83,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    networks: [iceberg-internal]
 
   # Opt-in TLS reverse proxy for a single-host Docker deployment:
   #   ICEBERG_DOMAIN=intel.example.com docker compose --profile tls up
@@ -104,6 +109,13 @@ services:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
+    networks: [iceberg-internal]
+
+networks:
+  iceberg-internal:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
 
 volumes:
   iceberg-data:

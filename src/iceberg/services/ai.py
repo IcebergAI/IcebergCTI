@@ -57,10 +57,7 @@ def is_enabled(settings: Settings | None = None) -> bool:
 
 
 def _max_tlp(settings: Settings) -> TLP:
-    try:
-        return TLP(settings.ai_max_tlp)
-    except ValueError:
-        return TLP.AMBER
+    return TLP(settings.ai_max_tlp)
 
 
 def should_send_report(report: Report, settings: Settings | None = None) -> bool:

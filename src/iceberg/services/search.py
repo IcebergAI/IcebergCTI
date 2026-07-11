@@ -21,24 +21,25 @@ so search can't leak unpublished material.
 """
 
 import re
+from dataclasses import dataclass
 
-from fastapi import HTTPException
-from sqlalchemy import event, text
+from sqlalchemy import column, event, exists, func, literal, literal_column, or_, table, text, union_all
 from sqlmodel import Session, col, select
 
 from ..models import (
     IntelLevel,
     Report,
     ReportStatus,
+    ReportAudienceGroup,
     ReportTag,
     Role,
     Tag,
     TagKind,
     TLP,
     User,
+    UserAudienceGroup,
 )
 from . import tags as tag_service
-from . import reports as report_service
 
 _FTS_TABLE = "report_fts"
 
@@ -111,51 +112,6 @@ def _match_query(q: str) -> str | None:
     return " ".join(f'"{tok}"*' for tok in tokens)
 
 
-def _fts_ids(session: Session, q: str) -> list[int]:
-    """Full-text ranked report ids for the free-text query, dispatched by backend
-    (SQLite FTS5 / PostgreSQL tsvector). Other backends return no FTS matches —
-    only the alias/label resolution in :func:`search_reports` contributes."""
-    dialect = session.bind.dialect.name if session.bind is not None else ""
-    if dialect == "sqlite":
-        return _fts_ids_sqlite(session, q)
-    if dialect == "postgresql":
-        return _fts_ids_postgres(session, q)
-    return []
-
-
-def _fts_ids_sqlite(session: Session, q: str) -> list[int]:
-    """SQLite FTS5 ranked ids (bm25) over ``report_fts``."""
-    match = _match_query(q)
-    if match is None:
-        return []
-    rows = session.execute(
-        # nosec B608: _FTS_TABLE is a constant; the user's query is bound via :m.
-        text(
-            f"SELECT rowid FROM {_FTS_TABLE} WHERE {_FTS_TABLE} MATCH :m "  # nosec B608
-            f"ORDER BY bm25({_FTS_TABLE})"
-        ),
-        {"m": match},
-    ).all()
-    return [r[0] for r in rows]
-
-
-def _fts_ids_postgres(session: Session, q: str) -> list[int]:
-    """PostgreSQL FTS ranked ids (ts_rank) over the generated ``search_vector``
-    column. ``websearch_to_tsquery`` parses the raw user string safely (bound via
-    :q), so no manual tokenisation/escaping is needed."""
-    if not (q or "").strip():
-        return []
-    rows = session.execute(
-        text(
-            "SELECT id FROM report "
-            "WHERE search_vector @@ websearch_to_tsquery('english', :q) "
-            "ORDER BY ts_rank(search_vector, websearch_to_tsquery('english', :q)) DESC"
-        ),
-        {"q": q},
-    ).all()
-    return [r[0] for r in rows]
-
-
 def search_reports(
     session: Session,
     *,
@@ -169,69 +125,158 @@ def search_reports(
     limit: int = 50,
     offset: int = 0,
 ) -> list[Report]:
+    return search_page(
+        session, user=user, q=q, kinds=kinds, tag_ids=tag_ids,
+        intel_level=intel_level, tlp=tlp, status=status,
+        limit=limit, offset=offset,
+    ).results
+
+
+@dataclass(frozen=True)
+class SearchPage:
+    results: list[Report]
+    total: int
+    limit: int
+    offset: int
+
+
+def _ranked_matches(session: Session, q: str, *, include_rank: bool = True):
+    dialect = session.bind.dialect.name if session.bind is not None else ""
+    alias_ids = tag_service.resolve_alias_report_ids(session, q)
+    body = None
+    if dialect == "sqlite" and (match := _match_query(q)):
+        fts = table(_FTS_TABLE, column("rowid"))
+        body = (
+            select(
+                fts.c.rowid.label("report_id"),
+                literal(0).label("bucket"),
+                (
+                    func.bm25(literal_column(_FTS_TABLE))
+                    if include_rank and not alias_ids
+                    else literal(0.0)
+                ).label("rank"),
+            )
+            .where(text(f"{_FTS_TABLE} MATCH :search_match"))  # nosec B608
+            .params(search_match=match)
+        )
+    elif dialect == "postgresql" and q.strip():
+        query = func.websearch_to_tsquery("english", q)
+        vector = literal_column("report.search_vector")
+        body = select(
+            Report.id.label("report_id"),
+            literal(0).label("bucket"),
+            (
+                -func.ts_rank(vector, query) if include_rank else literal(0.0)
+            ).label("rank"),
+        ).where(vector.op("@@")(query))
+
+    parts = [body] if body is not None else []
+    if alias_ids:
+        parts.extend(
+            select(
+                literal(report_id).label("report_id"),
+                literal(1).label("bucket"),
+                literal(0.0).label("rank"),
+            )
+            for report_id in alias_ids
+        )
+    if not parts:
+        return None
+    if len(parts) == 1:
+        return parts[0].subquery("ranked_matches")
+    combined = union_all(*parts)
+    matches = combined.subquery("search_matches")
+    return (
+        select(
+            matches.c.report_id,
+            func.min(matches.c.bucket).label("bucket"),
+            func.min(matches.c.rank).label("rank"),
+        )
+        .group_by(matches.c.report_id)
+        .subquery("ranked_matches")
+    )
+
+
+def search_page(
+    session: Session,
+    *,
+    user: User,
+    q: str | None = None,
+    kinds: list[TagKind] | None = None,
+    tag_ids: list[int] | None = None,
+    intel_level: IntelLevel | None = None,
+    tlp: TLP | None = None,
+    status: ReportStatus | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> SearchPage:
     """Faceted report search. ``q`` runs FTS over title+body (bm25-ranked) and is
     *alias-aware* — reports tagged with a named-threat entity whose label/alias
     matches ``q`` are appended after the body matches, so e.g. "Fancy Bear" finds
     APT28-tagged reports even when the body never names the alias. The facets are
     SQL filters. Stakeholders are restricted to published reports."""
-    ranked_ids: list[int] | None = None
-    if q:
-        fts_ids = _fts_ids(session, q)
-        # Entity (alias/label) matches appended after body relevance — the recall
-        # win without disturbing the full-text ranking.
-        ranked_ids = list(fts_ids)
-        seen = set(fts_ids)
-        for rid in tag_service.resolve_alias_report_ids(session, q):
-            if rid not in seen:
-                seen.add(rid)
-                ranked_ids.append(rid)
-        if not ranked_ids:
-            return []
-
     stmt = select(Report)
-    if ranked_ids is not None:
-        stmt = stmt.where(col(Report.id).in_(ranked_ids))
+    ranked = _ranked_matches(session, q) if q else None
+    if q and ranked is None:
+        return SearchPage([], 0, limit, offset)
+    if ranked is not None:
+        stmt = stmt.join(ranked, ranked.c.report_id == Report.id).order_by(
+            ranked.c.bucket, ranked.c.rank, Report.id
+        )
     else:
         stmt = stmt.order_by(Report.updated_at.desc())
 
-    # Access control: read-only stakeholders only ever see published reports.
-    if user.role == Role.STAKEHOLDER:
-        stmt = stmt.where(Report.status == ReportStatus.PUBLISHED)
-    elif status is not None:
-        stmt = stmt.where(Report.status == status)
-
-    if tag_ids:
-        stmt = stmt.where(
+    def apply_filters(statement):
+        # Access control executes in SQL before counting and pagination.
+        if user.role == Role.STAKEHOLDER:
+            statement = statement.where(Report.status == ReportStatus.PUBLISHED)
+            scoped = exists(
+            select(ReportAudienceGroup.report_id).where(
+                ReportAudienceGroup.report_id == Report.id
+            )
+            )
+            matching = exists(
+            select(ReportAudienceGroup.report_id)
+            .join(
+                UserAudienceGroup,
+                UserAudienceGroup.group_id == ReportAudienceGroup.group_id,
+            )
+            .where(
+                ReportAudienceGroup.report_id == Report.id,
+                UserAudienceGroup.user_id == user.id,
+            )
+            )
+            statement = statement.where(or_(~scoped, matching))
+        elif status is not None:
+            statement = statement.where(Report.status == status)
+        if tag_ids:
+            statement = statement.where(
             col(Report.id).in_(
                 select(ReportTag.report_id).where(col(ReportTag.tag_id).in_(tag_ids))
             )
-        )
-    if kinds:
-        stmt = stmt.where(
+            )
+        if kinds:
+            statement = statement.where(
             col(Report.id).in_(
                 select(ReportTag.report_id)
                 .join(Tag, col(Tag.id) == ReportTag.tag_id)
                 .where(col(Tag.kind).in_(kinds))
             )
+            )
+        if intel_level is not None:
+            statement = statement.where(Report.intel_level == intel_level)
+        if tlp is not None:
+            statement = statement.where(Report.tlp == tlp)
+        return statement
+
+    stmt = apply_filters(stmt)
+    count_stmt = select(Report.id)
+    if q:
+        count_ranked = _ranked_matches(session, q, include_rank=False)
+        count_stmt = count_stmt.join(
+            count_ranked, count_ranked.c.report_id == Report.id
         )
-    if intel_level is not None:
-        stmt = stmt.where(Report.intel_level == intel_level)
-    if tlp is not None:
-        stmt = stmt.where(Report.tlp == tlp)
-
-    results = list(session.exec(stmt).all())
-
-    if ranked_ids is not None:
-        order = {rid: i for i, rid in enumerate(ranked_ids)}
-        results.sort(key=lambda r: order.get(r.id, len(order)))
-
-    if user.role == Role.STAKEHOLDER:
-        visible: list[Report] = []
-        for report in results:
-            try:
-                visible.append(report_service.ensure_visible(report, user))
-            except HTTPException:
-                continue
-        results = visible
-
-    return results[offset : offset + limit]
+    count_stmt = apply_filters(count_stmt)
+    total = session.exec(select(func.count()).select_from(count_stmt.subquery())).one()
+    results = list(session.exec(stmt.offset(offset).limit(limit)).all())
+    return SearchPage(results, int(total), limit, offset)

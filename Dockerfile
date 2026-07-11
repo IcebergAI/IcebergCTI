@@ -60,13 +60,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     ICEBERG_FIGURES_DIR=/data/figures \
     ICEBERG_RENDER_OUTPUT_DIR=/data/rendered
 
-# Iceberg always runs behind a TLS-terminating proxy (k8s ingress, Caddy, nginx,
-# cloud LB), so trust its X-Forwarded-* headers (uvicorn --proxy-headers in CMD).
-# Without this the real scheme is lost and the audit trail records the proxy's IP
-# instead of the client's (services/audit.py source_ip). The app port is reachable
-# only via the proxy here, so `*` is the pragmatic default — scope it to the
-# proxy/pod CIDR for a stricter posture.
-ENV FORWARDED_ALLOW_IPS="*"
+# Trust forwarding headers only from loopback by default. Deployments must set
+# this to their actual proxy address/CIDR; wildcard trust is rejected in prod.
+ENV FORWARDED_ALLOW_IPS="127.0.0.1"
 
 # ca-certificates for outbound TLS (OIDC, RSS, SIEM/MISP/webhook/AI, Postgres TLS).
 RUN apt-get update \

@@ -93,6 +93,7 @@ iceberg-migrate = "iceberg.maintenance:migrate_main"
 iceberg-prune-renders = "iceberg.maintenance:prune_renders_main"
 iceberg-rebuild-related = "iceberg.maintenance:rebuild_related_main"
 iceberg-worker = "iceberg.maintenance:worker_main"
+iceberg-verify-files = "iceberg.maintenance:verify_files_main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -73,11 +73,13 @@ def search_view(
     intel_level: Annotated[str, Query()] = "",
     tlp: Annotated[str, Query()] = "",
     status: Annotated[str, Query()] = "",
+    offset: Annotated[int, Query(ge=0)] = 0,
 ):
     intel_level = _opt_enum(intel_level, IntelLevel, "intel_level")
     tlp = _opt_enum(tlp, TLP, "tlp")
     status_filter = _opt_enum(status, ReportStatus, "status")
-    results = search_service.search_reports(
+    limit = 25
+    page = search_service.search_page(
         session,
         user=user,
         q=q or None,
@@ -86,8 +88,10 @@ def search_view(
         intel_level=intel_level,
         tlp=tlp,
         status=status_filter,
+        limit=limit,
+        offset=offset,
     )
-    items = [{"report": r, "tags": list(r.tags)} for r in results]
+    items = [{"report": r, "tags": list(r.tags)} for r in page.results]
     return templates.TemplateResponse(
         request,
         "search.html",
@@ -102,6 +106,11 @@ def search_view(
             "tlp": tlp,
             "status": status_filter,
             "active_tag": None,
+            "total": page.total,
+            "offset": offset,
+            "limit": limit,
+            "previous_url": str(request.url.include_query_params(offset=max(0, offset - limit))) if offset else None,
+            "next_url": str(request.url.include_query_params(offset=offset + limit)) if offset + len(items) < page.total else None,
         },
     )
 

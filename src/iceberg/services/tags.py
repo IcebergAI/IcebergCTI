@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from importlib.resources import files
 
 from fastapi import HTTPException, status
+from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
 
@@ -194,6 +195,7 @@ def update_tag(
     attack_tactics: list[str] | None = None,
     active: bool | None = None,
 ) -> Tag:
+    changed_at = utcnow()
     if label is not None and label.strip() and label.strip() != tag.label:
         new_label = label.strip()
         new_slug = slugify(new_label)
@@ -233,6 +235,8 @@ def update_tag(
                 "A merged tag cannot be reactivated; use its canonical tag instead",
             )
         tag.active = active
+    tag.updated_at = changed_at
+    _touch_tagged_reports(session, [tag.id], changed_at)
     session.add(tag)
     session.commit()
     session.refresh(tag)
@@ -254,6 +258,7 @@ def delete_tag(session: Session, tag: Tag) -> None:
             status.HTTP_409_CONFLICT,
             "A merge target cannot be deleted because its lineage must be retained",
         )
+    _touch_tagged_reports(session, [tag.id], utcnow())
     session.delete(tag)
     session.commit()
 
@@ -328,6 +333,8 @@ def merge_tags(session: Session, *, source: Tag, target: Tag) -> TagMergeResult:
         )
 
     try:
+        changed_at = utcnow()
+        _touch_tagged_reports(session, [source.id, target.id], changed_at)
         report_links_moved, report_links_deduplicated = _move_tag_links(
             session,
             link_model=ReportTag,
@@ -347,6 +354,8 @@ def merge_tags(session: Session, *, source: Tag, target: Tag) -> TagMergeResult:
         source.active = False
         source.merged_into_tag_id = target.id
         source.merged_at = utcnow()
+        source.updated_at = changed_at
+        target.updated_at = changed_at
         session.add(target)
         session.add(source)
         session.commit()
@@ -475,6 +484,25 @@ def set_report_tags(
     session.commit()
     session.refresh(report)
     return list(report.tags)
+
+
+def _touch_tagged_reports(
+    session: Session, tag_ids: list[int | None], changed_at
+) -> None:
+    ids = [tag_id for tag_id in tag_ids if tag_id is not None]
+    if not ids:
+        return
+    report_ids = list(
+        session.exec(
+            select(ReportTag.report_id).where(col(ReportTag.tag_id).in_(ids))
+        ).all()
+    )
+    if report_ids:
+        session.execute(
+            update(Report)
+            .where(col(Report.id).in_(report_ids))
+            .values(updated_at=changed_at, version=Report.version + 1)
+        )
 
 
 # --------------------------------------------------------------------------- #

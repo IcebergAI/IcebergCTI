@@ -63,6 +63,7 @@ def _published_report(client, login):
     client.patch(
         f"/api/reports/{rid}",
         json={
+            "version": 1,
             "body_md": "# Findings\n\nBody text.",
             "key_judgements": "- The actor is likely escalating.",
             "key_assumptions": "Collection is representative.",

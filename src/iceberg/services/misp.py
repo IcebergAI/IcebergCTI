@@ -14,8 +14,12 @@ and surfaced to the writer who triggered it.
 """
 
 import logging
+from datetime import timedelta
+from uuid import uuid4
 
 import httpx
+from sqlalchemy import or_, update
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from ..config import get_settings
@@ -102,11 +106,15 @@ def _event_tags(report: Report, tags: list[Tag]) -> list[dict]:
 
 
 def build_event_payload(
-    report: Report, iocs: list[IOC], tags: list[Tag], settings: MISPSettings
+    report: Report,
+    iocs: list[IOC],
+    tags: list[Tag],
+    settings: MISPSettings,
+    *,
+    event_uuid: str = "",
 ) -> dict:
     """The MISP ``{"Event": {...}}`` body for a report and its cited indicators."""
-    return {
-        "Event": {
+    event = {
             "info": report.title or f"Iceberg report #{report.id}",
             "distribution": str(settings.default_distribution),
             "threat_level_id": str(settings.default_threat_level),
@@ -114,15 +122,14 @@ def build_event_payload(
             "published": settings.default_published,
             "Attribute": [_attribute(i) for i in iocs],
             "Tag": _event_tags(report, tags),
-        }
     }
+    if event_uuid:
+        event["uuid"] = event_uuid
+    return {"Event": event}
 
 
 def _misp_max_tlp() -> TLP:
-    try:
-        return TLP(get_settings().misp_max_tlp)
-    except ValueError:
-        return TLP.AMBER
+    return TLP(get_settings().misp_max_tlp)
 
 
 def over_ceiling_iocs(iocs: list[IOC], max_tlp: TLP | None = None) -> list[IOC]:
@@ -147,12 +154,56 @@ def get_record(session: Session, report_id: int) -> ReportMispEvent | None:
     ).first()
 
 
-def _get_or_create_record(session: Session, report_id: int) -> ReportMispEvent:
+def _reserve_push(session: Session, report_id: int) -> tuple[ReportMispEvent, str]:
+    """Reserve one report push before egress; empty token means another owns it."""
+    token = uuid4().hex
+    now = utcnow()
     record = get_record(session, report_id)
     if record is None:
-        record = ReportMispEvent(report_id=report_id)
+        record = ReportMispEvent(
+            report_id=report_id,
+            event_uuid=str(uuid4()),
+            push_token=token,
+            push_started_at=now,
+            last_status="in_progress",
+        )
         session.add(record)
-    return record
+        try:
+            session.commit()
+            session.refresh(record)
+            return record, token
+        except IntegrityError:
+            session.rollback()
+            record = get_record(session, report_id)
+            if record is None:  # pragma: no cover - winner vanished immediately
+                raise
+
+    cutoff = now - timedelta(minutes=5)
+    result = session.execute(
+        update(ReportMispEvent)
+        .where(
+            ReportMispEvent.id == record.id,
+            or_(
+                ReportMispEvent.push_token == "",
+                ReportMispEvent.push_started_at < cutoff,
+            ),
+        )
+        .values(push_token=token, push_started_at=now, last_status="in_progress")
+    )
+    if not result.rowcount:
+        session.rollback()
+        record = get_record(session, report_id) or record
+        record.last_status = "in_progress"
+        record.error = "A MISP push is already in progress"
+        return record, ""
+    session.commit()
+    record = get_record(session, report_id)
+    if not record.event_uuid:
+        record.event_uuid = str(uuid4())
+        session.add(record)
+        session.commit()
+        session.refresh(record)
+    return record, token
 
 
 def push_report(
@@ -172,7 +223,9 @@ def push_report(
     When cited indicators exceed the configured MISP egress ceiling and
     ``acknowledge_tlp`` is False, nothing is pushed and the record is returned
     with ``last_status="needs_confirmation"`` so the writer can confirm."""
-    record = _get_or_create_record(session, report.id)
+    record, push_token = _reserve_push(session, report.id)
+    if not push_token:
+        return record
     try:
         if not can_push_report(report):
             raise MISPError(_LIFECYCLE_ERROR)
@@ -207,6 +260,7 @@ def push_report(
                 iocs,
                 snapshot_inputs.tags if snapshot_inputs is not None else list(report.tags),
                 settings,
+                event_uuid=record.event_uuid,
             )
             proxy_kwargs = (
                 proxy_service.resolve(proxy_settings, settings.url)
@@ -214,7 +268,7 @@ def push_report(
                 else {}
             )
             # Idempotent: update the existing event if we've pushed before, else add.
-            if record.event_uuid:
+            if record.external_created:
                 endpoint = _join(settings.url, f"events/edit/{record.event_uuid}")
             else:
                 endpoint = _join(settings.url, "events/add")
@@ -228,22 +282,31 @@ def push_report(
             )
             resp.raise_for_status()
             event = (resp.json() or {}).get("Event", {})
-            if event.get("uuid"):
-                record.event_uuid = event["uuid"]
             if event.get("id") is not None:
                 record.event_id = str(event["id"])
             record.attribute_count = len(iocs)
             record.last_status = "ok"
             record.error = ""
             record.pushed_at = utcnow()
+            record.external_created = True
     except Exception as exc:  # noqa: BLE001 — surface the failure, never 500
+        session.rollback()
+        record = get_record(session, report.id) or record
         logger.warning("MISP push failed for report %s: %s", report.id, exc)
         record.last_status = "error"
         record.error = str(exc)[:500]
     record.updated_at = utcnow()
+    record.push_token = ""
+    record.push_started_at = None
     session.add(record)
-    session.commit()
-    session.refresh(record)
+    try:
+        session.commit()
+        session.refresh(record)
+    except Exception as exc:  # noqa: BLE001 - never leak transaction failures
+        session.rollback()
+        record = get_record(session, report.id) or record
+        record.last_status = "error"
+        record.error = str(exc)[:500]
     return record
 
 

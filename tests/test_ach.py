@@ -218,7 +218,7 @@ def _report_with_body(client, nb_id, body_md):
     rid = client.post(
         "/api/reports", json={"notebook_id": nb_id, "title": "R"}
     ).json()["id"]
-    client.patch(f"/api/reports/{rid}", json={"body_md": body_md})
+    client.patch(f"/api/reports/{rid}", json={"body_md": body_md, "version": 1})
     return rid
 
 
@@ -381,7 +381,7 @@ def test_render_with_ach(client, login, tmp_path, monkeypatch):
         "/api/reports",
         json={"notebook_id": nb["id"], "title": "R", "tlp": "GREEN"},
     ).json()["id"]
-    client.patch(f"/api/reports/{rid}", json={"body_md": f"# Body\n\n[[ach:{aid}]]"})
+    client.patch(f"/api/reports/{rid}", json={"body_md": f"# Body\n\n[[ach:{aid}]]", "version": 1})
 
     resp = client.post(f"/api/reports/{rid}/render", json={"format": "FULL"})
     if resp.status_code in (500, 503):

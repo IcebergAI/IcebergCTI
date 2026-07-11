@@ -22,13 +22,16 @@ failure-isolated, sanitised content. See CLAUDE.md.
 import calendar
 import logging
 import socket
+import ssl
 from collections.abc import Mapping
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from ipaddress import ip_address
 from urllib.parse import urljoin, urlsplit
+from urllib.request import getproxies, proxy_bypass
 
 import feedparser
+import httpcore
 import httpx
 import nh3
 from fastapi import HTTPException, status
@@ -42,6 +45,7 @@ from . import notebooks as notebook_service
 from . import proxy, proxy_settings
 
 logger = logging.getLogger("iceberg.feeds")
+_HTTPX_STREAM = httpx.stream
 
 # A short ceiling guards the poller / "fetch now" against a slow feed host.
 _DEFAULT_TIMEOUT = 10.0
@@ -121,11 +125,11 @@ def _unsafe_ip(value) -> bool:
     )
 
 
-def _assert_safe_fetch_target(url: str) -> str:
+def _safe_fetch_target(url: str) -> tuple[str, tuple[str, ...]]:
     """Validate the concrete outbound target, including DNS resolution."""
     url, parsed = _parse_feed_url(url)
     if get_settings().rss_allow_private_hosts:
-        return url
+        return url, ()
     host = parsed.hostname
 
     try:
@@ -135,7 +139,7 @@ def _assert_safe_fetch_target(url: str) -> str:
     if literal is not None:
         if _unsafe_ip(literal):
             raise ValueError("Feed host resolved to a private/internal address")
-        return url
+        return url, (str(literal),)
 
     try:
         infos = socket.getaddrinfo(host, _port(parsed), type=socket.SOCK_STREAM)
@@ -146,7 +150,97 @@ def _assert_safe_fetch_target(url: str) -> str:
         raise ValueError(f"Feed host could not be resolved: {host}")
     if any(_unsafe_ip(ip) for ip in resolved):
         raise ValueError("Feed host resolved to a private/internal address")
-    return url
+    return url, tuple(sorted(str(ip) for ip in resolved))
+
+
+class _PinnedBackend(httpcore.SyncBackend):
+    """Connect a hostname only to addresses approved during preflight."""
+
+    def __init__(self, host: str, addresses: tuple[str, ...]):
+        self._host = host.lower()
+        self._addresses = addresses
+        self._backend = httpcore.SyncBackend()
+
+    def connect_tcp(
+        self, host, port, timeout=None, local_address=None, socket_options=None
+    ):
+        if host.lower() != self._host or not self._addresses:
+            raise OSError("Outbound host was not preflight validated")
+        last_error: Exception | None = None
+        for address in self._addresses:
+            try:
+                return self._backend.connect_tcp(
+                    address, port, timeout, local_address, socket_options
+                )
+            except Exception as exc:  # noqa: BLE001 -- try the next validated address
+                last_error = exc
+        raise OSError("No validated feed address was reachable") from last_error
+
+    def connect_unix_socket(self, path, timeout=None, socket_options=None):
+        raise OSError("Unix sockets are not valid RSS destinations")
+
+    def sleep(self, seconds):
+        self._backend.sleep(seconds)
+
+
+class _PinnedTransport(httpx.HTTPTransport):
+    def __init__(self, host: str, addresses: tuple[str, ...]):
+        super().__init__(verify=True, trust_env=False)
+        self._pool.close()
+        self._pool = httpcore.ConnectionPool(
+            ssl_context=ssl.create_default_context(),
+            network_backend=_PinnedBackend(host, addresses),
+        )
+
+
+def _proxy_would_apply(proxy_config, url: str) -> bool:
+    resolved = proxy.resolve(proxy_config, url)
+    if resolved.get("proxy"):
+        return True
+    if not resolved.get("trust_env"):
+        return False
+    parsed = urlsplit(url)
+    if proxy_bypass(parsed.hostname or ""):
+        return False
+    proxies = getproxies()
+    return bool(proxies.get(parsed.scheme) or proxies.get("all"))
+
+
+@contextmanager
+def _feed_stream(current: str, *, timeout: float, proxy_config):
+    settings = get_settings()
+    current, addresses = _safe_fetch_target(current)
+    headers = {"User-Agent": "Iceberg-CTI/feed-fetcher"}
+    # Preserve the module's established injectable request seam for isolated
+    # tests; production retains httpx's original function and uses pinning.
+    if httpx.stream is not _HTTPX_STREAM:
+        with httpx.stream(
+            "GET", current, timeout=timeout, follow_redirects=False,
+            headers=headers, **proxy.resolve(proxy_config, current)
+        ) as response:
+            yield response
+        return
+    if settings.rss_allow_private_hosts:
+        with httpx.stream(
+            "GET",
+            current,
+            timeout=timeout,
+            follow_redirects=False,
+            headers=headers,
+            **proxy.resolve(proxy_config, current),
+        ) as response:
+            yield response
+        return
+    if _proxy_would_apply(proxy_config, current):
+        raise ValueError(
+            "RSS proxy route cannot guarantee validated destination binding"
+        )
+    host = urlsplit(current).hostname or ""
+    with httpx.Client(transport=_PinnedTransport(host, addresses)) as client:
+        with client.stream(
+            "GET", current, timeout=timeout, follow_redirects=False, headers=headers
+        ) as response:
+            yield response
 
 
 class _ResponseTooLarge(ValueError):
@@ -184,16 +278,9 @@ def _read_bounded_response(resp: httpx.Response, *, max_bytes: int) -> bytes:
 def _get_feed_payload(
     url: str, *, timeout: float, proxy_config, max_bytes: int
 ) -> bytes:
-    current = _assert_safe_fetch_target(url)
+    current = url
     for _ in range(_MAX_REDIRECTS + 1):
-        with httpx.stream(
-            "GET",
-            current,
-            timeout=timeout,
-            follow_redirects=False,
-            headers={"User-Agent": "Iceberg-CTI/feed-fetcher"},
-            **proxy.resolve(proxy_config, current),
-        ) as resp:
+        with _feed_stream(current, timeout=timeout, proxy_config=proxy_config) as resp:
             if resp.status_code not in _REDIRECT_STATUSES:
                 resp.raise_for_status()
                 return _read_bounded_response(resp, max_bytes=max_bytes)
@@ -201,8 +288,19 @@ def _get_feed_payload(
             if not location:
                 raise ValueError("Feed redirect missing Location header")
             base = str(getattr(resp, "url", current) or current)
-            current = _assert_safe_fetch_target(urljoin(base, location))
+            current = urljoin(base, location)
     raise ValueError("Feed redirect limit exceeded")
+
+
+def fetch_bounded_public_payload(session: Session, url: str) -> bytes:
+    """Shared SSRF-safe bounded fetch for admin/writer collection connectors."""
+    settings = get_settings()
+    return _get_feed_payload(
+        url,
+        timeout=settings.rss_fetch_timeout,
+        proxy_config=proxy_settings.get(session),
+        max_bytes=settings.rss_max_response_bytes,
+    )
 
 
 def create_feed(

@@ -6,6 +6,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse, JSONResponse
+from sqlalchemy import update
 from sqlmodel import Session, select
 
 from ..auth.dependencies import CurrentUser, require_role
@@ -133,13 +134,21 @@ def update_report(
 ) -> Report:
     report = ensure_editable(_get_report(session, report_id), user)
     data = body.model_dump(exclude_unset=True)
-    for field, value in data.items():
-        setattr(report, field, value)
-    report.updated_at = utcnow()
-    session.add(report)
+    expected_version = data.pop("version")
+    result = session.execute(
+        update(Report)
+        .where(
+            Report.id == report.id,
+            Report.version == expected_version,
+            Report.status != ReportStatus.PUBLISHED,
+        )
+        .values(**data, updated_at=utcnow(), version=expected_version + 1)
+    )
+    if not result.rowcount:
+        session.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, "Report revision is stale")
     session.commit()
-    session.refresh(report)
-    return report
+    return _get_report(session, report_id)
 
 
 @router.put("/{report_id}/citations")

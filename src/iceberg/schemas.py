@@ -85,6 +85,7 @@ class ReportCreate(BaseModel):
 
 
 class ReportUpdate(BaseModel):
+    version: int
     title: str | None = None
     body_md: str | None = None
     key_judgements: str | None = None
@@ -93,6 +94,14 @@ class ReportUpdate(BaseModel):
     analytic_confidence: AnalyticConfidence | None = None
     intel_level: IntelLevel | None = None
     tlp: TLP | None = None
+
+
+class TaxiiPullRequest(BaseModel):
+    url: str
+
+
+class MispPullRequest(BaseModel):
+    event_uuid: str
 
 
 # --------------------------------------------------------------------------- #

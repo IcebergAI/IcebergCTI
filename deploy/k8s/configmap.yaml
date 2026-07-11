@@ -12,6 +12,9 @@ data:
   ICEBERG_ATTACHMENTS_DIR: "/data/attachments"
   ICEBERG_FIGURES_DIR: "/data/figures"
   ICEBERG_RENDER_OUTPUT_DIR: "/data/rendered"
+  # Example ingress-controller pod CIDR. Replace with the narrow CIDR/address
+  # used by your cluster; production rejects wildcard forwarding-header trust.
+  FORWARDED_ALLOW_IPS: "10.244.0.0/16"
   ICEBERG_DEV_AUTH: "false"
   ICEBERG_PORTAL_BASE_URL: "https://iceberg.example.com"
   # Login: production auth is Microsoft Entra OIDC. With dev-auth off (above) and

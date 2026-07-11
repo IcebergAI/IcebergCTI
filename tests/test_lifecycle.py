@@ -60,7 +60,8 @@ def test_published_report_is_immutable(client, login):
 
     # Back to the author: editing a published report is rejected.
     login("ANALYST", email="author@example.com")
-    resp = client.patch(f"/api/reports/{rid}", json={"body_md": "tampered"})
+    version = client.get(f"/api/reports/{rid}").json()["report"]["version"]
+    resp = client.patch(f"/api/reports/{rid}", json={"body_md": "tampered", "version": version})
     assert resp.status_code == 409
 
 

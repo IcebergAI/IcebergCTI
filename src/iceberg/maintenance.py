@@ -1,13 +1,14 @@
 """Operational maintenance commands for derived Iceberg data."""
 
 import argparse
+from pathlib import Path
 import time
 
-from sqlmodel import Session
+from sqlmodel import Session, select
 
-from .db import engine, init_db, run_migrations
-from .models import JobStatus
-from .services import related
+from .db import engine, init_db, run_migrations, schema_is_current
+from .models import Attachment, Figure, JobStatus, RenderedProduct
+from .services import attachments, figures, related
 from .services import jobs
 from .services.reports import prune_rendered_products
 
@@ -37,6 +38,33 @@ def rebuild_related_main() -> None:
     with Session(engine) as session:
         count = related.rebuild(session)
     print(f"Indexed {count} published report(s)")
+
+
+def missing_persistent_files(session: Session) -> list[str]:
+    """Return non-sensitive reference labels for DB rows missing their bytes."""
+    missing: list[str] = []
+    for item in session.exec(select(Attachment)).all():
+        if not attachments.attachment_path(item).is_file():
+            missing.append(f"attachment:{item.id}")
+    for item in session.exec(select(Figure)).all():
+        if not figures.figure_path(item).is_file():
+            missing.append(f"figure:{item.id}")
+    for item in session.exec(select(RenderedProduct)).all():
+        if not Path(item.pdf_path).is_file():
+            missing.append(f"rendered_product:{item.id}")
+    return missing
+
+
+def verify_files_main() -> None:
+    """Fail restore workflows when DB file references are not present on disk."""
+    if not schema_is_current():
+        raise SystemExit("Database schema is not at the packaged Alembic head")
+    with Session(engine) as session:
+        missing = missing_persistent_files(session)
+    if missing:
+        print("Missing persistent files: " + ", ".join(missing))
+        raise SystemExit(1)
+    print("Persistent file references verified")
 
 
 def _worker_parser() -> argparse.ArgumentParser:

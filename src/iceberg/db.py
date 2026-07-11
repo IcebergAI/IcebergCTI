@@ -21,6 +21,7 @@ _BOOT_LOCK_KEY = 0x1CEB_0001
 # Alembic migrations ship inside the package, so this resolves for editable and
 # wheel installs alike (no dependency on alembic.ini's location at runtime).
 _MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
+_bootstrap_ready = False
 
 # Register the FTS table/trigger creation against Report-table creation at import
 # time, so it fires for every create_all (app boot and the in-memory test engine).
@@ -86,6 +87,33 @@ def run_migrations() -> None:
         command.upgrade(cfg, "head")
 
 
+def packaged_schema_head() -> str:
+    """Return the single Alembic head shipped with this application build."""
+    from alembic.script import ScriptDirectory
+
+    head = ScriptDirectory.from_config(alembic_config()).get_current_head()
+    if not head:  # pragma: no cover - a packaged build always has migrations
+        raise RuntimeError("No packaged Alembic head revision")
+    return head
+
+
+def schema_is_current(bind=None) -> bool:
+    """Side-effect-free database revision check used by boot and readiness."""
+    from alembic.migration import MigrationContext
+
+    try:
+        bind = bind or engine
+        with bind.connect() as connection:
+            current = MigrationContext.configure(connection).get_current_revision()
+        return current == packaged_schema_head()
+    except Exception:  # noqa: BLE001 - unreachable/unmigrated means not current
+        return False
+
+
+def application_ready(bind=None) -> bool:
+    return _bootstrap_ready and schema_is_current(bind)
+
+
 @contextmanager
 def _boot_serialised() -> Iterator[None]:
     """Serialise boot init across concurrent uvicorn workers / replicas.
@@ -120,11 +148,15 @@ def init_db() -> None:
     from .services.publication import backfill_snapshots
     from .services.tags import seed_default_taxonomy
 
+    global _bootstrap_ready
+    _bootstrap_ready = False
     with _boot_serialised():
         # Apply schema migrations. In production set ICEBERG_AUTO_MIGRATE=false and
         # run `alembic upgrade head` in the deploy step instead.
         if get_settings().auto_migrate:
             run_migrations()
+        elif not schema_is_current():
+            return
 
         # Seed the controlled taxonomy and backfill the FTS index for any rows
         # that predate it. Both are idempotent.
@@ -134,6 +166,7 @@ def init_db() -> None:
             # Existing published reports predate the immutable snapshot model.
             # Freeze their current approved representation once at upgrade boot.
             backfill_snapshots(session)
+        _bootstrap_ready = True
 
 
 def get_session() -> Iterator[Session]:

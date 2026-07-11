@@ -17,7 +17,6 @@ import time
 from collections.abc import Callable
 from typing import Protocol
 
-import jwt
 from sqlmodel import Session
 from starlette.background import BackgroundTask
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -32,9 +31,7 @@ from .. import db
 from ..config import Settings, get_settings
 from ..models import AuditAction, AuditCategory, AuditOutcome, AuditSeverity
 from ..services import audit, audit_settings, proxy_settings, siem
-from .dependencies import _extract_token
 from .request_actor import resolve_request_actor
-from .tokens import decode_access_token
 
 logger = logging.getLogger("iceberg.rate_limit")
 
@@ -398,13 +395,9 @@ def _rate_key(request: Request, policy: RateLimitPolicy) -> tuple[str, str]:
 
 
 def _token_subject(request: Request) -> str:
-    token = _extract_token(request)
-    if not token:
-        return ""
-    try:
-        return str(decode_access_token(token)["sub"])
-    except (jwt.PyJWTError, KeyError, TypeError, ValueError):
-        return ""
+    with Session(db.engine) as session:
+        actor = resolve_request_actor(request, session)
+        return str(actor.id) if actor is not None else ""
 
 
 def _client_ip(request: Request) -> str:

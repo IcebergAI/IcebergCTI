@@ -19,10 +19,10 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
-from sqlmodel import Session, select
+from sqlmodel import Session
 
+from . import db
 from .db import get_session
-from .models import User
 
 router = APIRouter(include_in_schema=False)
 SessionDep = Annotated[Session, Depends(get_session)]
@@ -42,7 +42,8 @@ def readyz(session: SessionDep):
     unmigrated database (``ICEBERG_AUTO_MIGRATE=false`` before the deploy step
     has run migrations) reports *not ready*."""
     try:
-        session.exec(select(User).limit(1)).first()
+        if not db.application_ready(session.get_bind()):
+            raise RuntimeError("schema/bootstrap is not ready")
     except Exception:  # noqa: BLE001 — any DB error means not ready
         return JSONResponse({"status": "not ready"}, status_code=503)
     return {"status": "ready"}

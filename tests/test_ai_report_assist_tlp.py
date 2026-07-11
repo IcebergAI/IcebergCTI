@@ -21,7 +21,7 @@ def _report(client, nb_id, *, title, tlp, body_md):
     rid = client.post(
         "/api/reports", json={"notebook_id": nb_id, "title": title, "tlp": tlp}
     ).json()["id"]
-    client.patch(f"/api/reports/{rid}", json={"body_md": body_md})
+    client.patch(f"/api/reports/{rid}", json={"body_md": body_md, "version": 1})
     return rid
 
 

@@ -180,10 +180,7 @@ def _dissemination(session: Session, reports: list[Report]) -> dict:
     ]
 
     # Reports finished but held back from broadcast by the TLP ceiling.
-    try:
-        max_tlp = TLP(get_settings().dissemination_max_tlp)
-    except ValueError:
-        max_tlp = TLP.AMBER
+    max_tlp = TLP(get_settings().dissemination_max_tlp)
     withheld = sum(
         1 for r in published if not is_disseminable(TLP(r.tlp), max_tlp)
     )

@@ -79,12 +79,13 @@ The login page then shows "Continue with Microsoft Entra ID" and the dev bypass 
 2. **Point Iceberg at it.** Put `ICEBERG_DATABASE_URL` (with credentials) in
    `iceberg-secrets`, not the ConfigMap. URL form:
    `postgresql+psycopg://USER:PASS@HOST:5432/DBNAME`.
-3. **Migrate.** `ICEBERG_AUTO_MIGRATE` stays `false`; run the migrate Job so the
-   schema is owned by the deploy step:
+3. **Migrate and release.** `ICEBERG_AUTO_MIGRATE` stays `false`. Use a unique
+   release id and the same immutable digest for migration and application:
    ```bash
-   kubectl apply -f migrate-job.yaml
-   kubectl wait --for=condition=complete job/iceberg-migrate
+   IMAGE=ghcr.io/icebergai/iceberg@sha256:<digest> RELEASE=2026-07-11-1 ./release.sh
    ```
+   The script refuses mutable images and reused release names, waits with a
+   timeout, prints failed migration logs, and rolls out only after success.
    The same migrations cover both backends — the SQLite-only FTS5 objects and the
    Postgres-only `search_vector` (tsvector + GIN) block are each dialect-guarded.
 4. **Deploy.** `kubectl apply -f configmap.yaml -f service.yaml -f pvc.yaml -f deployment.yaml`.
@@ -96,8 +97,7 @@ The login page then shows "Continue with Microsoft Entra ID" and the dev bypass 
 # evaluation) — see "Authentication / Login". They share the ConfigMap name.
 kubectl apply -f configmap.yaml -f service.yaml -f pvc.yaml
 kubectl apply -f secret.yaml          # from secret.example.yaml (sets ICEBERG_DATABASE_URL)
-kubectl apply -f migrate-job.yaml     # alembic upgrade head
-kubectl apply -f deployment.yaml
+IMAGE=ghcr.io/icebergai/iceberg@sha256:<digest> RELEASE=<unique-id> ./release.sh
 kubectl apply -f ingress.yaml         # optional — TLS exposure (edit host + secret first)
 ```
 
@@ -119,8 +119,9 @@ TLS, two options:
   and reference it from `tls.secretName`.
 
 The container starts uvicorn with `--proxy-headers` and trusts `X-Forwarded-*`
-(`FORWARDED_ALLOW_IPS`, default `*` — scope it to the ingress-controller pod CIDR
-for a stricter posture), so the request scheme is correct and the audit log
+only from `FORWARDED_ALLOW_IPS`. The ConfigMap contains an example ingress pod
+CIDR; replace it with your cluster's narrow ingress-controller address/CIDR, so
+the request scheme is correct and the audit log
 records the real client IP rather than the ingress pod's. Set
 `ICEBERG_ENVIRONMENT=prod` for `Secure` cookies + HSTS.
 
@@ -130,8 +131,7 @@ Two stores hold all persistent state: **PostgreSQL** (every report, requirement,
 tag, audit event, settings row) and the **`iceberg-data` PVC** (uploaded
 attachments and figures, plus rendered PDFs under `/data`). Back up **both** —
 the PDFs regenerate from a report, but attachments/figures are original material
-with no other copy. The database is authoritative, so when in doubt dump it
-first, the files second.
+with no other copy. Capture both while application writers are quiesced.
 
 ### PostgreSQL
 
@@ -139,15 +139,16 @@ Prefer a **managed** instance's automated backups / PITR. For the self-hosted
 `postgres` StatefulSet (or any reachable instance), use `pg_dump`/`pg_restore`:
 
 ```bash
+# Stop writers before either backup half; keep them stopped through both.
+kubectl scale deploy/iceberg --replicas=0
+kubectl rollout status deploy/iceberg --timeout=5m
 # Back up — a custom-format dump (compressed, restorable selectively).
 kubectl exec postgres-0 -- \
   pg_dump -U iceberg -d iceberg -Fc > iceberg-$(date +%F).dump
 
-# Restore into a fresh, empty database (scale the app to 0 first so nothing
-# writes mid-restore: kubectl scale deploy/iceberg --replicas=0).
+# Restore while writers remain stopped.
 kubectl exec -i postgres-0 -- \
   pg_restore -U iceberg -d iceberg --clean --if-exists < iceberg-2026-06-27.dump
-kubectl scale deploy/iceberg --replicas=1
 ```
 
 The dump is schema + data, so a restore lands at the schema version it was taken
@@ -186,17 +187,18 @@ kubectl wait --for=condition=Ready pod/pvc-tool
 # Back up: stream a tar of /data out through the helper.
 kubectl exec pvc-tool -- tar cf - -C /data . > iceberg-data-$(date +%F).tar
 
-# Restore: pipe a tar back in (the PVC must already exist; -i feeds stdin).
+# Restore replaces filesystem state rather than extracting over stale files.
+kubectl exec pvc-tool -- sh -c 'rm -rf /data/attachments /data/figures /data/rendered && mkdir -p /data/attachments /data/figures /data/rendered'
 kubectl exec -i pvc-tool -- tar xf - -C /data < iceberg-data-2026-06-27.tar
 
 kubectl delete pod pvc-tool
-kubectl scale deploy/iceberg --replicas=1
 ```
 
-Keep DB and file backups from the **same window** so a restored report's cited
-attachments still resolve. (This is the same single-writer / local-filesystem
-caveat as *Scaling caveat* below — there is one `iceberg-data` volume to snapshot
-because there is exactly one replica.)
+After restore, run the unique release migration workflow and execute
+`iceberg-verify-files` from the restored image with the data PVC mounted. Restart
+only after database restore, filesystem replacement, migration, and verification
+all succeed. The verifier reports missing attachment, figure, and retained-render
+row IDs without exposing filenames or content.
 
 ## Scaling caveat
 

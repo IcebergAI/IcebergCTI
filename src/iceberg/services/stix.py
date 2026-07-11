@@ -30,7 +30,7 @@ def _object_for_tag(tag: Tag) -> dict | None:
     common = {
         "spec_version": _SPEC,
         "created": _ts(tag.created_at),
-        "modified": _ts(tag.created_at),
+        "modified": _ts(tag.updated_at),
         "name": tag.label,
         "description": tag.description,
     }
@@ -89,12 +89,16 @@ def report_bundle(report: Report) -> dict:
     """Build a STIX 2.1 bundle for one Iceberg report."""
     tag_objects = [obj for tag in report.tags if (obj := _object_for_tag(tag))]
     published = report.published_at or report.updated_at
+    modified = max(
+        [report.updated_at, *(tag.updated_at for tag in report.tags)],
+        key=lambda value: _ts(value),
+    )
     report_obj = {
         "type": "report",
         "spec_version": _SPEC,
-        "id": _stix_id("report", f"report:{report.id}:{report.updated_at.isoformat()}"),
+        "id": _stix_id("report", f"report:{report.id}"),
         "created": _ts(report.created_at),
-        "modified": _ts(report.updated_at),
+        "modified": _ts(modified),
         "published": _ts(published),
         "name": report.title,
         "description": report.key_judgements or report.body_md[:500],
@@ -108,6 +112,6 @@ def report_bundle(report: Report) -> dict:
     }
     return {
         "type": "bundle",
-        "id": _stix_id("bundle", f"report:{report.id}:{report.updated_at.isoformat()}"),
+        "id": _stix_id("bundle", f"report:{report.id}"),
         "objects": [report_obj, *tag_objects],
     }

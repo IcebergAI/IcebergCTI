@@ -1,5 +1,6 @@
 """Notebooks, sources, notes and attachments — the analyst collection workspace."""
 
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import (
@@ -14,7 +15,7 @@ from fastapi import (
     status,
 )
 from fastapi.responses import FileResponse, Response
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from ..auth.dependencies import CurrentUser, require_role
 from ..db import get_session
@@ -29,6 +30,7 @@ from ..models import (
     Note,
     Notebook,
     Role,
+    RenderedProduct,
     Source,
     utcnow,
 )
@@ -46,6 +48,8 @@ from ..schemas import (
     SourceCreate,
     SourceGradeUpdate,
     SourceUpdate,
+    TaxiiPullRequest,
+    MispPullRequest,
 )
 from ..services import ach as ach_service
 from ..services import attachments as attachment_service
@@ -53,6 +57,7 @@ from ..services import audit
 from ..services import diamond as diamond_service
 from ..services import figures as figure_service
 from ..services import iocs as ioc_service
+from ..services import inbound
 from ..services import notebooks as notebook_service
 from ..services import source_grading
 from ..services.requirements import set_notebook_requirements
@@ -116,7 +121,14 @@ def update_notebook(
 
 
 @router.delete("/{notebook_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_notebook(notebook_id: int, session: SessionDep, user: CurrentUser):
+def delete_notebook(
+    notebook_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+    _w: Writer,
+    request: Request,
+    background_tasks: BackgroundTasks,
+):
     nb = _get_notebook(session, notebook_id)
     if nb.owner_id != user.id and user.role != Role.ADMIN:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the owner can delete")
@@ -124,6 +136,19 @@ def delete_notebook(notebook_id: int, session: SessionDep, user: CurrentUser):
     # then unlink them after the delete so no files are orphaned on disk.
     paths = [attachment_service.attachment_path(a) for a in nb.attachments]
     paths += [figure_service.figure_path(f) for f in nb.figures]
+    report_ids = [report.id for report in nb.reports if report.id is not None]
+    rendered = list(
+        session.exec(
+            select(RenderedProduct).where(col(RenderedProduct.report_id).in_(report_ids))
+        ).all()
+    ) if report_ids else []
+    paths += [Path(product.pdf_path) for product in rendered]
+    detail = {
+        "reports": len(report_ids),
+        "attachments": len(nb.attachments),
+        "figures": len(nb.figures),
+        "rendered_products": len(rendered),
+    }
     session.delete(nb)
     session.commit()
     for path in paths:
@@ -131,6 +156,17 @@ def delete_notebook(notebook_id: int, session: SessionDep, user: CurrentUser):
             path.unlink(missing_ok=True)
         except OSError:
             pass
+    audit.record_and_emit(
+        session,
+        background_tasks=background_tasks,
+        action=AuditAction.NOTEBOOK_DELETED,
+        category=AuditCategory.DATA_ACCESS,
+        actor=user,
+        request=request,
+        resource_type="notebook",
+        resource_id=notebook_id,
+        detail=detail,
+    )
 
 
 @router.post("/{notebook_id}/sources", status_code=status.HTTP_201_CREATED)
@@ -220,6 +256,28 @@ def delete_source(
     source = notebook_service.get_source_or_404(session, notebook_id, source_id)
     session.delete(source)
     session.commit()
+
+
+@router.post("/{notebook_id}/imports/taxii")
+def import_taxii(
+    notebook_id: int,
+    body: TaxiiPullRequest,
+    session: SessionDep,
+    _w: Writer,
+) -> dict[str, int]:
+    return inbound.pull_taxii(session, _get_notebook(session, notebook_id), body.url)
+
+
+@router.post("/{notebook_id}/imports/misp")
+def import_misp(
+    notebook_id: int,
+    body: MispPullRequest,
+    session: SessionDep,
+    _w: Writer,
+) -> dict[str, int]:
+    return inbound.pull_misp(
+        session, _get_notebook(session, notebook_id), body.event_uuid
+    )
 
 
 def _audit_file(session, background_tasks, request, user, action, *, notebook_id, item):

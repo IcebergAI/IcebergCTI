@@ -307,6 +307,7 @@ class AuditAction(StrEnum):
     AUTH_LOGIN = "AUTH_LOGIN"
     AUTH_LOGOUT = "AUTH_LOGOUT"
     RATE_LIMITED = "RATE_LIMITED"
+    NOTEBOOK_DELETED = "NOTEBOOK_DELETED"
     # Authorization (failure outcomes captured centrally)
     AUTHZ_DENIED = "AUTHZ_DENIED"
     CSRF_BLOCKED = "CSRF_BLOCKED"
@@ -1036,6 +1037,7 @@ class Tag(SQLModel, table=True):
     )
     merged_at: datetime | None = Field(default=None)
     created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow, index=True)
 
     reports: list[Report] = Relationship(
         back_populates="tags", link_model=ReportTag
@@ -1092,6 +1094,9 @@ class ReportMispEvent(SQLModel, table=True):
     report_id: int = Field(foreign_key="report.id", ondelete="CASCADE", index=True)
     event_uuid: str = ""  # MISP event UUID (the stable cross-instance reference)
     event_id: str = ""  # MISP numeric event id (per-instance)
+    external_created: bool = False
+    push_token: str = Field(default="", index=True)
+    push_started_at: datetime | None = Field(default=None)
     attribute_count: int = 0  # indicators pushed on the last successful push
     last_status: str = ""  # "ok" or a short error summary
     error: str = ""  # last error string (cleared on a successful push)

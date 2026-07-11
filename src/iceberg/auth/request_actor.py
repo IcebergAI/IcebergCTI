@@ -16,6 +16,9 @@ def resolve_request_actor(request: Request, session: Session) -> User | None:
         return None
     try:
         payload = decode_access_token(token)
-        return session.get(User, int(payload["sub"]))
+        user = session.get(User, int(payload["sub"]))
+        if user is None or int(payload.get("ver", 0)) != user.token_version:
+            return None
+        return user
     except (jwt.PyJWTError, KeyError, TypeError, ValueError):
         return None

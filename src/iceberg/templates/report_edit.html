@@ -24,7 +24,7 @@
   <script type="application/json" id="report-editor-data">
     {{ {'body': report.body_md, 'kj': report.key_judgements, 'ka': report.key_assumptions,
         'gaps': report.intelligence_gaps, 'previewHtml': preview_html,
-        'warnings': preview_warnings, 'reportId': report.id, 'canEdit': can_edit} | tojson }}
+        'warnings': preview_warnings, 'reportId': report.id, 'version': report.version, 'canEdit': can_edit} | tojson }}
   </script>
 
   <!-- ===== command header ===== -->
@@ -130,6 +130,7 @@
       <div class="editor-pane-scroll">
         {% if can_edit %}
           <form id="reportform" method="post" action="/reports/{{ report.id }}">
+            <input type="hidden" name="version" :value="version">
             <textarea name="body_md" class="editor-body-textarea" x-model="body" @input="schedule()"
                       placeholder="Write the assessment in Markdown. Use the Insert menu to embed diamonds, figures and ACH matrices."></textarea>
 

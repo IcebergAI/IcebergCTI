@@ -36,10 +36,7 @@ logger = logging.getLogger("iceberg.dissemination")
 
 
 def _max_tlp() -> TLP:
-    try:
-        return TLP(get_settings().dissemination_max_tlp)
-    except ValueError:
-        return TLP.AMBER
+    return TLP(get_settings().dissemination_max_tlp)
 
 
 def matched_stakeholders(session: Session, report: Report) -> list[User]:
