@@ -63,6 +63,7 @@ ai_embedding_model  # configuration field reserved for vector backend selection
 _.migrate_main  # console script entry point (pyproject.toml)
 _.prune_renders_main  # console script entry point (pyproject.toml)
 _.rebuild_related_main  # console script entry point (pyproject.toml)
+_.worker_main  # console script entry point (pyproject.toml)
 _.reviewer_id  # unused attribute (src/iceberg/services/lifecycle.py:50)
 _.reviewer_id  # unused attribute (src/iceberg/services/lifecycle.py:55)
 _.handle_starttag  # unused method (src/iceberg/services/source_grading.py:181)
@@ -97,3 +98,21 @@ extract  # unused function (src/iceberg/services/iocs.py)
 cls  # unused variable (pydantic @field_validator first arg, src/iceberg/config.py)
 # Test-only cache reset (tests/conftest.py clears the process-global LRU per test).
 clear_bundle_cache  # unused function (src/iceberg/services/taxii.py)
+
+# Durable jobs, taxonomy merge lineage and import results are ORM/API fields.
+merged_at  # unused variable (src/iceberg/models.py)
+leased_at  # unused variable (src/iceberg/models.py)
+leased_by  # unused variable (src/iceberg/models.py)
+started_at  # unused variable (src/iceberg/models.py)
+completed_at  # unused variable (src/iceberg/models.py)
+skipped  # unused variable (src/iceberg/services/attack_import.py)
+_.leased_by  # unused attribute (src/iceberg/services/jobs.py)
+_.completed_at  # unused attribute (src/iceberg/services/jobs.py)
+_.merged_at  # unused attribute (src/iceberg/services/tags.py)
+
+# Compatibility/service entry points invoked dynamically or by downstream callers.
+send_notifications  # unused function (src/iceberg/services/dissemination.py)
+send_webhook_notification  # unused function (src/iceberg/services/dissemination.py)
+schedule_notifications  # unused function (src/iceberg/services/dissemination.py)
+queue_dissemination  # unused function (src/iceberg/services/dissemination.py)
+fetch_all_enabled_once  # unused function (src/iceberg/services/feeds.py)

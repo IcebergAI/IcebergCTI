@@ -39,6 +39,17 @@ _TACTICS = {
 }
 
 
+def _technique_predicate(
+    tag: sa.TableClause, dialect_name: str
+) -> sa.ColumnElement[bool]:
+    if dialect_name == "postgresql":
+        # ``tag.kind`` is the native ``tagkind`` enum. An ordinary string bind
+        # is rendered as VARCHAR by psycopg and PostgreSQL has no enum=varchar
+        # operator, so make the controlled enum literal's type explicit.
+        return sa.text("tag.kind = 'TECHNIQUE'::tagkind")
+    return tag.c.kind == "TECHNIQUE"
+
+
 def upgrade() -> None:
     with op.batch_alter_table("tag") as batch:
         batch.add_column(
@@ -59,7 +70,9 @@ def upgrade() -> None:
         sa.column("attack_tactics", sa.JSON()),
     )
     rows = bind.execute(
-        sa.select(tag.c.id, tag.c.description).where(tag.c.kind == "TECHNIQUE")
+        sa.select(tag.c.id, tag.c.description).where(
+            _technique_predicate(tag, bind.dialect.name)
+        )
     ).mappings()
     for row in rows:
         tactic = _TACTICS.get((row["description"] or "").strip().lower())

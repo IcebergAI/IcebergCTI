@@ -9,10 +9,13 @@ in and out so the temp URL doesn't leak into other tests.
 
 import pytest
 from alembic import command
-from sqlalchemy import create_engine, text
+from sqlalchemy import column, create_engine, String, table, text
 
 from iceberg import db as db_mod
 from iceberg.config import get_settings
+from iceberg.migrations.versions.a4b5c6d7e8f9_attack_tactics import (
+    _technique_predicate,
+)
 
 
 def _objects(url: str, kind: str) -> set[str]:
@@ -67,3 +70,11 @@ def test_downgrade_then_upgrade_roundtrips(migrated_db):
     command.upgrade(cfg, "head")
     assert "report" in _objects(url, "table")
     assert "report_fts" in _objects(url, "table")
+
+
+def test_attack_tactic_backfill_casts_native_postgres_enum():
+    tag = table("tag", column("kind", String()))
+
+    predicate = str(_technique_predicate(tag, "postgresql"))
+
+    assert predicate == "tag.kind = 'TECHNIQUE'::tagkind"

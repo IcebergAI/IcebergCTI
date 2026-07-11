@@ -35,7 +35,9 @@ def test_illegal_transition_draft_to_published(client, login):
     login("ANALYST")
     rid = _report(client)["id"]
     resp = _transition(client, rid, "PUBLISHED")
-    assert resp.status_code == 400
+    # Publishing uses an atomic compare-and-swap path, where an invalid source
+    # state is correctly represented as a resource-state conflict.
+    assert resp.status_code == 409
 
 
 def test_analyst_cannot_approve(client, login):
