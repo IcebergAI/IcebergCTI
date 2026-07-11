@@ -6,7 +6,7 @@ environment (``ICEBERG_WEBHOOK_TOKEN``); the form only edits the non-secret
 config persisted on the ``WebhookSettings`` row.
 """
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import BackgroundTasks, Form, Request
 
@@ -42,6 +42,7 @@ def admin_webhook_save(
     enabled: Annotated[bool, Form()] = False,
     url: Annotated[str, Form()] = "",
     timeout: Annotated[float, Form()] = 5.0,
+    format: Annotated[Literal["generic", "slack", "teams"], Form()] = "generic",
 ):
     _require_admin(user)
     webhook_settings.update(
@@ -49,6 +50,7 @@ def admin_webhook_save(
         enabled=enabled,
         url=url.strip(),
         timeout=timeout,
+        format=format,
     )
     audit.record_and_emit(
         session,
@@ -58,7 +60,7 @@ def admin_webhook_save(
         severity=AuditSeverity.WARNING,
         actor=user,
         request=request,
-        detail={"enabled": enabled},
+        detail={"enabled": enabled, "format": format},
     )
     return _redirect("/admin/webhook")
 

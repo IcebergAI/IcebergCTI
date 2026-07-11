@@ -97,6 +97,8 @@ def get_requirement(
     req = _get(session, requirement_id)
     if not _can_view(req, user):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your requirement")
+    if user.role == Role.STAKEHOLDER:
+        return req_service.stakeholder_traceability(req, user)
     return {
         "requirement": req,
         "stakeholder": req.stakeholder,

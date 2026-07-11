@@ -35,10 +35,10 @@ from ..schemas import (
 from ..rendering.typst import TypstNotAvailable, TypstRenderError
 from ..services import (
     audit,
-    dissemination,
     lifecycle,
     misp as misp_service,
     proxy_settings as proxy_settings_service,
+    publication,
     related,
     stix as stix_service,
 )
@@ -48,6 +48,8 @@ from ..services.reports import (
     ensure_author,
     ensure_editable,
     ensure_visible,
+    report_detail_payload,
+    report_summary,
     render_report,
     set_citations,
     set_ioc_citations,
@@ -71,18 +73,18 @@ def _get_report(session: Session, report_id: int) -> Report:
 
 
 @router.get("")
-def list_reports(session: SessionDep, user: CurrentUser) -> list[Report]:
+def list_reports(session: SessionDep, user: CurrentUser) -> list[dict]:
     stmt = select(Report).order_by(Report.updated_at.desc())
     if user.role == Role.STAKEHOLDER:
         stmt = stmt.where(Report.status == ReportStatus.PUBLISHED)
-        visible = []
+        visible: list[dict] = []
         for report in session.exec(stmt).all():
             try:
-                visible.append(ensure_visible(report, user))
+                visible.append(report_summary(ensure_visible(report, user)))
             except HTTPException:
                 continue
         return visible
-    return list(session.exec(stmt).all())
+    return [report_summary(report) for report in session.exec(stmt).all()]
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -103,20 +105,21 @@ def create_report(
 @router.get("/{report_id}")
 def get_report(report_id: int, session: SessionDep, user: CurrentUser) -> dict:
     report = ensure_visible(_get_report(session, report_id), user)
-    return {
-        "report": report,
-        "cited_sources": report.cited_sources,
-        "cited_attachments": report.cited_attachments,
-        "tags": report.tags,
-    }
+    return report_detail_payload(report, user)
 
 
 @router.get("/{report_id}/related")
 def related_reports(report_id: int, session: SessionDep, user: CurrentUser) -> dict:
     report = ensure_visible(_get_report(session, report_id), user)
+    results = related.related_reports(session, report=report, user=user)
+    if user.role == Role.STAKEHOLDER:
+        results = [
+            {"report": report_summary(item["report"]), "score": item["score"]}
+            for item in results
+        ]
     return {
         "report_id": report.id,
-        "results": related.related_reports(session, report=report, user=user),
+        "results": results,
     }
 
 
@@ -259,15 +262,29 @@ def transition_report(
     request: Request,
 ) -> Report:
     report = _get_report(session, report_id)
+    if body.target == ReportStatus.PUBLISHED:
+        try:
+            report, _recipients = publication.publish(
+                session,
+                report,
+                actor=user,
+                request=request,
+                background_tasks=background_tasks,
+            )
+        except PermissionError as exc:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
+        except publication.PublicationConflict as exc:
+            raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+        related.upsert_report_embedding(session, report)
+        # Embedding upsert commits its own derived-data transaction and expires
+        # ORM state; refresh the finished report before FastAPI serializes it.
+        session.refresh(report)
+        return report
     try:
         report = lifecycle.transition(session, report, body.target, actor=user)
     except lifecycle.LifecycleError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc))
     recipients = None
-    if report.status == ReportStatus.PUBLISHED:
-        recipients = dissemination.queue_dissemination(session, report, background_tasks)
-        related.upsert_report_embedding(session, report)
-        session.refresh(report)  # dissemination's commit expires the instance
     _audit_transition(session, report, user, request, background_tasks, recipients)
     session.refresh(report)  # the audit commit also expires the instance
     return report
@@ -301,14 +318,11 @@ def _audit_transition(session, report, user, request, background_tasks, recipien
 def list_products(
     report_id: int, session: SessionDep, user: CurrentUser
 ) -> list[RenderedProduct]:
-    ensure_visible(_get_report(session, report_id), user)
-    return list(
-        session.exec(
-            select(RenderedProduct)
-            .where(RenderedProduct.report_id == report_id)
-            .order_by(RenderedProduct.rendered_at.desc())
-        ).all()
-    )
+    report = ensure_visible(_get_report(session, report_id), user)
+    stmt = select(RenderedProduct).where(RenderedProduct.report_id == report_id)
+    if user.role == Role.STAKEHOLDER:
+        stmt = stmt.where(RenderedProduct.snapshot_hash == report.publication_snapshot_hash)
+    return list(session.exec(stmt.order_by(RenderedProduct.rendered_at.desc())).all())
 
 
 @router.post("/{report_id}/render", status_code=status.HTTP_201_CREATED)
@@ -337,9 +351,11 @@ def render(
 def download_product(
     report_id: int, product_id: int, session: SessionDep, user: CurrentUser
 ):
-    ensure_visible(_get_report(session, report_id), user)
+    report = ensure_visible(_get_report(session, report_id), user)
     product = session.get(RenderedProduct, product_id)
     if not product or product.report_id != report_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Product not found")
+    if user.role == Role.STAKEHOLDER and product.snapshot_hash != report.publication_snapshot_hash:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Product not found")
     path = Path(product.pdf_path)
     if not path.exists():

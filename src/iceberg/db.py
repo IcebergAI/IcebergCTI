@@ -117,6 +117,7 @@ def init_db() -> None:
     # Importing models registers them on SQLModel.metadata (needed by env.py and
     # the in-memory test engine's create_all).
     from . import models  # noqa: F401
+    from .services.publication import backfill_snapshots
     from .services.tags import seed_default_taxonomy
 
     with _boot_serialised():
@@ -130,6 +131,9 @@ def init_db() -> None:
         with Session(engine) as session:
             seed_default_taxonomy(session)
             search_service.reindex(session)
+            # Existing published reports predate the immutable snapshot model.
+            # Freeze their current approved representation once at upgrade boot.
+            backfill_snapshots(session)
 
 
 def get_session() -> Iterator[Session]:

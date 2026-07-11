@@ -2,13 +2,14 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from sqlmodel import Session, select
 
-from ..auth.dependencies import require_role
+from ..auth.dependencies import CurrentUser, require_role
 from ..db import get_session
 from ..models import AudienceGroup, Report, Role, User
 from ..schemas import AudienceGroupCreate, AudienceGroupUpdate, AudienceLinks, AudienceMembers
+from ..services import audience as audience_service
 from ..services.tags import slugify
 
 router = APIRouter(prefix="/audience-groups", tags=["audience"])
@@ -92,8 +93,7 @@ def set_group_members(
 @router.delete("/{group_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_group(group_id: int, session: SessionDep, _a: Admin) -> None:
     group = _group_or_404(session, group_id)
-    session.delete(group)
-    session.commit()
+    audience_service.delete_group(session, group)
 
 
 @router.get("/reports/{report_id}")
@@ -106,15 +106,23 @@ def get_report_audience(report_id: int, session: SessionDep, _a: Admin) -> dict:
 
 @router.put("/reports/{report_id}")
 def set_report_audience(
-    report_id: int, body: AudienceLinks, session: SessionDep, _a: Admin
+    report_id: int,
+    body: AudienceLinks,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    session: SessionDep,
+    user: CurrentUser,
+    _a: Admin,
 ) -> dict:
     report = session.get(Report, report_id)
     if report is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Report not found")
-    groups = [
-        group for gid in body.group_ids if (group := session.get(AudienceGroup, gid)) is not None
-    ]
-    report.audience_groups = groups
-    session.add(report)
-    session.commit()
+    groups = audience_service.set_report_audience(
+        session,
+        report,
+        body.group_ids,
+        actor=user,
+        request=request,
+        background_tasks=background_tasks,
+    )
     return {"groups": groups}

@@ -113,7 +113,7 @@
   <div class="app" x-data='appShell({{ jump_items | tojson }})'
        @keydown.window.meta.k.prevent="openCmd()"
        @keydown.window.ctrl.k.prevent="openCmd()"
-       @keydown.escape.window="cmdOpen = false">
+       @keydown.escape.window="closeCmd()">
   {% if user is defined and user %}
     <aside class="rail">
       <a href="/" class="rail-brand" aria-label="{{ app_name }} home">
@@ -205,7 +205,10 @@
           <span class="crumb-sep">/</span>
           <span class="crumb-leaf">{% block crumb %}{{ crumb_default }}{% endblock %}</span>
         </div>
-        <button type="button" class="topbar-search" aria-label="Search or jump to" @click="openCmd()">
+        <button type="button" class="topbar-search" aria-label="Search or jump to"
+                aria-haspopup="dialog" aria-controls="cmdk-dialog"
+                :aria-expanded="cmdOpen ? 'true' : 'false'" x-ref="cmdTrigger"
+                @click="openCmd($refs.cmdTrigger)">
           <svg class="rail-ic" style="width:15px;height:15px;opacity:1"><use href="#ic-cmd"/></svg>
           <span class="topbar-search-label">Search or jump to…</span>
           <kbd>⌘K</kbd>
@@ -227,27 +230,34 @@
 
   {% if user is defined and user %}
     <!-- ⌘K command palette (jump-to) -->
-    <div class="cmdk-overlay" x-show="cmdOpen" x-cloak @click.self="cmdOpen = false"
-         role="dialog" aria-modal="true" aria-label="Command palette">
-      <div class="cmdk">
+    <div id="cmdk-dialog" class="cmdk-overlay" x-show="cmdOpen" x-cloak
+         @click.self="closeCmd()" @keydown.tab="trapCmdFocus($event)"
+         role="dialog" aria-modal="true" aria-labelledby="cmdk-title">
+      <div class="cmdk" x-ref="cmdDialog">
+        <h2 id="cmdk-title" class="sr-only">Command palette</h2>
         <div class="cmdk-input-row">
           <svg class="rail-ic" style="width:16px;height:16px;opacity:1;color:var(--muted)"><use href="#ic-cmd"/></svg>
           <input x-ref="cmdInput" type="text" class="cmdk-input" placeholder="Jump to…"
-                 x-model="cmdQ"
+                 aria-label="Jump to a workspace destination"
+                 role="combobox" aria-autocomplete="list" aria-haspopup="listbox"
+                 aria-controls="cmdk-list" :aria-expanded="cmdOpen ? 'true' : 'false'"
+                 :aria-activedescendant="cmdActiveDescendant" x-model="cmdQ" @input="cmdReset()"
                  @keydown.arrow-down.prevent="cmdMove(1)" @keydown.arrow-up.prevent="cmdMove(-1)"
-                 @keydown.enter.prevent="cmdGo()">
+                 @keydown.enter.prevent="cmdGo()" @keydown.escape.prevent.stop="closeCmd()">
           <kbd>Esc</kbd>
         </div>
-        <div class="cmdk-list">
+        <div id="cmdk-list" class="cmdk-list" role="listbox" aria-label="Jump destinations">
           <template x-for="(it, i) in cmdResults" :key="it.href">
-            <a :href="it.href" class="cmdk-opt" :class="i === cmdActive ? 'is-active' : ''"
-               @mouseenter="cmdActive = i">
+            <button type="button" class="cmdk-opt" role="option" tabindex="-1"
+                    :id="cmdOptionId(i)" :aria-selected="i === cmdActive ? 'true' : 'false'"
+                    :class="i === cmdActive ? 'is-active' : ''"
+                    @mouseenter="cmdActive = i" @click="cmdGo(i)">
               <span class="cmdk-opt-label" x-text="it.label"></span>
               <span class="cmdk-opt-group" x-text="it.group"></span>
-            </a>
+            </button>
           </template>
           <template x-if="cmdResults.length === 0">
-            <div class="cmdk-empty">No matches.</div>
+            <div class="cmdk-empty" role="status">No matches.</div>
           </template>
         </div>
       </div>

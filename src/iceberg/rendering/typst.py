@@ -199,6 +199,7 @@ def render_product(
     ach: list[tuple[int, str, str]] | None = None,
     attack_svg: str | None = None,
     iocs: list[IOC] | None = None,
+    data: dict | None = None,
     fmt: ProductFormat,
 ) -> Path:
     settings = get_settings()
@@ -220,7 +221,9 @@ def render_product(
         tmp_dir = Path(tmp)
         (tmp_dir / "data.json").write_text(
             json.dumps(
-                _build_data(
+                data
+                if data is not None
+                else _build_data(
                     report,
                     author_name,
                     sources,
@@ -245,7 +248,11 @@ def render_product(
         # Figure images referenced inline by the body — copied into the same
         # `--root` as figure-{id}{ext}.
         for fid, _caption, src_path, ext in figures:
-            shutil.copy(src_path, tmp_dir / f"figure-{fid}{ext}")
+            destination = tmp_dir / f"figure-{fid}{ext}"
+            if isinstance(src_path, bytes):
+                destination.write_bytes(src_path)
+            else:
+                shutil.copy(src_path, destination)
         # The report's ATT&CK coverage matrix (bare `[[attack]]` token) — one
         # per report, written into the same `--root` as attack.svg.
         if attack_svg:

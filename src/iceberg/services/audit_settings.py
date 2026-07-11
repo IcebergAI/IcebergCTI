@@ -9,29 +9,24 @@ from sqlmodel import Session
 
 from ..config import get_settings
 from ..models import AuditSettings, utcnow
-
-_SINGLETON_ID = 1
+from .singleton import get_or_create
 
 
 def get(session: Session) -> AuditSettings:
     """Return the settings row, seeding it from env defaults on first read."""
-    row = session.get(AuditSettings, _SINGLETON_ID)
-    if row is None:
+    def defaults() -> dict:
         cfg = get_settings()
-        row = AuditSettings(
-            id=_SINGLETON_ID,
-            enabled=cfg.audit_enabled,
-            methods=cfg.audit_default_methods or ["stdout"],
-            file_path=cfg.audit_file_path,
-            syslog_host=cfg.audit_syslog_host,
-            syslog_port=cfg.audit_syslog_port,
-            syslog_protocol=cfg.audit_syslog_protocol,
-            http_endpoint=cfg.audit_http_endpoint,
-        )
-        session.add(row)
-        session.commit()
-        session.refresh(row)
-    return row
+        return {
+            "enabled": cfg.audit_enabled,
+            "methods": cfg.audit_default_methods or ["stdout"],
+            "file_path": cfg.audit_file_path,
+            "syslog_host": cfg.audit_syslog_host,
+            "syslog_port": cfg.audit_syslog_port,
+            "syslog_protocol": cfg.audit_syslog_protocol,
+            "http_endpoint": cfg.audit_http_endpoint,
+        }
+
+    return get_or_create(session, AuditSettings, defaults)
 
 
 def update(session: Session, **fields) -> AuditSettings:

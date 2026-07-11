@@ -26,7 +26,12 @@ def _can_review(user: User) -> bool:
 
 
 def transition(
-    session: Session, report: Report, target: ReportStatus, *, actor: User
+    session: Session,
+    report: Report,
+    target: ReportStatus,
+    *,
+    actor: User,
+    commit: bool = True,
 ) -> Report:
     target = ReportStatus(target)
     current = ReportStatus(report.status)
@@ -57,6 +62,7 @@ def transition(
     report.status = target
     report.updated_at = utcnow()
     session.add(report)
-    session.commit()
-    session.refresh(report)
+    if commit:
+        session.commit()
+        session.refresh(report)
     return report

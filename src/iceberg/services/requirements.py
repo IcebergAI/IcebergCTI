@@ -3,6 +3,7 @@
 from datetime import date
 
 from sqlmodel import Session, col, select
+from fastapi import HTTPException
 
 from ..models import (
     IntelLevel,
@@ -14,6 +15,11 @@ from ..models import (
     RequirementStatus,
     utcnow,
 )
+from ..schemas import (
+    StakeholderIdentityResponse,
+    StakeholderRequirementResponse,
+)
+from . import reports as report_service
 
 
 def create_requirement(
@@ -95,6 +101,60 @@ def set_status(
     session.commit()
     session.refresh(requirement)
     return requirement
+
+
+def stakeholder_requirement_summary(requirement: Requirement) -> dict:
+    """Serialize a stakeholder-owned requirement without directory metadata."""
+
+    return StakeholderRequirementResponse(
+        id=requirement.id,
+        title=requirement.title,
+        description=requirement.description,
+        intel_level=requirement.intel_level,
+        priority=requirement.priority,
+        kind=requirement.kind,
+        decision_context=requirement.decision_context,
+        review_by=requirement.review_by,
+        status=requirement.status,
+        created_at=requirement.created_at,
+        updated_at=requirement.updated_at,
+    ).model_dump()
+
+
+def stakeholder_traceability(requirement: Requirement, stakeholder) -> dict:
+    """Build a stakeholder-safe requirement response shared by API and portal.
+
+    Notebook links are collection-only and are omitted.  Each linked report is
+    individually visibility-checked, so a draft or a product hidden by audience
+    scope cannot leak title, body, or relationship metadata through tasking.
+    """
+
+    reports: list[dict] = []
+    for report in requirement.reports:
+        try:
+            reports.append(report_service.report_summary(
+                report_service.ensure_visible(report, stakeholder)
+            ))
+        except HTTPException:
+            continue
+    return {
+        "requirement": stakeholder_requirement_summary(requirement),
+        "stakeholder": StakeholderIdentityResponse(
+            id=stakeholder.id,
+            display_name=stakeholder.display_name,
+        ).model_dump(),
+        "reports": reports,
+    }
+
+
+def stakeholder_report_requirements(report: Report, stakeholder) -> list[dict]:
+    """Return only the current stakeholder's own traceability links."""
+
+    return [
+        stakeholder_requirement_summary(requirement)
+        for requirement in report.requirements
+        if requirement.stakeholder_id == stakeholder.id
+    ]
 
 
 def pir_coverage(session: Session) -> dict:

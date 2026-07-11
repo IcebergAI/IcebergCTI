@@ -34,6 +34,7 @@ from ..models import (
     utcnow,
 )
 from . import misp_settings as misp_settings_service
+from . import publication as publication_service
 from . import proxy as proxy_service
 
 logger = logging.getLogger("iceberg.misp")
@@ -185,7 +186,12 @@ def push_report(
         if not api_key:
             raise MISPError("MISP API key is not configured (ICEBERG_MISP_API_KEY)")
 
-        iocs = list(report.cited_iocs)
+        snapshot_inputs = (
+            publication_service.misp_inputs(session, report)
+            if ReportStatus(report.status) == ReportStatus.PUBLISHED
+            else None
+        )
+        iocs = snapshot_inputs.iocs if snapshot_inputs is not None else list(report.cited_iocs)
         if not iocs:
             raise MISPError("Report cites no indicators to push")
 
@@ -196,7 +202,12 @@ def push_report(
             record.last_status = "needs_confirmation"
             record.error = _ceiling_message(over, max_tlp)
         else:
-            payload = build_event_payload(report, iocs, list(report.tags), settings)
+            payload = build_event_payload(
+                snapshot_inputs.report if snapshot_inputs is not None else report,
+                iocs,
+                snapshot_inputs.tags if snapshot_inputs is not None else list(report.tags),
+                settings,
+            )
             proxy_kwargs = (
                 proxy_service.resolve(proxy_settings, settings.url)
                 if proxy_settings is not None

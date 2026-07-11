@@ -8,14 +8,13 @@ so downstream CTI tooling can consume the finished product.
 from datetime import timezone
 from uuid import NAMESPACE_URL, uuid5
 
+from ..config import get_settings
 from ..models import Report, Tag, TagKind, tlp_label
 
 _SPEC = "2.1"
-_NS = uuid5(NAMESPACE_URL, "https://github.com/TheSlopBucket/iceberg")
-
-
 def _stix_id(kind: str, key: str) -> str:
-    return f"{kind}--{uuid5(_NS, f'{kind}:{key}')}"
+    namespace = uuid5(NAMESPACE_URL, get_settings().stix_namespace.strip())
+    return f"{kind}--{uuid5(namespace, f'{kind}:{key}')}"
 
 
 def _ts(dt) -> str:
@@ -35,11 +34,17 @@ def _object_for_tag(tag: Tag) -> dict | None:
         "name": tag.label,
         "description": tag.description,
     }
+    def aliases() -> dict:
+        # STIX requires a non-empty list when ``aliases`` is present.  Omit the
+        # optional property for the common no-alias case instead of emitting an
+        # invalid empty array.
+        return {"aliases": tag.aliases} if tag.aliases else {}
+
     if kind == TagKind.ACTOR:
         return {
             "type": "threat-actor",
             "id": _stix_id("threat-actor", f"tag:{tag.id}"),
-            "aliases": tag.aliases,
+            **aliases(),
             **common,
         }
     if kind == TagKind.MALWARE:
@@ -47,14 +52,14 @@ def _object_for_tag(tag: Tag) -> dict | None:
             "type": "malware",
             "id": _stix_id("malware", f"tag:{tag.id}"),
             "is_family": True,
-            "aliases": tag.aliases,
+            **aliases(),
             **common,
         }
     if kind == TagKind.CAMPAIGN:
         return {
             "type": "campaign",
             "id": _stix_id("campaign", f"tag:{tag.id}"),
-            "aliases": tag.aliases,
+            **aliases(),
             **common,
         }
     if kind == TagKind.TECHNIQUE and tag.external_id:

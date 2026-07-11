@@ -412,6 +412,36 @@ def fetch_all_enabled_once(session: Session) -> int:
         return fetch_all_enabled(session)
 
 
+class FeedPollError(RuntimeError):
+    """One or more feeds failed during a durable RSS poll job."""
+
+
+def fetch_all_enabled_for_job(session: Session) -> int:
+    """Run one durable RSS-poll job and surface per-feed failures to its row.
+
+    ``fetch_feed`` deliberately isolates a bad endpoint so a healthy feed still
+    progresses.  The durable worker additionally turns those recorded failures
+    into a job retry, which makes the outbox's ``status``/``last_error`` useful
+    to operators without changing the existing per-feed diagnostics.
+    """
+
+    with _rss_poll_lock() as acquired:
+        if not acquired:
+            logger.info("RSS poll job skipped: another worker holds the lock")
+            return 0
+        feeds = session.exec(select(Feed).where(Feed.enabled == True)).all()  # noqa: E712
+        failures: list[str] = []
+        new_count = 0
+        for feed in feeds:
+            new_count += fetch_feed(session, feed)
+            session.refresh(feed)
+            if feed.fetch_error:
+                failures.append(f"feed {feed.id}: {feed.fetch_error}")
+        if failures:
+            raise FeedPollError("; ".join(failures)[:1000])
+        return new_count
+
+
 # --------------------------------------------------------------------------- #
 # Reader + ingestion
 # --------------------------------------------------------------------------- #

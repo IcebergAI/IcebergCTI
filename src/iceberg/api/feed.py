@@ -8,6 +8,7 @@ from sqlmodel import Session
 from ..auth.dependencies import CurrentUser
 from ..db import get_session
 from ..services import feed as feed_service
+from ..services.reports import report_summary
 
 router = APIRouter(tags=["feed"])
 SessionDep = Annotated[Session, Depends(get_session)]
@@ -15,7 +16,10 @@ SessionDep = Annotated[Session, Depends(get_session)]
 
 @router.get("/feed")
 def get_feed(session: SessionDep, user: CurrentUser) -> list[dict]:
-    return feed_service.visible_items(session, user)
+    return [
+        {"event": item["event"], "report": report_summary(item["report"])}
+        for item in feed_service.visible_items(session, user)
+    ]
 
 
 @router.post("/feed/read")

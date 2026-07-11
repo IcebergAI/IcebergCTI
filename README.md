@@ -1,6 +1,6 @@
 # Iceberg 🧊
 
-[![CI](https://github.com/IcebergAI/iceberg/actions/workflows/ci.yml/badge.svg)](https://github.com/IcebergAI/iceberg/actions/workflows/ci.yml)
+[![CI](https://github.com/IcebergAI/IcebergCTI/actions/workflows/ci.yml/badge.svg)](https://github.com/IcebergAI/IcebergCTI/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.14-blue.svg)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
@@ -246,10 +246,11 @@ a browsable look at what the other roles do, and a glossary of the intelligence 
    dashboard); a notification email is recorded by the `console` backend (in-memory outbox).
    Reports marked TLP:RED or AMBER+STRICT are withheld from broadcast.
 4. Stakeholders can subscribe to taxonomy tags from **Preferences**; if they have any
-   subscriptions, publish-time matching requires at least one shared report tag. A generic
-   publication webhook (report metadata only) can be enabled/edited by an `ADMIN` at
-   **Publication webhook** (`/admin/webhook`) — with a "Send test event" check — or seeded via
-   `ICEBERG_WEBHOOK_URL`; the bearer token stays env-only (`ICEBERG_WEBHOOK_TOKEN`).
+   subscriptions, publish-time matching requires at least one shared report tag. A publication
+   webhook (report metadata only) can be enabled/edited by an `ADMIN` at **Publication webhook**
+   (`/admin/webhook`) — with a "Send test event" check — or seeded via `ICEBERG_WEBHOOK_URL`.
+   Its stable generic JSON envelope is the default; Slack Block Kit and Microsoft Teams
+   MessageCard wrappers are opt-in. The bearer token stays env-only (`ICEBERG_WEBHOOK_TOKEN`).
 
 ### Need-to-know groups
 `ADMIN`s can use **Audience** (`/admin/audience`) to create named groups, assign stakeholder
@@ -269,7 +270,9 @@ Indicators section shows a "Suggest indicators" review list — candidates are r
 to the MISP-pushable `IOCType` set, and the analyst accepts, edits, or discards each before it
 becomes a real IOC). Suggestions are advisory only; Iceberg records an audit event with metadata,
 never prompt/response bodies, every backend honours the global outbound proxy, and report content is
-blocked when its TLP exceeds `ICEBERG_AI_MAX_TLP`.
+blocked when its TLP exceeds `ICEBERG_AI_MAX_TLP`. In an editable report, the **AI review** dock
+lets an analyst request judgement drafts, controlled-tag suggestions and analytic challenge notes;
+they remain local until edited and explicitly applied through the normal report/tag save paths.
 
 ### Ingest external reporting
 Admins configure RSS/Atom sources at `/admin/feeds`; writers browse the resulting
@@ -410,7 +413,7 @@ All settings use the `ICEBERG_` env prefix and can live in `.env` (see
 | `ICEBERG_FIGURES_DIR` / `ICEBERG_FIGURE_MAX_MB` | Notebook figure (embeddable image) storage dir + size cap (default 10 MB) |
 | `ICEBERG_DISSEMINATION_MAX_TLP` | Broadcast ceiling (default `AMBER`; RED/AMBER_STRICT withheld) |
 | `ICEBERG_EMAIL_BACKEND` + `ICEBERG_SMTP_*` | `console` (dev) or `smtp`; SMTP server settings |
-| `ICEBERG_WEBHOOK_URL` / `ICEBERG_WEBHOOK_TOKEN` | Optional generic report-publication webhook (seeds the row; URL/enabled/timeout editable live at `/admin/webhook`); token is env-only |
+| `ICEBERG_WEBHOOK_URL` / `ICEBERG_WEBHOOK_TOKEN` / `ICEBERG_WEBHOOK_FORMAT` | Optional report-publication webhook (seeds the row; URL/enabled/timeout/format editable live at `/admin/webhook`). Generic JSON is the compatibility default; Slack/Teams envelopes are opt-in. Token is env-only |
 | `ICEBERG_PORTAL_BASE_URL` | Base URL used in notification email links |
 | `ICEBERG_RATE_LIMIT_ENABLED` / `ICEBERG_RATE_LIMIT_STORE` / `ICEBERG_RATE_LIMIT_REDIS_URL` | Abuse protection for auth, AI, render, outbound tests/pushes, and search; enabled by default in prod, Redis-backed for shared worker state |
 | `ICEBERG_RATE_LIMIT_*` | Per-surface rate-limit tunables (auth/dev-login, OIDC, AI, render, outbound actions, search) |

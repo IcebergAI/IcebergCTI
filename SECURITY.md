@@ -10,7 +10,7 @@ pull requests, or discussions.**
 
 Instead, use GitHub's **private vulnerability reporting**:
 
-1. Go to the [**Security** tab](https://github.com/IcebergAI/iceberg/security) of
+1. Go to the [**Security** tab](https://github.com/IcebergAI/IcebergCTI/security) of
    this repository.
 2. Click **Report a vulnerability** and complete the advisory form.
 

@@ -10,25 +10,20 @@ from sqlmodel import Session
 
 from ..config import get_settings
 from ..models import MISPSettings, utcnow
-
-_SINGLETON_ID = 1
+from .singleton import get_or_create
 
 
 def get(session: Session) -> MISPSettings:
     """Return the settings row, seeding it from env defaults on first read."""
-    row = session.get(MISPSettings, _SINGLETON_ID)
-    if row is None:
+    def defaults() -> dict:
         cfg = get_settings()
-        row = MISPSettings(
-            id=_SINGLETON_ID,
-            enabled=cfg.misp_enabled,
-            url=cfg.misp_url,
-            verify_tls=cfg.misp_verify_tls,
-        )
-        session.add(row)
-        session.commit()
-        session.refresh(row)
-    return row
+        return {
+            "enabled": cfg.misp_enabled,
+            "url": cfg.misp_url,
+            "verify_tls": cfg.misp_verify_tls,
+        }
+
+    return get_or_create(session, MISPSettings, defaults)
 
 
 def update(session: Session, **fields) -> MISPSettings:

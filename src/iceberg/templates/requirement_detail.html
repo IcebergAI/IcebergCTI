@@ -74,18 +74,20 @@
       <p class="empty">None linked yet. Analysts link reports from the report editor.</p>
     {% endif %}
   </section>
-  <section class="card card-pad-lg">
-    <h2 class="section-title mb-3">Notebooks addressing this</h2>
-    {% if notebooks %}
-      <ul class="space-y-2.5">
-        {% for nb in notebooks %}
-          <li><a href="/notebooks/{{ nb.id }}" class="btn-link">↳ {{ nb.title }}</a></li>
-        {% endfor %}
-      </ul>
-    {% else %}
-      <p class="empty">None linked yet.</p>
-    {% endif %}
-  </section>
+  {% if user.role != 'STAKEHOLDER' %}
+    <section class="card card-pad-lg">
+      <h2 class="section-title mb-3">Notebooks addressing this</h2>
+      {% if notebooks %}
+        <ul class="space-y-2.5">
+          {% for nb in notebooks %}
+            <li><a href="/notebooks/{{ nb.id }}" class="btn-link">↳ {{ nb.title }}</a></li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="empty">None linked yet.</p>
+      {% endif %}
+    </section>
+  {% endif %}
 </div>
 
 {% if feedback %}

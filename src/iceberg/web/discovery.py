@@ -28,6 +28,7 @@ from ..models import (
 )
 from ..services import (
     attack as attack_service,
+    audience as audience_service,
     audit,
     maturity as maturity_service,
     search as search_service,
@@ -287,8 +288,7 @@ def admin_audience_update(
 def admin_audience_delete(group_id: int, session: SessionDep, user: CurrentUser):
     _require_admin(user)
     group = _audience_group_or_404(session, group_id)
-    session.delete(group)
-    session.commit()
+    audience_service.delete_group(session, group)
     return _redirect("/admin/audience")
 
 
@@ -321,6 +321,7 @@ def admin_tag_create(
     motivations: Annotated[list[str], Form()] = [],  # noqa: B006 (FastAPI Form list)
     first_seen: Annotated[str, Form()] = "",
     last_seen: Annotated[str, Form()] = "",
+    attack_tactics: Annotated[str, Form()] = "",
 ):
     _require_admin(user)
     tag = tag_service.create_tag(
@@ -334,6 +335,7 @@ def admin_tag_create(
         motivations=motivations,
         first_seen=first_seen,
         last_seen=last_seen,
+        attack_tactics=tag_service.parse_attack_tactics(attack_tactics),
     )
     _audit_tag(session, background_tasks, request, user, AuditAction.TAG_CREATED, tag)
     return _redirect("/admin/tags")
@@ -361,6 +363,7 @@ def admin_tag_update(
     motivations: Annotated[list[str], Form()] = [],  # noqa: B006 (FastAPI Form list)
     first_seen: Annotated[str, Form()] = "",
     last_seen: Annotated[str, Form()] = "",
+    attack_tactics: Annotated[str, Form()] = "",
     active: Annotated[bool, Form()] = False,
 ):
     _require_admin(user)
@@ -376,6 +379,7 @@ def admin_tag_update(
         motivations=motivations,
         first_seen=first_seen,
         last_seen=last_seen,
+        attack_tactics=tag_service.parse_attack_tactics(attack_tactics),
         active=active,
     )
     _audit_tag(session, background_tasks, request, user, AuditAction.TAG_UPDATED, tag)
@@ -392,6 +396,20 @@ def admin_tag_delete(
 ):
     _require_admin(user)
     tag = _get_tag(session, tag_id)
-    _audit_tag(session, background_tasks, request, user, AuditAction.TAG_DELETED, tag)
+    detail = {"kind": str(tag.kind), "label": tag.label, "active": tag.active}
     tag_service.delete_tag(session, tag)
+    # A rejected delete (for example a merge-lineage tag) must not be recorded
+    # as a successful TAG_DELETED event.  Keep the safe metadata before the ORM
+    # row is removed so the successful audit still has useful context.
+    audit.record_and_emit(
+        session,
+        background_tasks=background_tasks,
+        action=AuditAction.TAG_DELETED,
+        category=AuditCategory.ADMIN,
+        actor=user,
+        request=request,
+        resource_type="tag",
+        resource_id=tag_id,
+        detail=detail,
+    )
     return _redirect("/admin/tags")

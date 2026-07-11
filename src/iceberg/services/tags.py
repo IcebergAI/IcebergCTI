@@ -10,13 +10,16 @@ no longer offered for new classification.
 
 import json
 import re
+from dataclasses import dataclass
 from importlib.resources import files
 
 from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
 
 from ..models import Motivation, Report, ReportTag, Tag, TagKind, utcnow
 from ..models import User, UserTagSubscription
+from . import attack as attack_service
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
@@ -28,6 +31,22 @@ ALIASABLE_KINDS = {TagKind.ACTOR, TagKind.MALWARE, TagKind.CAMPAIGN}
 _ALIAS_SPLIT_RE = re.compile(r"[,\n]+")
 
 
+@dataclass(frozen=True)
+class TagMergeResult:
+    """The material changes made by :func:`merge_tags`.
+
+    Keeping the result separate from the ORM model gives both the JSON API and
+    any future admin UI an explicit, useful reconciliation summary.
+    """
+
+    source: Tag
+    target: Tag
+    report_links_moved: int
+    report_links_deduplicated: int
+    subscriptions_moved: int
+    subscriptions_deduplicated: int
+
+
 def slugify(label: str) -> str:
     return _SLUG_RE.sub("-", label.strip().lower()).strip("-")
 
@@ -37,6 +56,12 @@ def parse_aliases(raw: str) -> list[str]:
     clean list: trimmed, empties dropped, deduped case-insensitively (first casing
     wins)."""
     return _dedupe([a.strip() for a in _ALIAS_SPLIT_RE.split(raw or "")])
+
+
+def parse_attack_tactics(raw: str) -> list[str]:
+    """Parse the admin form's comma/newline-separated ATT&CK tactic names."""
+
+    return _dedupe([value.strip() for value in _ALIAS_SPLIT_RE.split(raw or "")])
 
 
 def _dedupe(aliases: list[str]) -> list[str]:
@@ -74,6 +99,37 @@ def normalise_motivations(values: list[str] | None) -> list[Motivation]:
     return out
 
 
+def normalise_attack_tactics(
+    values: list[str] | tuple[str, ...] | str | None,
+    *,
+    kind: TagKind,
+) -> list[str]:
+    """Validate the structured tactics carried by a TECHNIQUE tag.
+
+    Tactics are a controlled MITRE enterprise list, not a free-text secondary
+    description.  Legacy rows with an empty list remain supported by the
+    renderer's description fallback, but new writes must either select known
+    tactics or intentionally clear the metadata.
+    """
+
+    raw = [values] if isinstance(values, str) else list(values or [])
+    cleaned = [value.strip() for value in raw if isinstance(value, str) and value.strip()]
+    if kind != TagKind.TECHNIQUE:
+        if cleaned:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "ATT&CK tactics can only be set on TECHNIQUE tags",
+            )
+        return []
+    normalised = attack_service.normalise_tactics(cleaned)
+    if any(not attack_service.normalise_tactics([value]) for value in cleaned):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "ATT&CK tactics must use the Enterprise ATT&CK tactic names",
+        )
+    return normalised
+
+
 # --------------------------------------------------------------------------- #
 # Curation (admin)
 # --------------------------------------------------------------------------- #
@@ -89,6 +145,7 @@ def create_tag(
     motivations: list[str] | None = None,
     first_seen: str = "",
     last_seen: str = "",
+    attack_tactics: list[str] | None = None,
 ) -> Tag:
     label = label.strip()
     if not label:
@@ -114,6 +171,7 @@ def create_tag(
         motivations=normalise_motivations(motivations),
         first_seen=first_seen.strip(),
         last_seen=last_seen.strip(),
+        attack_tactics=normalise_attack_tactics(attack_tactics, kind=kind),
     )
     session.add(tag)
     session.commit()
@@ -133,6 +191,7 @@ def update_tag(
     motivations: list[str] | None = None,
     first_seen: str | None = None,
     last_seen: str | None = None,
+    attack_tactics: list[str] | None = None,
     active: bool | None = None,
 ) -> Tag:
     if label is not None and label.strip() and label.strip() != tag.label:
@@ -163,7 +222,16 @@ def update_tag(
         tag.first_seen = first_seen.strip()
     if last_seen is not None:
         tag.last_seen = last_seen.strip()
+    if attack_tactics is not None:
+        tag.attack_tactics = normalise_attack_tactics(
+            attack_tactics, kind=TagKind(tag.kind)
+        )
     if active is not None:
+        if active and tag.merged_into_tag_id is not None:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "A merged tag cannot be reactivated; use its canonical tag instead",
+            )
         tag.active = active
     session.add(tag)
     session.commit()
@@ -174,8 +242,134 @@ def update_tag(
 def delete_tag(session: Session, tag: Tag) -> None:
     """Hard-delete a tag (and its report links via cascade). For genuinely
     mistaken entries; prefer retiring (``active`` = False) a tag that's in use."""
+    if tag.merged_into_tag_id is not None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "A merged tag cannot be deleted because its lineage must be retained",
+        )
+    if tag.id is not None and session.exec(
+        select(Tag.id).where(Tag.merged_into_tag_id == tag.id)
+    ).first() is not None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "A merge target cannot be deleted because its lineage must be retained",
+        )
     session.delete(tag)
     session.commit()
+
+
+def _move_tag_links(
+    session: Session,
+    *,
+    link_model: type[ReportTag] | type[UserTagSubscription],
+    source_tag_id: int,
+    target_tag_id: int,
+) -> tuple[int, int]:
+    """Move one tag link table without ever creating a duplicate composite key.
+
+    A report/user can already be linked to both the source and target.  Delete
+    *all* source rows and flush that deletion before inserting only the links
+    missing from the target.  The caller owns the surrounding transaction, so a
+    later failure rolls this complete operation back.
+    """
+    source_links = list(
+        session.exec(select(link_model).where(link_model.tag_id == source_tag_id)).all()
+    )
+    target_owner_ids = {
+        link.report_id if link_model is ReportTag else link.user_id
+        for link in session.exec(
+            select(link_model).where(link_model.tag_id == target_tag_id)
+        ).all()
+    }
+    owner_ids = [
+        link.report_id if link_model is ReportTag else link.user_id for link in source_links
+    ]
+    owners_to_move = [owner_id for owner_id in owner_ids if owner_id not in target_owner_ids]
+
+    for link in source_links:
+        session.delete(link)
+    # The composite primary keys make INSERT-before-DELETE unsafe where both
+    # source and target are already linked.  Flush within the transaction first.
+    session.flush()
+    for owner_id in owners_to_move:
+        if link_model is ReportTag:
+            session.add(ReportTag(report_id=owner_id, tag_id=target_tag_id))
+        else:
+            session.add(UserTagSubscription(user_id=owner_id, tag_id=target_tag_id))
+    return len(owners_to_move), len(source_links) - len(owners_to_move)
+
+
+def merge_tags(session: Session, *, source: Tag, target: Tag) -> TagMergeResult:
+    """Atomically consolidate a source taxonomy term into a canonical target.
+
+    Only terms of the same kind may merge.  Existing target links are retained,
+    duplicate source links are removed, and the source label plus aliases are
+    added to the canonical tag.  The source itself is retired rather than
+    deleted, carrying a durable ``merged_into_tag_id`` lineage pointer.
+    """
+    if source.id is None or target.id is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Tags must be persisted before merge")
+    if source.id == target.id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "A tag cannot be merged into itself")
+    if source.kind != target.kind:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Only tags of the same kind can be merged",
+        )
+    if source.merged_into_tag_id is not None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "This tag was already merged; use its canonical tag instead",
+        )
+    if not target.active:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "A tag can only be merged into an active canonical tag",
+        )
+
+    try:
+        report_links_moved, report_links_deduplicated = _move_tag_links(
+            session,
+            link_model=ReportTag,
+            source_tag_id=source.id,
+            target_tag_id=target.id,
+        )
+        subscriptions_moved, subscriptions_deduplicated = _move_tag_links(
+            session,
+            link_model=UserTagSubscription,
+            source_tag_id=source.id,
+            target_tag_id=target.id,
+        )
+        target.aliases = normalise_aliases(
+            target.label,
+            [*target.aliases, source.label, *source.aliases],
+        )
+        source.active = False
+        source.merged_into_tag_id = target.id
+        source.merged_at = utcnow()
+        session.add(target)
+        session.add(source)
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "The taxonomy changed while this merge was in progress; retry the merge",
+        ) from exc
+    except Exception:
+        session.rollback()
+        raise
+
+    session.refresh(source)
+    session.refresh(target)
+    return TagMergeResult(
+        source=source,
+        target=target,
+        report_links_moved=report_links_moved,
+        report_links_deduplicated=report_links_deduplicated,
+        subscriptions_moved=subscriptions_moved,
+        subscriptions_deduplicated=subscriptions_deduplicated,
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -244,7 +438,14 @@ def offerable_tags(session: Session, already_linked: list[Tag]) -> list[Tag]:
 def _tags_by_id(session: Session, ids: list[int]) -> list[Tag]:
     if not ids:
         return []
-    return list(session.exec(select(Tag).where(col(Tag.id).in_(ids))).all())
+    tags = list(session.exec(select(Tag).where(col(Tag.id).in_(ids))).all())
+    merged = next((tag for tag in tags if tag.merged_into_tag_id is not None), None)
+    if merged is not None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "A selected tag was merged; use its canonical tag instead",
+        )
+    return tags
 
 
 def set_user_subscriptions(
@@ -298,10 +499,12 @@ def seed_default_taxonomy(
     """Idempotently import taxonomy ``entries`` (default: the bundled starter set).
 
     Tags are matched on ``(kind, slug)``; missing ones are inserted. With
-    ``update=True`` an existing tag's ``external_id``/``description``/``aliases`` and
-    attribution fields (``suspected_attribution``/``motivations``/``first_seen``/
-    ``last_seen``) are refreshed from the entry (the admin-editable ``label`` is never
-    overwritten). Returns the number of tags newly created."""
+    ``update=True`` an existing tag's ``external_id``/``description``/``aliases``,
+    ATT&CK tactics, and attribution fields (``suspected_attribution``/
+    ``motivations``/``first_seen``/``last_seen``) are refreshed from the entry
+    (the admin-editable ``label`` is never overwritten). Legacy starter entries
+    whose description contains one tactic are promoted into structured metadata.
+    Returns the number of tags newly created."""
     if entries is None:
         entries = load_starter_tags()
 
@@ -313,6 +516,10 @@ def seed_default_taxonomy(
         slug = slugify(label)
         external_id = (entry.get("external_id") or "").strip()
         description = (entry.get("description") or "").strip()
+        tactic_values = entry.get("attack_tactics")
+        if tactic_values is None and kind == TagKind.TECHNIQUE:
+            tactic_values = [description] if description else []
+        attack_tactics = normalise_attack_tactics(tactic_values, kind=kind)
         aliases = normalise_aliases(label, entry.get("aliases") or [])
         attribution = (entry.get("suspected_attribution") or "").strip()
         motivations = normalise_motivations(entry.get("motivations") or [])
@@ -329,6 +536,7 @@ def seed_default_taxonomy(
                     slug=slug,
                     external_id=external_id,
                     description=description,
+                    attack_tactics=attack_tactics,
                     aliases=aliases,
                     suspected_attribution=attribution,
                     motivations=motivations,
@@ -341,6 +549,7 @@ def seed_default_taxonomy(
         elif update and (
             existing.external_id != external_id
             or existing.description != description
+            or existing.attack_tactics != attack_tactics
             or existing.aliases != aliases
             or existing.suspected_attribution != attribution
             or existing.motivations != motivations
@@ -349,6 +558,7 @@ def seed_default_taxonomy(
         ):
             existing.external_id = external_id
             existing.description = description
+            existing.attack_tactics = attack_tactics
             existing.aliases = aliases
             existing.suspected_attribution = attribution
             existing.motivations = motivations

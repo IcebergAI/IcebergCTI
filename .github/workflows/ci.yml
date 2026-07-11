@@ -72,10 +72,11 @@ jobs:
           version: "0.11.23"
       - run: uv sync --locked --extra dev --extra postgres
       # A focused subset against Postgres: search (FTS tsvector relevance/facets/
-      # access scoping) + dissemination (matching queries). Serial: the schema is
-      # shared and rebuilt per test.
+      # access scoping), dissemination, related-product visibility, and serial
+      # migration/first-settings-reader race regressions. The schema is shared
+      # and rebuilt per test, so this must stay serial.
       - name: Postgres smoke tests
-        run: uv run pytest tests/test_postgres_smoke.py tests/test_dissemination.py -n0 -p no:cacheprovider
+        run: uv run pytest tests/test_postgres_smoke.py tests/test_dissemination.py tests/test_related.py -n0 -p no:cacheprovider
 
   static:
     name: Lint + security + dead code + audit + frontend

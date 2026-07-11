@@ -10,7 +10,8 @@ from pathlib import Path
 import anyio
 from fastapi import FastAPI, Request
 from fastapi.exception_handlers import http_exception_handler
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
+from sqlalchemy.orm.exc import StaleDataError
 from fastapi.staticfiles import StaticFiles
 from sqlmodel import Session
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -64,21 +65,35 @@ def _warn_if_console_email_backend_in_prod(settings) -> None:
 
 
 async def _rss_poll_loop(interval_seconds: float) -> None:
-    """Periodically fetch all enabled RSS feeds. Opt-in (off by default) so the
-    test suite and a default dev boot never reach out to the network. The sync
-    fetch (httpx + DB) runs in a worker thread so it never blocks the event loop;
-    each cycle is wrapped so a transient failure never kills the poller."""
-    from .services import feeds as feeds_service
+    """Periodically enqueue and opportunistically process durable RSS jobs.
 
-    def _cycle() -> int:
+    The database insert commits before the worker reaches an external feed, so
+    a crash/restart leaves an inspectable row for ``iceberg-worker``.  The local
+    kick preserves the opt-in scheduler's convenient default behaviour without
+    making process-local background work the only delivery path.
+    """
+    from .services import jobs
+
+    def _enqueue_cycle() -> int:
         with Session(db.engine) as session:
-            return feeds_service.fetch_all_enabled_once(session)
+            job = jobs.enqueue_rss_poll(session, scheduled=True)
+            session.commit()
+            return job.id or 0
 
     while True:
         await asyncio.sleep(interval_seconds)
         try:
-            new_items = await anyio.to_thread.run_sync(_cycle)
-            logger.info("RSS poll cycle complete: %d new item(s)", new_items)
+            job_id = await anyio.to_thread.run_sync(_enqueue_cycle)
+            result = await anyio.to_thread.run_sync(
+                lambda: jobs.process_due_jobs(limit=25)
+            )
+            logger.info(
+                "RSS poll job %d processed: %d succeeded, %d retried, %d failed",
+                job_id,
+                result.succeeded,
+                result.retried,
+                result.failed,
+            )
         except Exception:  # noqa: BLE001 — the poller must survive a bad cycle
             logger.exception("RSS poll cycle failed")
 
@@ -153,6 +168,14 @@ def create_app() -> FastAPI:
         if exc.status_code == 401 and accepts_html and not is_api:
             return RedirectResponse("/auth/login", status_code=303)
         return await http_exception_handler(request, exc)
+
+    @app.exception_handler(StaleDataError)
+    async def _stale_report_write(_request: Request, _exc: StaleDataError):
+        """Do not allow an edit loaded before another request published it."""
+        return JSONResponse(
+            status_code=409,
+            content={"detail": "The report changed in another request; reload and try again."},
+        )
 
     return app
 

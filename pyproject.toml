@@ -32,9 +32,11 @@ dependencies = [
     "jinja2>=3.1.6",
     "python-multipart>=0.0.32",
     "authlib>=1.7.2",
-    # Starlette's TestClient and authlib's Starlette OAuth integration both import
-    # httpx (the latter unconditionally, without declaring it); we use both paths.
+    # Authlib's Starlette OAuth integration still imports httpx without declaring
+    # it. Starlette TestClient has moved to the maintained httpx2 package; keep
+    # both explicit until Authlib completes that transition.
     "httpx>=0.28.1",
+    "httpx2>=2.5.0",
     "pyjwt>=2.13",
     "pydantic-settings>=2.14.2",
     "redis>=6.4.0",
@@ -47,9 +49,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/IcebergAI/iceberg"
-Repository = "https://github.com/IcebergAI/iceberg"
-Issues = "https://github.com/IcebergAI/iceberg/issues"
+Homepage = "https://github.com/IcebergAI/IcebergCTI"
+Repository = "https://github.com/IcebergAI/IcebergCTI"
+Issues = "https://github.com/IcebergAI/IcebergCTI/issues"
 
 [project.optional-dependencies]
 # Production datastore driver (PostgreSQL). Optional so the default/dev install
@@ -78,13 +80,19 @@ dev = [
     "pip-audit>=2.10.1",
     "pre-commit>=4.6.0",
     "djlint>=1.40.1",
+    # 3.3.1's published wheel omits the bundled OASIS JSON schemas, making
+    # schema validation silently unusable. Pin the last complete release until
+    # its successor restores those assets.
+    "stix2-validator==3.2.0",
 ]
 
 [project.scripts]
 iceberg-seed = "iceberg.seed:main"
+iceberg-import-attack = "iceberg.attack_import:main"
 iceberg-migrate = "iceberg.maintenance:migrate_main"
 iceberg-prune-renders = "iceberg.maintenance:prune_renders_main"
 iceberg-rebuild-related = "iceberg.maintenance:rebuild_related_main"
+iceberg-worker = "iceberg.maintenance:worker_main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

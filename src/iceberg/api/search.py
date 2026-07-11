@@ -9,6 +9,7 @@ from ..auth.dependencies import CurrentUser
 from ..db import get_session
 from ..models import IntelLevel, ReportStatus, TagKind, TLP
 from ..services import search as search_service
+from ..services.reports import report_summary
 
 router = APIRouter(tags=["search"])
 SessionDep = Annotated[Session, Depends(get_session)]
@@ -43,6 +44,10 @@ def search(
         "query": q or "",
         "count": len(results),
         "results": [
-            {"report": r, "tags": list(r.tags)} for r in results
+            {
+                "report": report_summary(r),
+                "tags": list(r.tags),
+            }
+            for r in results
         ],
     }

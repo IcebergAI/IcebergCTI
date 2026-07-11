@@ -23,6 +23,16 @@ from ..models import (
     User,
 )
 from ..rendering.typst import render_product
+from ..schemas import (
+    ReportSummaryResponse,
+    ReportTagResponse,
+    StakeholderAttachmentCitationResponse,
+    StakeholderReportDetailResponse,
+    StakeholderSourceCitationResponse,
+    WriterAttachmentCitationResponse,
+    WriterReportDetailResponse,
+    WriterSourceCitationResponse,
+)
 from . import ach as ach_service
 from . import attack as attack_service
 from . import diamond as diamond_service
@@ -45,6 +55,140 @@ def ensure_visible(report: Report, user: User) -> Report:
         if not (user_group_ids & report_group_ids):
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Report not found")
     return report
+
+
+# --------------------------------------------------------------------------- #
+# Role-aware report serialization
+# --------------------------------------------------------------------------- #
+def report_summary(report: Report) -> dict:
+    """Return only metadata that is safe alongside a finished product."""
+
+    return ReportSummaryResponse(
+        id=report.id,
+        title=report.title,
+        intel_level=report.intel_level,
+        tlp=report.tlp,
+        status=report.status,
+        published_at=report.published_at,
+    ).model_dump()
+
+
+def _stakeholder_report_detail(report: Report) -> dict:
+    return StakeholderReportDetailResponse(
+        **report_summary(report),
+        body_md=report.body_md,
+        key_judgements=report.key_judgements,
+        key_assumptions=report.key_assumptions,
+        intelligence_gaps=report.intelligence_gaps,
+        analytic_confidence=report.analytic_confidence,
+    ).model_dump()
+
+
+def _writer_report_detail(report: Report) -> dict:
+    return WriterReportDetailResponse(
+        **_stakeholder_report_detail(report),
+        notebook_id=report.notebook_id,
+        author_id=report.author_id,
+        reviewer_id=report.reviewer_id,
+        ai_provenance=report.ai_provenance,
+        created_at=report.created_at,
+        updated_at=report.updated_at,
+        version=report.version,
+        publication_snapshot_hash=report.publication_snapshot_hash,
+    ).model_dump()
+
+
+def _stakeholder_source_citation(source: Source) -> dict:
+    return StakeholderSourceCitationResponse(
+        title=source.title,
+        reference=source.reference,
+        reliability=source.reliability,
+        credibility=source.credibility,
+    ).model_dump()
+
+
+def _writer_source_citation(source: Source) -> dict:
+    return WriterSourceCitationResponse(
+        **_stakeholder_source_citation(source),
+        id=source.id,
+        notebook_id=source.notebook_id,
+        tlp=source.tlp,
+        summary=source.summary,
+        content_md=source.content_md,
+        ai_provenance=source.ai_provenance,
+        grading_origin=source.grading_origin,
+        grading_engine=source.grading_engine,
+        grading_rationale=source.grading_rationale,
+        grading_error=source.grading_error,
+        graded_at=source.graded_at,
+        captured_at=source.captured_at,
+    ).model_dump()
+
+
+def _stakeholder_attachment_citation(attachment) -> dict:
+    return StakeholderAttachmentCitationResponse(
+        title=attachment.title,
+        original_filename=attachment.original_filename,
+        content_type=attachment.content_type,
+        file_size=attachment.file_size,
+    ).model_dump()
+
+
+def _writer_attachment_citation(attachment) -> dict:
+    return WriterAttachmentCitationResponse(
+        **_stakeholder_attachment_citation(attachment),
+        id=attachment.id,
+        notebook_id=attachment.notebook_id,
+        stored_filename=attachment.stored_filename,
+        summary=attachment.summary,
+        uploaded_at=attachment.uploaded_at,
+    ).model_dump()
+
+
+def _tag_response(tag) -> dict:
+    return ReportTagResponse(
+        id=tag.id,
+        kind=tag.kind,
+        label=tag.label,
+        external_id=tag.external_id,
+        description=tag.description,
+    ).model_dump()
+
+
+def report_detail_payload(report: Report, user: User) -> dict:
+    """Assemble the report-detail API payload without serializing ORM links.
+
+    Collection models have separate writer-only notebook endpoints.  A
+    stakeholder receives only citation metadata that is displayed in the
+    finished product, while a writer keeps the pre-existing report workflow via
+    an explicit scalar response.
+    """
+
+    is_stakeholder = user.role == Role.STAKEHOLDER
+    return {
+        "report": (
+            _stakeholder_report_detail(report)
+            if is_stakeholder
+            else _writer_report_detail(report)
+        ),
+        "cited_sources": [
+            (
+                _stakeholder_source_citation(source)
+                if is_stakeholder
+                else _writer_source_citation(source)
+            )
+            for source in report.cited_sources
+        ],
+        "cited_attachments": [
+            (
+                _stakeholder_attachment_citation(attachment)
+                if is_stakeholder
+                else _writer_attachment_citation(attachment)
+            )
+            for attachment in report.cited_attachments
+        ],
+        "tags": [_tag_response(tag) for tag in report.tags],
+    }
 
 
 def ensure_author(report: Report, user: User) -> Report:
@@ -151,6 +295,22 @@ def render_report(
     session: Session, report: Report, fmt: ProductFormat
 ) -> RenderedProduct:
     """Render a report to a PDF product and persist a RenderedProduct row."""
+
+    if report.status == ReportStatus.PUBLISHED and report.publication_snapshot_hash:
+        from . import publication
+
+        path = publication.render_snapshot(session, report, fmt)
+        product = RenderedProduct(
+            report_id=report.id,
+            format=fmt,
+            pdf_path=str(path),
+            snapshot_hash=report.publication_snapshot_hash,
+        )
+        session.add(product)
+        session.commit()
+        session.refresh(product)
+        prune_rendered_products(session, report_id=report.id, fmt=fmt)
+        return product
 
     author = session.get(User, report.author_id)
     author_name = author.display_name if author else "Unknown"

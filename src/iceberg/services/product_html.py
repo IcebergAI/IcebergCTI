@@ -221,6 +221,14 @@ def _assemble_product_html(
 def render_report_product_html(session: Session, report: Report) -> str:
     """A saved report rendered to finished-product HTML (Key Judgements + body
     with inline diagrams/figures + Key Assumptions + Intelligence Gaps)."""
+    # A published product is rendered from its immutable publication snapshot;
+    # drafts and legacy rows without a backfill keep the live authoring view.
+    if str(report.status) == "PUBLISHED":
+        from . import publication
+
+        frozen = publication.published_html(session, report)
+        if frozen is not None:
+            return frozen
     return _assemble_product_html(
         body_html=render_report_body_html(session, report),
         key_judgements=report.key_judgements,

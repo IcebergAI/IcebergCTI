@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 import sqlmodel
 
 
@@ -37,6 +38,12 @@ _ENUMS = (
 )
 
 
+def _enum_type(bind, enum):
+    if bind.dialect.name == "postgresql":
+        return postgresql.ENUM(*enum.enums, name=enum.name, create_type=False)
+    return sa.Enum(*enum.enums, name=enum.name)
+
+
 def upgrade() -> None:
     """Upgrade schema."""
     bind = op.get_bind()
@@ -46,29 +53,21 @@ def upgrade() -> None:
         batch_op.add_column(
             sa.Column(
                 "reliability",
-                sa.Enum("A", "B", "C", "D", "E", "F", name="sourcereliability"),
+                _enum_type(bind, _ENUMS[0]),
                 nullable=True,
             )
         )
         batch_op.add_column(
             sa.Column(
                 "credibility",
-                sa.Enum(
-                    "CONFIRMED",
-                    "PROBABLY_TRUE",
-                    "POSSIBLY_TRUE",
-                    "DOUBTFULLY_TRUE",
-                    "IMPROBABLE",
-                    "CANNOT_BE_JUDGED",
-                    name="sourcecredibility",
-                ),
+                _enum_type(bind, _ENUMS[1]),
                 nullable=True,
             )
         )
         batch_op.add_column(
             sa.Column(
                 "grading_origin",
-                sa.Enum("UNGRADED", "AUTO", "MANUAL", name="sourcegradingorigin"),
+                _enum_type(bind, _ENUMS[2]),
                 server_default="UNGRADED",
                 nullable=False,
             )

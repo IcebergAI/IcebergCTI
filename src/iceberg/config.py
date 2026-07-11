@@ -66,6 +66,11 @@ class Settings(BaseSettings):
     render_retention_keep: int = 3
     render_retention_days: int = 90
 
+    # STIX object ids are deterministic. New IcebergAI deployments use the
+    # canonical repository namespace; deployments that already distributed ids
+    # from the legacy project can pin the old namespace during their migration.
+    stix_namespace: str = "https://github.com/IcebergAI/IcebergCTI"
+
     # Notebook attachments (uploaded reference files)
     attachments_dir: str = "./attachments"
     attachment_max_mb: int = 25
@@ -109,6 +114,19 @@ class Settings(BaseSettings):
     webhook_url: str = ""
     webhook_token: str = ""
     webhook_timeout: float = 5.0
+    # Payload envelope for publication webhooks. ``generic`` preserves the
+    # original Iceberg JSON contract; ``slack`` and ``teams`` select their
+    # respective incoming-webhook envelopes.
+    webhook_format: str = "generic"
+
+    # Durable external-work outbox.  HTTP requests only enqueue a row inside
+    # their transaction; a worker claims it using a time-bounded lease.  These
+    # deliberately small defaults suit a lightweight single-process worker but
+    # remain safe when several workers race to claim the same database queue.
+    jobs_lease_seconds: int = 120
+    jobs_max_attempts: int = 5
+    jobs_retry_base_seconds: int = 30
+    jobs_worker_poll_seconds: float = 1.0
 
     # Rate limiting / abuse protection. ``None`` means "enabled in prod, off in
     # dev/test"; Redis is the production-grade shared store across uvicorn

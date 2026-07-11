@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 import sqlmodel  # SQLModel renders columns as sqlmodel.sql.sqltypes.AutoString
 
 
@@ -23,14 +24,21 @@ depends_on: Union[str, Sequence[str], None] = None
 _KIND = sa.Enum('PIR', 'GIR', 'RFI', name='requirementkind')
 
 
+def _kind_type(bind):
+    if bind.dialect.name == 'postgresql':
+        return postgresql.ENUM('PIR', 'GIR', 'RFI', name='requirementkind', create_type=False)
+    return sa.Enum('PIR', 'GIR', 'RFI', name='requirementkind')
+
+
 def upgrade() -> None:
     """Upgrade schema."""
     # server_default backfills existing rows (kind='RFI', decision_context='');
     # PIR/GIR/RFI is the FR #42 requirement-kind taxonomy. review_by is nullable
     # (only PIRs carry a review date), so it needs no server_default.
-    _KIND.create(op.get_bind(), checkfirst=True)
+    bind = op.get_bind()
+    _KIND.create(bind, checkfirst=True)
     with op.batch_alter_table('requirement', schema=None) as batch_op:
-        batch_op.add_column(sa.Column('kind', sa.Enum('PIR', 'GIR', 'RFI', name='requirementkind'), server_default='RFI', nullable=False))
+        batch_op.add_column(sa.Column('kind', _kind_type(bind), server_default='RFI', nullable=False))
         batch_op.add_column(sa.Column('decision_context', sqlmodel.sql.sqltypes.AutoString(), server_default='', nullable=False))
         batch_op.add_column(sa.Column('review_by', sa.Date(), nullable=True))
         batch_op.create_index(batch_op.f('ix_requirement_kind'), ['kind'], unique=False)

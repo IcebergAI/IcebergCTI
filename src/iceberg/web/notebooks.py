@@ -1,5 +1,6 @@
 """Dashboard & notebook collection portal routes."""
 
+from sqlalchemy import case, func
 from sqlmodel import Session, col, select
 from datetime import timedelta
 from typing import Annotated
@@ -41,6 +42,7 @@ from ..services import (
     figures as figure_service,
     iocs as ioc_service,
     notebooks as notebook_service,
+    reports as report_service,
     source_grading,
 )
 from ..templating import templates
@@ -80,6 +82,32 @@ def _parse_tlp(raw: str, default: TLP | None) -> TLP | None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid TLP marking") from exc
 
 
+def _workspace_report_counts(session: Session) -> dict[str, int]:
+    """Aggregate all writer-visible in-flight report statuses in SQL.
+
+    The dashboard's recent-report list is deliberately capped at eight rows;
+    its workload KPIs must not inherit that presentation limit.
+    """
+    row = session.exec(
+        select(
+            func.count(
+                case((Report.status == ReportStatus.DRAFT, 1))
+            ).label("draft"),
+            func.count(
+                case((Report.status == ReportStatus.IN_REVIEW, 1))
+            ).label("in_review"),
+            func.count(
+                case((Report.status == ReportStatus.APPROVED, 1))
+            ).label("approved"),
+        )
+    ).one()
+    return {
+        "draft": int(row.draft),
+        "in_review": int(row.in_review),
+        "approved": int(row.approved),
+    }
+
+
 @router.get("/")
 def dashboard(request: Request, session: SessionDep, user: CurrentUser):
     is_stakeholder = user.role == Role.STAKEHOLDER
@@ -92,18 +120,27 @@ def dashboard(request: Request, session: SessionDep, user: CurrentUser):
         )
     )
     recent_stmt = select(Report).order_by(Report.updated_at.desc())
-    if is_stakeholder:  # read-only consumers only ever see published reports
-        recent_stmt = recent_stmt.where(Report.status == ReportStatus.PUBLISHED)
-    recent = list(session.exec(recent_stmt.limit(8)).all())
-    report_counts = {
-        "draft": sum(1 for r in recent if ReportStatus(r.status) == ReportStatus.DRAFT),
-        "in_review": sum(
-            1 for r in recent if ReportStatus(r.status) == ReportStatus.IN_REVIEW
-        ),
-        "approved": sum(
-            1 for r in recent if ReportStatus(r.status) == ReportStatus.APPROVED
-        ),
-    }
+    if is_stakeholder:
+        # Apply the same audience gate as direct report access *before* taking
+        # the dashboard limit.  Limiting first leaks a hidden title whenever it
+        # happens to be one of the latest eight products.
+        recent = []
+        for report in session.exec(
+            recent_stmt.where(Report.status == ReportStatus.PUBLISHED)
+        ).all():
+            try:
+                recent.append(report_service.ensure_visible(report, user))
+            except HTTPException:
+                continue
+            if len(recent) == 8:
+                break
+    else:
+        recent = list(session.exec(recent_stmt.limit(8)).all())
+    report_counts = (
+        {"draft": 0, "in_review": 0, "approved": 0}
+        if is_stakeholder
+        else _workspace_report_counts(session)
+    )
     next_report = next(
         (r for r in recent if ReportStatus(r.status) != ReportStatus.PUBLISHED), None
     )
@@ -479,4 +516,3 @@ def delete_figure(
     fig = _get_figure(session, notebook_id, figure_id)
     figure_service.delete_figure(session, fig)
     return _redirect(f"/notebooks/{notebook_id}#figures")
-

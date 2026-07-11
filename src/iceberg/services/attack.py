@@ -1,20 +1,19 @@
-"""MITRE ATT&CK Navigator layer export + technique-coverage matrix (backlog A).
+"""MITRE ATT&CK Navigator layer export + technique-coverage matrix.
 
-A pure derivation layer over the existing taxonomy — **no new model, no
-migration**. ``TECHNIQUE`` tags already carry the ATT&CK technique id in
-``Tag.external_id`` (e.g. ``T1566``) and the ATT&CK *tactic* name in
-``Tag.description`` (e.g. "Initial Access" — see ``data/starter_tags.json``). From
-those we emit:
+``TECHNIQUE`` tags carry their ATT&CK technique id in ``Tag.external_id`` and a
+first-class ``Tag.attack_tactics`` list.  Existing installations retain the
+historical description-as-one-tactic convention as a read fallback until their
+tags are refreshed by the explicit ATT&CK import command.  From that taxonomy we
+emit:
 
 * a schema-conformant **ATT&CK Navigator layer** (``.json``) for a single report
   or an aggregated entity (techniques scored by occurrence), and
 * a **coverage matrix** grouping technique frequency into ATT&CK tactic columns
   for the in-portal heatmap.
 
-The ``description``-as-tactic coupling is a soft convention: we normalise it
-against the known enterprise tactic list and bucket anything else under
-"Uncategorised". A dedicated ``tactic`` column on ``Tag`` is a possible future
-hardening (noted in the roadmap), out of scope for this quick win.
+Tactic values are normalised against the known enterprise tactic list and any
+unrecognised legacy value falls into ``Uncategorised`` rather than disappearing
+from a coverage view.
 """
 
 from __future__ import annotations
@@ -46,6 +45,12 @@ TACTIC_ORDER: list[str] = [
 UNCATEGORISED = "Uncategorised"
 _TACTIC_LOOKUP = {t.lower(): t for t in TACTIC_ORDER}
 
+
+def _tactic_key(value: str) -> str:
+    """Normalise MITRE's ``initial-access`` phase spelling for storage/UI."""
+
+    return " ".join((value or "").replace("-", " ").replace("_", " ").split()).lower()
+
 # Navigator layer schema pins (single-sourced, like the Typst version pin).
 ATTACK_DOMAIN = "enterprise-attack"
 LAYER_VERSIONS = {"attack": "15", "navigator": "4.19.5", "layer": "4.5"}
@@ -56,7 +61,35 @@ GRADIENT_COLORS = ["#ffffff", "#66b1d6"]
 def normalise_tactic(description: str) -> str:
     """Map a technique tag's ``description`` to a known enterprise tactic, or
     ``UNCATEGORISED`` when it doesn't match the controlled list."""
-    return _TACTIC_LOOKUP.get((description or "").strip().lower(), UNCATEGORISED)
+    return _TACTIC_LOOKUP.get(_tactic_key(description), UNCATEGORISED)
+
+
+def normalise_tactics(values: list[str] | tuple[str, ...] | str | None) -> list[str]:
+    """Return canonical, ordered, de-duplicated ATT&CK tactics.
+
+    Unknown supplied values are ignored for new structured metadata: an import
+    should never make a fabricated matrix column.  The legacy one-description
+    fallback remains intentionally more forgiving through :func:`normalise_tactic`.
+    """
+
+    if values is None:
+        return []
+    raw_values = [values] if isinstance(values, str) else values
+    selected = {
+        _TACTIC_LOOKUP[_tactic_key(value)]
+        for value in raw_values
+        if isinstance(value, str) and _tactic_key(value) in _TACTIC_LOOKUP
+    }
+    return [tactic for tactic in TACTIC_ORDER if tactic in selected]
+
+
+def tactics_for_tag(tag: Tag) -> list[str]:
+    """Return a technique's first-class tactics, with a safe legacy fallback."""
+
+    structured = normalise_tactics(getattr(tag, "attack_tactics", None))
+    if structured:
+        return structured
+    return [normalise_tactic(tag.description)]
 
 
 def technique_tags(tags: list[Tag]) -> list[Tag]:
@@ -72,7 +105,7 @@ def technique_counts(reports: list[Report]) -> dict[str, dict]:
 
     A report contributes at most once per technique (tags are a set per report),
     so the count is the number of *reports* exhibiting the technique. Each entry
-    carries the display ``label`` and normalised ``tactic`` (taken from the first
+    carries the display ``label`` and normalised ``tactics`` (taken from the first
     report that names the technique)."""
     counts: dict[str, dict] = {}
     for report in reports:
@@ -82,11 +115,17 @@ def technique_counts(reports: list[Report]) -> dict[str, dict]:
             if entry is None:
                 counts[code] = {
                     "label": tag.label,
-                    "tactic": normalise_tactic(tag.description),
+                    "tactics": tactics_for_tag(tag),
                     "count": 1,
                 }
             else:
                 entry["count"] += 1
+                # Defensive merge for a taxonomy row refreshed between report
+                # reads: preserve every canonical tactic without double-counting
+                # the report occurrence itself.
+                entry["tactics"] = normalise_tactics(
+                    [*entry["tactics"], *tactics_for_tag(tag)]
+                )
     return counts
 
 
@@ -156,9 +195,10 @@ def coverage_matrix(reports: list[Report]) -> dict:
     counts = technique_counts(reports)
     by_tactic: dict[str, list[dict]] = {}
     for code, entry in counts.items():
-        by_tactic.setdefault(entry["tactic"], []).append(
-            {"code": code, "label": entry["label"], "count": entry["count"]}
-        )
+        for tactic in entry["tactics"]:
+            by_tactic.setdefault(tactic, []).append(
+                {"code": code, "label": entry["label"], "count": entry["count"]}
+            )
     order = TACTIC_ORDER + [UNCATEGORISED]
     columns = []
     for tactic in order:

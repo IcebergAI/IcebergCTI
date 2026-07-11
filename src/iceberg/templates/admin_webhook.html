@@ -8,7 +8,7 @@
     <div class="eyebrow eyebrow-accent">Administration</div>
     <h1 class="page-title mt-2">Publication webhook</h1>
     <div class="title-rule"></div>
-    <p class="text-sm mt-3" style="color:var(--muted);max-width:64ch;">When a report is published, Iceberg POSTs a small JSON event (report id, title, link and recipient count — <strong>metadata only</strong>, never the report body) to this endpoint as a background task. Delivery is failure-isolated and routed through the global outbound proxy when one is configured. The bearer token is read from the environment and never stored here.</p>
+    <p class="text-sm mt-3" style="color:var(--ink-soft);max-width:64ch;">When a report is published, Iceberg POSTs a small metadata-only event (report id, title, link and recipient count — never the report body) to this endpoint as a background task. Generic JSON remains the compatibility default; Slack and Teams are opt-in presentation envelopes. Delivery is failure-isolated and routed through the global outbound proxy when one is configured. The bearer token is read from the environment and never stored here.</p>
   </div>
 </div>
 
@@ -28,6 +28,16 @@
     <label class="field-wrap">
       <span class="field-label">Timeout <span class="opt">seconds; bounds the POST so a stuck endpoint can't hang the notifier</span></span>
       <input name="timeout" type="number" min="1" max="60" step="0.5" class="field mono" value="{{ settings.timeout }}">
+    </label>
+
+    <label class="field-wrap">
+      <span class="field-label" style="color:var(--ink-soft);">Payload format</span>
+      <select name="format" class="field" aria-describedby="webhook-format-help">
+        <option value="generic" {% if settings.format == 'generic' %}selected{% endif %}>Generic JSON (default)</option>
+        <option value="slack" {% if settings.format == 'slack' %}selected{% endif %}>Slack (Block Kit)</option>
+        <option value="teams" {% if settings.format == 'teams' %}selected{% endif %}>Microsoft Teams (MessageCard)</option>
+      </select>
+      <span id="webhook-format-help" class="text-sm mt-1" style="color:var(--ink-soft);">Generic preserves existing integrations. The selected format is used for publication and test events; all formats contain metadata only.</span>
     </label>
 
     <p class="text-sm mt-2" style="color:var(--muted);">

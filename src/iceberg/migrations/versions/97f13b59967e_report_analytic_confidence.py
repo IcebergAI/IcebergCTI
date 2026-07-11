@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
@@ -22,11 +23,18 @@ depends_on: Union[str, Sequence[str], None] = None
 _CONFIDENCE = sa.Enum('LOW', 'MODERATE', 'HIGH', name='analyticconfidence')
 
 
+def _confidence_type(bind):
+    if bind.dialect.name == 'postgresql':
+        return postgresql.ENUM('LOW', 'MODERATE', 'HIGH', name='analyticconfidence', create_type=False)
+    return sa.Enum('LOW', 'MODERATE', 'HIGH', name='analyticconfidence')
+
+
 def upgrade() -> None:
     """Upgrade schema."""
-    _CONFIDENCE.create(op.get_bind(), checkfirst=True)
+    bind = op.get_bind()
+    _CONFIDENCE.create(bind, checkfirst=True)
     with op.batch_alter_table('report', schema=None) as batch_op:
-        batch_op.add_column(sa.Column('analytic_confidence', sa.Enum('LOW', 'MODERATE', 'HIGH', name='analyticconfidence'), nullable=True))
+        batch_op.add_column(sa.Column('analytic_confidence', _confidence_type(bind), nullable=True))
 
 
 def downgrade() -> None:

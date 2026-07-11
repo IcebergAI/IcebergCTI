@@ -40,15 +40,16 @@ from ..rendering.typst import TypstNotAvailable, TypstRenderError, typst_availab
 from ..services import (
     ach as ach_service,
     attachments as attachment_service,
+    audience as audience_service,
     audit,
     diamond as diamond_service,
-    dissemination,
     feedback as feedback_service,
     iocs as ioc_service,
     lifecycle,
     misp as misp_service,
     misp_settings as misp_settings_service,
     product_html as product_html_service,
+    publication,
     proxy_settings as proxy_settings_service,
     related,
     requirements as req_service,
@@ -131,6 +132,11 @@ def report_view(
     misp_over_ceiling = (
         misp_service.over_ceiling_iocs(list(report.cited_iocs)) if is_writer else []
     )
+    requirements = (
+        req_service.stakeholder_report_requirements(report, user)
+        if user.role == Role.STAKEHOLDER
+        else list(report.requirements)
+    )
 
     return templates.TemplateResponse(
         request,
@@ -148,8 +154,16 @@ def report_view(
             "misp_event": misp_event,
             "misp_over_ceiling": misp_over_ceiling,
             "cited_attachments": list(report.cited_attachments),
-            "products": list(report.rendered_products),
-            "requirements": list(report.requirements),
+            "products": (
+                [
+                    product
+                    for product in report.rendered_products
+                    if product.snapshot_hash == report.publication_snapshot_hash
+                ]
+                if user.role == Role.STAKEHOLDER
+                else list(report.rendered_products)
+            ),
+            "requirements": requirements,
             "tags": list(report.tags),
             "dissemination_count": len(report.dissemination_events),
             "feedback_form": feedback_form,
@@ -359,14 +373,26 @@ def report_transition(
     target: Annotated[ReportStatus, Form()],
 ):
     report = _get_report(session, report_id)
+    if target == ReportStatus.PUBLISHED:
+        try:
+            report, _recipients = publication.publish(
+                session,
+                report,
+                actor=user,
+                request=request,
+                background_tasks=background_tasks,
+            )
+        except PermissionError as exc:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
+        except publication.PublicationConflict as exc:
+            raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+        related.upsert_report_embedding(session, report)
+        return _redirect(f"/reports/{report_id}/edit")
     try:
         report = lifecycle.transition(session, report, target, actor=user)
     except lifecycle.LifecycleError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc))
     recipients = None
-    if report.status == ReportStatus.PUBLISHED:
-        recipients = dissemination.queue_dissemination(session, report, background_tasks)
-        related.upsert_report_embedding(session, report)
     _audit_transition(session, report, user, request, background_tasks, recipients)
     return _redirect(f"/reports/{report_id}/edit")
 
@@ -427,9 +453,11 @@ def report_render(
 def download_product(
     report_id: int, product_id: int, session: SessionDep, user: CurrentUser
 ):
-    ensure_visible(_get_report(session, report_id), user)
+    report = ensure_visible(_get_report(session, report_id), user)
     product = session.get(RenderedProduct, product_id)
     if not product or product.report_id != report_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Product not found")
+    if user.role == Role.STAKEHOLDER and product.snapshot_hash != report.publication_snapshot_hash:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Product not found")
     path = Path(product.pdf_path)
     if not path.exists():
@@ -495,18 +523,22 @@ def report_tags(
 @router.post("/reports/{report_id}/audience")
 def report_audience(
     report_id: int,
+    request: Request,
     session: SessionDep,
     user: CurrentUser,
+    background_tasks: BackgroundTasks,
     group_ids: Annotated[list[int], Form()] = [],
 ):
     ensure_role(user, Role.ADMIN, detail="Admin role required")
     report = _get_report(session, report_id)
-    groups = [
-        group for gid in group_ids if (group := session.get(AudienceGroup, gid)) is not None
-    ]
-    report.audience_groups = groups
-    session.add(report)
-    session.commit()
+    audience_service.set_report_audience(
+        session,
+        report,
+        group_ids,
+        actor=user,
+        request=request,
+        background_tasks=background_tasks,
+    )
     return _redirect(f"/reports/{report_id}/edit?updated=audience#audience")
 
 

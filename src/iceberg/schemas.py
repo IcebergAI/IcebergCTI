@@ -1,8 +1,8 @@
 """Request bodies for the JSON API (responses serialise models/dicts directly)."""
 
-from datetime import date
+from datetime import date, datetime
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from .models import (
     AnalyticConfidence,
@@ -18,6 +18,7 @@ from .models import (
     RequirementStatus,
     RfiSatisfaction,
     SourceCredibility,
+    SourceGradingOrigin,
     SourceReliability,
     TagKind,
     TLP,
@@ -92,6 +93,120 @@ class ReportUpdate(BaseModel):
     analytic_confidence: AnalyticConfidence | None = None
     intel_level: IntelLevel | None = None
     tlp: TLP | None = None
+
+
+# --------------------------------------------------------------------------- #
+# Role-aware report and traceability responses
+# --------------------------------------------------------------------------- #
+class ReportSummaryResponse(BaseModel):
+    """Metadata intentionally safe to show with a finished product."""
+
+    id: int
+    title: str
+    intel_level: IntelLevel
+    tlp: TLP
+    status: ReportStatus
+    published_at: datetime | None = None
+
+
+class StakeholderReportDetailResponse(ReportSummaryResponse):
+    """The finished report fields available to a read-only stakeholder."""
+
+    body_md: str = ""
+    key_judgements: str = ""
+    key_assumptions: str = ""
+    intelligence_gaps: str = ""
+    analytic_confidence: AnalyticConfidence | None = None
+
+
+class WriterReportDetailResponse(StakeholderReportDetailResponse):
+    """Writer-only report metadata; collection data stays in notebook APIs."""
+
+    notebook_id: int
+    author_id: int
+    reviewer_id: int | None = None
+    ai_provenance: dict = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+    version: int = 1
+    publication_snapshot_hash: str = ""
+
+
+class StakeholderSourceCitationResponse(BaseModel):
+    """Publication-safe source citation metadata, never raw collection text."""
+
+    title: str
+    reference: str = ""
+    reliability: SourceReliability | None = None
+    credibility: SourceCredibility | None = None
+
+
+class WriterSourceCitationResponse(StakeholderSourceCitationResponse):
+    id: int
+    notebook_id: int
+    tlp: TLP
+    summary: str = ""
+    content_md: str = ""
+    ai_provenance: dict = Field(default_factory=dict)
+    grading_origin: SourceGradingOrigin
+    grading_engine: str = ""
+    grading_rationale: str = ""
+    grading_error: str = ""
+    graded_at: datetime | None = None
+    captured_at: datetime
+
+
+class StakeholderAttachmentCitationResponse(BaseModel):
+    """Safe attachment labels; storage identifiers and notebook ids are private."""
+
+    title: str = ""
+    original_filename: str
+    content_type: str
+    file_size: int
+
+
+class WriterAttachmentCitationResponse(StakeholderAttachmentCitationResponse):
+    id: int
+    notebook_id: int
+    stored_filename: str
+    summary: str = ""
+    uploaded_at: datetime
+
+
+class ReportTagResponse(BaseModel):
+    id: int
+    kind: TagKind
+    label: str
+    external_id: str = ""
+    description: str = ""
+
+
+class StakeholderRequirementResponse(BaseModel):
+    """A stakeholder's own requirement, without account-directory fields."""
+
+    id: int
+    title: str
+    description: str = ""
+    intel_level: IntelLevel
+    priority: Priority
+    kind: RequirementKind
+    decision_context: str = ""
+    review_by: date | None = None
+    status: RequirementStatus
+    created_at: datetime
+    updated_at: datetime
+
+
+class StakeholderIdentityResponse(BaseModel):
+    id: int
+    display_name: str
+
+
+class LegacyOIDCIdentityLink(BaseModel):
+    """Administrator-approved binding for a legacy subject-less account."""
+
+    issuer: str
+    subject: str
 
 
 class CitationsUpdate(BaseModel):
@@ -288,6 +403,7 @@ class TagCreate(BaseModel):
     motivations: list[Motivation] = []
     first_seen: str = ""
     last_seen: str = ""
+    attack_tactics: list[str] = []
 
 
 class TagUpdate(BaseModel):
@@ -299,7 +415,14 @@ class TagUpdate(BaseModel):
     motivations: list[Motivation] | None = None
     first_seen: str | None = None
     last_seen: str | None = None
+    attack_tactics: list[str] | None = None
     active: bool | None = None
+
+
+class TagMergeRequest(BaseModel):
+    """Consolidate the source tag into an existing canonical tag."""
+
+    target_tag_id: int = Field(gt=0)
 
 
 class TagLinks(BaseModel):

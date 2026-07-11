@@ -276,10 +276,12 @@ a:hover { color: var(--accent-deep); }
 }
 .cmdk-list { max-height: 46vh; overflow-y: auto; padding: 6px; }
 .cmdk-opt {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  padding: 9px 11px; border-radius: var(--radius-sm); cursor: pointer; color: var(--ink);
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%;
+  min-height: 40px; padding: 9px 11px; border-radius: var(--radius-sm); cursor: pointer; color: var(--ink);
+  border: 0; background: transparent; text-align: left; font-family: inherit;
 }
 .cmdk-opt.is-active { background: var(--accent-soft); }
+.cmdk-opt:focus-visible { outline: none; box-shadow: var(--ring); }
 .cmdk-opt-label { font-size: 14px; font-weight: 500; }
 .cmdk-opt-group { font-family: var(--fs-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
 .cmdk-empty { padding: 18px; text-align: center; color: var(--muted); font-size: 13.5px; }
@@ -747,10 +749,12 @@ a.tagk:hover { border-color: var(--k-line); box-shadow: var(--shadow); }
 .tagpick-group-label { display: flex; align-items: center; gap: 7px; padding: 7px 8px 5px; }
 .tagpick-group-label .gl-count { font-family: var(--fs-mono); font-size: 10px; color: var(--faint); }
 .tagpick-opt {
-  display: flex; align-items: center; gap: 10px;
-  padding: 7px 8px; border-radius: var(--radius-sm); cursor: pointer;
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+  min-height: 40px; padding: 7px 8px; border-radius: var(--radius-sm); cursor: pointer;
+  border: 0; background: transparent; font-family: inherit;
 }
 .tagpick-opt.is-active { background: var(--surface-2); box-shadow: inset 2px 0 0 var(--accent); }
+.tagpick-opt:focus-visible { outline: none; box-shadow: var(--ring); }
 .tagpick-opt-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
 .tagpick-opt-label { font-family: var(--fs-sans); font-size: 13.5px; font-weight: 600; color: var(--ink); }
 .tagpick-opt-label .ext { font-family: var(--fs-mono); font-size: 11px; font-weight: 600; color: var(--k-ink); margin-right: 6px; }
@@ -1187,17 +1191,39 @@ select.field {
 
 /* Docked right panel */
 .dock { display: flex; flex-direction: column; min-height: 0; background: var(--surface); }
-.dock-tabs { flex: none; display: flex; border-bottom: 1px solid var(--line); }
+.dock-tabs { flex: none; display: flex; overflow-x: auto; border-bottom: 1px solid var(--line); }
 .dock-tab {
-  flex: 1; padding: 10px 6px; font-size: 11.5px; font-weight: 600; letter-spacing: 0.01em;
+  flex: 1 0 auto; min-height: 40px; padding: 10px 6px; font-size: 11.5px; font-weight: 600; letter-spacing: 0.01em;
   color: var(--muted); background: transparent; border: 0; border-bottom: 2px solid transparent;
-  cursor: pointer; font-family: inherit;
+  cursor: pointer; font-family: inherit; white-space: nowrap;
 }
 .dock-tab:hover { color: var(--ink); background: var(--surface-2); }
 .dock-tab.is-active { color: var(--accent-deep); border-bottom-color: var(--accent); }
+.dock-tab:focus-visible { position: relative; z-index: 1; outline: none; box-shadow: inset 0 0 0 2px var(--accent); }
 .dock-body { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; }
 .dock-body h2 { font-size: 14px; }
 .dock-foot { flex: none; border-top: 1px solid var(--line); padding: 12px 14px; background: var(--surface-2); display: grid; gap: 10px; }
+
+/* Advisory AI review stays visually calm and clearly distinct from saved report
+ * content. The controls are ordinary buttons/textarea fields so the review flow
+ * remains keyboard- and touch-operable without introducing a new widget type. */
+.ai-review-actions { display: grid; gap: 8px; }
+.ai-review-actions .btn { width: 100%; justify-content: flex-start; min-height: 40px; }
+.ai-review-status { display: flex; line-height: 1.35; }
+.ai-review-card {
+  padding: 13px; border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.ai-review-card .head-row { align-items: center; }
+.ai-review-card .btn-link { border: 0; padding: 6px 0; background: transparent; cursor: pointer; }
+.ai-review-card .btn-link:focus-visible { outline: none; box-shadow: var(--ring); border-radius: 3px; }
+.ai-review-fields { display: grid; gap: 10px; }
+.ai-review-textarea { width: 100%; resize: vertical; min-height: 88px; }
+.ai-review-tags { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.ai-review-tags li {
+  padding: 7px 9px; border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--surface); font-family: var(--fs-mono); font-size: 11.5px; color: var(--ink-soft);
+}
 
 @media (max-width: 1100px) {
   .editor-body { grid-template-columns: 1fr 340px; }

@@ -105,6 +105,7 @@ def record(
     correlation_id: str = "",
     description: str = "",
     detail: dict | None = None,
+    commit: bool = True,
 ) -> AuditEvent:
     """Persist a security-relevant event and return it."""
     if not correlation_id and request is not None:
@@ -128,8 +129,9 @@ def record(
         **_request_fields(request),
     )
     session.add(event)
-    session.commit()
-    session.refresh(event)
+    if commit:
+        session.commit()
+        session.refresh(event)
     return event
 
 

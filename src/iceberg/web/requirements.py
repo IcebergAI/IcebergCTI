@@ -26,6 +26,7 @@ from ..models import (
 from ..services import (
     feedback as feedback_service,
     requirements as req_service,
+    reports as report_service,
 )
 from ..templating import templates
 from .common import (
@@ -127,21 +128,46 @@ def requirement_detail(
     req = _get_requirement(session, requirement_id)
     if user.role == Role.STAKEHOLDER and req.stakeholder_id != user.id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your requirement")
+    reports = list(req.reports)
+    notebooks = list(req.notebooks)
+    feedback = feedback_service.feedback_for_requirement(session, req)
+    stakeholder = req.stakeholder
+    if user.role == Role.STAKEHOLDER:
+        traceability = req_service.stakeholder_traceability(req, user)
+        reports = traceability["reports"]
+        notebooks = []
+        stakeholder = user
+        # Audience scope can change after feedback was submitted.  Retain only
+        # feedback whose report is still visible, so this supporting panel
+        # cannot reintroduce a hidden report title.
+        feedback = [
+            item
+            for item in feedback
+            if _feedback_report_visible(item, user)
+        ]
     return templates.TemplateResponse(
         request,
         "requirement_detail.html",
         {
             "user": user,
             "req": req,
-            "stakeholder": req.stakeholder,
-            "reports": list(req.reports),
-            "notebooks": list(req.notebooks),
-            "feedback": feedback_service.feedback_for_requirement(session, req),
+            "stakeholder": stakeholder,
+            "reports": reports,
+            "notebooks": notebooks,
+            "feedback": feedback,
             "can_edit": user.role == Role.ADMIN or req.stakeholder_id == user.id,
             "can_triage": user.role in (Role.ANALYST, Role.REVIEWER, Role.ADMIN),
             "today": date.today(),
         },
     )
+
+
+def _feedback_report_visible(feedback, user: CurrentUser) -> bool:
+    try:
+        report_service.ensure_visible(feedback.report, user)
+    except HTTPException:
+        return False
+    return True
 
 
 @router.post("/requirements/{requirement_id}")
@@ -201,5 +227,4 @@ def requirement_delete(
     session.delete(req)
     session.commit()
     return _redirect("/requirements")
-
 

@@ -50,6 +50,10 @@
         <span class="field-label">Aliases <span class="opt">comma-separated</span></span>
         <input name="aliases" class="field" placeholder="e.g. Fancy Bear, Sofacy, STRONTIUM">
       </label>
+      <label class="field-wrap" style="flex:1;" x-show="kind === 'TECHNIQUE'">
+        <span class="field-label">ATT&amp;CK tactics <span class="opt">comma-separated</span></span>
+        <input name="attack_tactics" class="field" placeholder="e.g. Initial Access, Execution">
+      </label>
       <div class="add-preview">
         <span class="field-label">Preview</span>
         <div class="add-preview-chip">
@@ -134,6 +138,9 @@
               <input name="label" value="{{ t.label }}" class="field" style="flex:1.4;min-width:140px;">
               <input name="external_id" value="{{ t.external_id }}" placeholder="ext id" class="field" style="width:96px;font-family:var(--fs-mono);">
               <input name="description" value="{{ t.description }}" placeholder="description" class="field" style="flex:2;min-width:160px;">
+              {% if t.kind.value == 'TECHNIQUE' %}
+              <input name="attack_tactics" value="{{ t.attack_tactics | join(', ') }}" placeholder="ATT&amp;CK tactics" class="field" style="flex:1.4;min-width:160px;" title="Comma-separated Enterprise ATT&amp;CK tactics">
+              {% endif %}
               {% if t.kind.value in ('ACTOR', 'MALWARE', 'CAMPAIGN') %}
               <input name="aliases" value="{{ t.aliases | join(', ') }}" placeholder="aliases" class="field" style="flex:2;min-width:160px;" title="Comma-separated alternate names">
               <input name="suspected_attribution" value="{{ t.suspected_attribution }}" placeholder="attribution" class="field" style="flex:2;min-width:160px;" title="Suspected sponsor / country">

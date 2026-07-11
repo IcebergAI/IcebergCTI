@@ -4,7 +4,15 @@ classification (editable post-publish), retire semantics, and the seed."""
 from sqlmodel import Session, select
 
 from iceberg import seed as seed_cli
-from iceberg.models import Motivation, Tag, TagKind
+from iceberg.models import (
+    AuditAction,
+    AuditEvent,
+    Motivation,
+    ReportTag,
+    Tag,
+    TagKind,
+    UserTagSubscription,
+)
 from iceberg.services.tags import (
     load_starter_tags,
     normalise_motivations,
@@ -373,3 +381,151 @@ def test_plain_tag_keeps_search_drilldown(client, login):
     # not the entity profile.
     assert "Entity profile" not in page.text
     assert "Tagged · Energy" in page.text
+
+
+# --------------------------------------------------------------------------- #
+# Admin taxonomy merges (#185)
+# --------------------------------------------------------------------------- #
+def test_admin_merge_moves_links_preserves_aliases_and_keeps_lineage(
+    client, login, engine
+):
+    target = _create_tag(client, login, kind="ACTOR", label="Canonical Actor")
+    login("ADMIN", email="admin@example.com")
+    target = client.patch(
+        f"/api/tags/{target['id']}", json={"aliases": ["Existing Alias"]}
+    ).json()
+    source = client.post(
+        "/api/tags",
+        json={
+            "kind": "ACTOR",
+            "label": "Legacy Actor",
+            "aliases": ["Legacy Alias", "existing alias"],
+        },
+    ).json()
+
+    source_only_report = _make_report(client, login, title="Source-only report")
+    overlap_report = _make_report(client, login, title="Already canonical report")
+    login("ANALYST", email="author@example.com")
+    assert client.put(
+        f"/api/reports/{source_only_report}/tags", json={"tag_ids": [source["id"]]}
+    ).status_code == 200
+    assert client.put(
+        f"/api/reports/{overlap_report}/tags",
+        json={"tag_ids": [source["id"], target["id"]]},
+    ).status_code == 200
+
+    # One stakeholder has only the source subscription; another already has the
+    # canonical subscription too.  Both cases must merge without a composite-PK
+    # duplicate failure.
+    login("STAKEHOLDER", email="source-subscriber@example.com")
+    assert client.patch(
+        "/api/me", json={"subscribed_tag_ids": [source["id"]]}
+    ).status_code == 200
+    login("STAKEHOLDER", email="overlap-subscriber@example.com")
+    assert client.patch(
+        "/api/me", json={"subscribed_tag_ids": [source["id"], target["id"]]}
+    ).status_code == 200
+
+    login("ADMIN", email="admin@example.com")
+    response = client.post(
+        f"/api/tags/{source['id']}/merge", json={"target_tag_id": target["id"]}
+    )
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["report_links_moved"] == 1
+    assert result["report_links_deduplicated"] == 1
+    assert result["subscriptions_moved"] == 1
+    assert result["subscriptions_deduplicated"] == 1
+    assert result["target"]["aliases"] == [
+        "Existing Alias",
+        "Legacy Actor",
+        "Legacy Alias",
+    ]
+    assert result["source"]["active"] is False
+    assert result["source"]["merged_into_tag_id"] == target["id"]
+    assert result["source"]["merged_at"] is not None
+
+    with Session(engine) as session:
+        source_row = session.get(Tag, source["id"])
+        assert source_row is not None
+        assert source_row.active is False
+        assert source_row.merged_into_tag_id == target["id"]
+        assert source_row.merged_at is not None
+        assert source_row.aliases == ["Legacy Alias", "existing alias"]
+
+        report_links = session.exec(
+            select(ReportTag).where(
+                ReportTag.report_id.in_([source_only_report, overlap_report])
+            )
+        ).all()
+        assert {(link.report_id, link.tag_id) for link in report_links} == {
+            (source_only_report, target["id"]),
+            (overlap_report, target["id"]),
+        }
+
+        subscription_links = session.exec(select(UserTagSubscription)).all()
+        assert all(link.tag_id != source["id"] for link in subscription_links)
+        assert sum(link.tag_id == target["id"] for link in subscription_links) == 2
+
+        event = session.exec(
+            select(AuditEvent).where(AuditEvent.action == AuditAction.TAG_MERGED)
+        ).one()
+        assert event.detail["source_tag_id"] == source["id"]
+        assert event.detail["target_tag_id"] == target["id"]
+        assert event.detail["report_links_deduplicated"] == 1
+
+    # A stale API client cannot reapply a merged source tag to new report or
+    # subscription links.
+    login("ANALYST", email="author@example.com")
+    assert client.put(
+        f"/api/reports/{source_only_report}/tags", json={"tag_ids": [source["id"]]}
+    ).status_code == 409
+
+
+def test_merge_rejects_non_admin_cross_kind_self_and_inactive_target(client, login):
+    source = _create_tag(client, login, kind="ACTOR", label="Merge source")
+    target = _create_tag(client, login, kind="ACTOR", label="Merge target")
+    sector = _create_tag(client, login, kind="SECTOR", label="Energy")
+
+    login("ANALYST", email="author@example.com")
+    assert client.post(
+        f"/api/tags/{source['id']}/merge", json={"target_tag_id": target["id"]}
+    ).status_code == 403
+
+    login("ADMIN", email="admin@example.com")
+    assert client.post(
+        f"/api/tags/{source['id']}/merge", json={"target_tag_id": source["id"]}
+    ).status_code == 400
+    assert client.post(
+        f"/api/tags/{source['id']}/merge", json={"target_tag_id": sector["id"]}
+    ).status_code == 400
+    assert client.patch(f"/api/tags/{target['id']}", json={"active": False}).status_code == 200
+    assert client.post(
+        f"/api/tags/{source['id']}/merge", json={"target_tag_id": target["id"]}
+    ).status_code == 409
+
+
+def test_merged_tags_and_their_canonical_target_cannot_be_deleted(client, login, engine):
+    source = _create_tag(client, login, kind="ACTOR", label="Preserved source")
+    target = _create_tag(client, login, kind="ACTOR", label="Preserved target")
+    login("ADMIN", email="admin@example.com")
+    assert client.post(
+        f"/api/tags/{source['id']}/merge", json={"target_tag_id": target["id"]}
+    ).status_code == 200
+
+    with Session(engine) as session:
+        before = len(
+            session.exec(
+                select(AuditEvent).where(AuditEvent.action == AuditAction.TAG_DELETED)
+            ).all()
+        )
+    assert client.delete(f"/api/tags/{source['id']}").status_code == 409
+    assert client.delete(f"/api/tags/{target['id']}").status_code == 409
+    assert client.patch(f"/api/tags/{source['id']}", json={"active": True}).status_code == 409
+    with Session(engine) as session:
+        after = len(
+            session.exec(
+                select(AuditEvent).where(AuditEvent.action == AuditAction.TAG_DELETED)
+            ).all()
+        )
+    assert after == before

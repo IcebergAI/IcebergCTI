@@ -8,7 +8,7 @@ core; Requirement drives stakeholder intake and the analyst tasking board.
 from datetime import date, datetime, timezone
 from enum import StrEnum
 
-from sqlalchemy import JSON, Column, UniqueConstraint
+from sqlalchemy import JSON, Column, Integer, UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -87,6 +87,28 @@ class ProductFormat(StrEnum):
     FULL = "FULL"
     EXEC_BRIEF = "EXEC_BRIEF"
     ONE_PAGER = "ONE_PAGER"
+
+
+class JobKind(StrEnum):
+    """Durable external-work categories owned by the lightweight outbox."""
+
+    DISSEMINATION_EMAIL = "DISSEMINATION_EMAIL"
+    DISSEMINATION_WEBHOOK = "DISSEMINATION_WEBHOOK"
+    RSS_POLL = "RSS_POLL"
+
+
+class JobStatus(StrEnum):
+    """Lifecycle of an :class:`OutboxJob`.
+
+    A ``RUNNING`` job is always paired with an expiry lease, so a worker crash
+    cannot strand it permanently.  Retriable failures return to ``PENDING``;
+    terminal failures remain inspectable as ``FAILED``.
+    """
+
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    SUCCEEDED = "SUCCEEDED"
+    FAILED = "FAILED"
 
 
 class Priority(StrEnum):
@@ -297,6 +319,7 @@ class AuditAction(StrEnum):
     TAG_CREATED = "TAG_CREATED"
     TAG_UPDATED = "TAG_UPDATED"
     TAG_DELETED = "TAG_DELETED"
+    TAG_MERGED = "TAG_MERGED"
     # Governed analyst-assist calls (prompt/response bodies are never audited).
     AI_ASSIST = "AI_ASSIST"
     # Audit configuration (admin)
@@ -508,8 +531,14 @@ class ReportAudienceGroup(SQLModel, table=True):
 # Core tables
 # --------------------------------------------------------------------------- #
 class User(SQLModel, table=True):
+    # ``sub`` is only unique within an OpenID Provider.  Keep legacy/dev
+    # accounts unbound (both values NULL) until an administrator explicitly
+    # links them; OIDC provisioning must never use email as an identity key.
+    __table_args__ = (UniqueConstraint("issuer", "sub", name="uq_user_issuer_sub"),)
+
     id: int | None = Field(default=None, primary_key=True)
-    sub: str | None = Field(default=None, index=True, unique=True)
+    issuer: str | None = Field(default=None, index=True)
+    sub: str | None = Field(default=None, index=True)
     email: str = Field(index=True, unique=True)
     display_name: str
     role: Role = Field(default=Role.ANALYST)
@@ -784,7 +813,15 @@ class Figure(SQLModel, table=True):
     notebook: Notebook = Relationship(back_populates="figures")
 
 
+_REPORT_VERSION_COLUMN = Column("version", Integer, nullable=False, default=1)
+
+
 class Report(SQLModel, table=True):
+    # SQLAlchemy emits ``UPDATE ... WHERE version = :loaded_version`` and bumps
+    # this value automatically. That protects an edit loaded before publication
+    # from silently writing over the immutable finished row.
+    __mapper_args__ = {"version_id_col": _REPORT_VERSION_COLUMN}
+
     id: int | None = Field(default=None, primary_key=True)
     notebook_id: int = Field(
         foreign_key="notebook.id", ondelete="CASCADE", index=True
@@ -814,6 +851,13 @@ class Report(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
     published_at: datetime | None = Field(default=None)
+    # Incremented by the ORM on every persisted update.  Routes translate a
+    # stale update into 409 rather than allowing an edit loaded before publish
+    # to overwrite the finished product.
+    version: int = Field(default=1, sa_column=_REPORT_VERSION_COLUMN)
+    # The immutable finished-product snapshot selected at publication time.
+    # Empty for drafts and for legacy rows before their boot-time backfill.
+    publication_snapshot_hash: str = Field(default="", index=True)
 
     notebook: Notebook = Relationship(back_populates="reports")
     cited_sources: list[Source] = Relationship(link_model=ReportSource)
@@ -846,9 +890,34 @@ class RenderedProduct(SQLModel, table=True):
     report_id: int = Field(foreign_key="report.id", ondelete="CASCADE", index=True)
     format: ProductFormat
     pdf_path: str
+    # A stakeholder may only obtain a PDF built from the report's active
+    # publication snapshot. Writer draft renders deliberately retain an empty
+    # snapshot hash.
+    snapshot_hash: str = Field(default="", index=True)
     rendered_at: datetime = Field(default_factory=utcnow)
 
     report: Report = Relationship(back_populates="rendered_products")
+
+
+class PublicationSnapshot(SQLModel, table=True):
+    """Immutable publication-time representation of a finished report.
+
+    The JSON payload carries rendered HTML, Typst input and self-contained
+    embedded artefacts.  Keeping it separate from the mutable ``Report`` row
+    makes a published product stable even when collection material changes or
+    is deleted later.
+    """
+
+    __table_args__ = (UniqueConstraint("report_id", name="uq_publication_snapshot_report"),)
+
+    id: int | None = Field(default=None, primary_key=True)
+    report_id: int = Field(foreign_key="report.id", ondelete="CASCADE", index=True)
+    snapshot_hash: str = Field(index=True)
+    payload: dict = Field(
+        default_factory=dict,
+        sa_column=Column(JSON, nullable=False, server_default="{}"),
+    )
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 class Requirement(SQLModel, table=True):
@@ -949,7 +1018,23 @@ class Tag(SQLModel, table=True):
     )
     first_seen: str = ""
     last_seen: str = ""
+    # ATT&CK techniques can map to more than one tactic.  This is deliberately
+    # distinct from the human-readable description: legacy rows used that field
+    # as a one-tactic convention, while this structured list drives Navigator
+    # layers and coverage matrices.
+    attack_tactics: list[str] = Field(
+        default_factory=list,
+        sa_column=Column(JSON, nullable=False, server_default="[]"),
+    )
     active: bool = Field(default=True)
+    # A retired source term remains in the taxonomy after a merge so historic
+    # curation decisions retain an auditable, queryable lineage.  The canonical
+    # tag owns the report/subscription links; this field only records where the
+    # source term was consolidated.
+    merged_into_tag_id: int | None = Field(
+        default=None, foreign_key="tag.id", ondelete="SET NULL", index=True
+    )
+    merged_at: datetime | None = Field(default=None)
     created_at: datetime = Field(default_factory=utcnow)
 
     reports: list[Report] = Relationship(
@@ -976,6 +1061,10 @@ class ReportEmbedding(SQLModel, table=True):
 
 class DisseminationEvent(SQLModel, table=True):
     """A published report delivered to a stakeholder's feed (Milestone 3)."""
+
+    __table_args__ = (
+        UniqueConstraint("report_id", "stakeholder_id", name="uq_dissemination_report_stakeholder"),
+    )
 
     id: int | None = Field(default=None, primary_key=True)
     report_id: int = Field(foreign_key="report.id", ondelete="CASCADE", index=True)
@@ -1083,6 +1172,44 @@ class FeedItem(SQLModel, table=True):
     ingested_at: datetime | None = Field(default=None)  # set when sent to a notebook
 
     feed: Feed = Relationship(back_populates="items")
+
+
+class OutboxJob(SQLModel, table=True):
+    """A durable, lease-based unit of external work.
+
+    Publication feed records are deliberately *not* jobs: they are created
+    synchronously in the same transaction as the published report.  This table
+    contains only work that leaves the process (email, webhooks and RSS pulls),
+    allowing an independently-run worker to retry it after request completion
+    or a process restart.
+    """
+
+    __table_args__ = (
+        UniqueConstraint("idempotency_key", name="uq_outboxjob_idempotency_key"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    kind: JobKind = Field(index=True)
+    status: JobStatus = Field(default=JobStatus.PENDING, index=True)
+    # Jobs store only identifiers and non-secret configuration snapshots.  API
+    # tokens/passwords remain environment-only and are resolved by the worker.
+    payload: dict = Field(
+        default_factory=dict,
+        sa_column=Column(JSON, nullable=False, server_default="{}"),
+    )
+    idempotency_key: str = Field(index=True)
+    attempt_count: int = Field(default=0)
+    retry_count: int = Field(default=0)
+    max_attempts: int = Field(default=5)
+    available_at: datetime = Field(default_factory=utcnow, index=True)
+    leased_at: datetime | None = Field(default=None)
+    lease_expires_at: datetime | None = Field(default=None, index=True)
+    lease_token: str = ""
+    leased_by: str = ""
+    last_error: str = ""
+    created_at: datetime = Field(default_factory=utcnow)
+    started_at: datetime | None = Field(default=None)
+    completed_at: datetime | None = Field(default=None)
 
 
 class AuditEvent(SQLModel, table=True):
@@ -1194,7 +1321,7 @@ class MISPSettings(SQLModel, table=True):
 
 
 class WebhookSettings(SQLModel, table=True):
-    """Generic report-publication webhook config, admin-editable (single row, id=1).
+    """Report-publication webhook config, admin-editable (single row, id=1).
 
     On publish, Iceberg POSTs report **metadata only** to ``url`` as a background
     task (see ``services/dissemination.send_webhook_notification``). Holds only
@@ -1209,4 +1336,7 @@ class WebhookSettings(SQLModel, table=True):
     url: str = ""
     # Bounds the POST so a stuck endpoint can't hang the background task.
     timeout: float = 5.0
+    # ``generic`` is deliberately the default so existing integrations retain
+    # their exact JSON envelope. Slack and Teams are metadata-only adapters.
+    format: str = Field(default="generic", max_length=16)
     updated_at: datetime = Field(default_factory=utcnow)

@@ -13,6 +13,7 @@ from ..auth.dependencies import CurrentUser
 from ..models import AuditAction, AuditCategory, AuditSeverity
 from ..services import audit
 from ..services import feeds as feeds_service
+from ..services import jobs
 from ..templating import templates
 from .common import SessionDep, _redirect, _require_admin, router
 
@@ -64,11 +65,14 @@ def admin_feeds_fetch(
     user: CurrentUser,
     background_tasks: BackgroundTasks,
 ):
-    """Fetch all enabled feeds now (so an admin can verify without waiting for
-    the poll interval). Declared before ``/admin/feeds/{feed_id}`` so the literal
-    path wins over the int path-param."""
+    """Queue an immediate durable RSS poll.
+
+    Declared before ``/admin/feeds/{feed_id}`` so the literal path wins over the
+    int path-param.  The best-effort worker kick happens only after the audit
+    transaction commits; a standalone worker recovers the row on restart.
+    """
     _require_admin(user)
-    count = feeds_service.fetch_all_enabled_once(session)
+    job = jobs.enqueue_rss_poll(session, scheduled=False)
     audit.record_and_emit(
         session,
         background_tasks=background_tasks,
@@ -76,8 +80,9 @@ def admin_feeds_fetch(
         category=AuditCategory.ADMIN,
         actor=user,
         request=request,
-        detail={"new_items": count},
+        detail={"outbox_job_id": job.id},
     )
+    jobs.schedule_worker(background_tasks)
     return _redirect("/admin/feeds")
 
 

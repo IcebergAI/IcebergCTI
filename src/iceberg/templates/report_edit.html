@@ -24,7 +24,7 @@
   <script type="application/json" id="report-editor-data">
     {{ {'body': report.body_md, 'kj': report.key_judgements, 'ka': report.key_assumptions,
         'gaps': report.intelligence_gaps, 'previewHtml': preview_html,
-        'warnings': preview_warnings, 'reportId': report.id} | tojson }}
+        'warnings': preview_warnings, 'reportId': report.id, 'canEdit': can_edit} | tojson }}
   </script>
 
   <!-- ===== command header ===== -->
@@ -195,19 +195,52 @@
 
     <!-- docked panel -->
     <aside class="editor-pane dock">
-      <div class="dock-tabs">
-        <button type="button" class="dock-tab" :class="tab==='cite' ? 'is-active' : ''" @click="tab='cite'">Citations</button>
-        <button type="button" class="dock-tab" :class="tab==='tags' ? 'is-active' : ''" @click="tab='tags'">Tags</button>
-        <button type="button" class="dock-tab" :class="tab==='req' ? 'is-active' : ''" @click="tab='req'">Reqs</button>
-        {% if user.role == 'ADMIN' %}
-          <button type="button" class="dock-tab" :class="tab==='audience' ? 'is-active' : ''" @click="tab='audience'">Audience</button>
+      <div class="dock-tabs" role="tablist" aria-label="Report editor tools">
+        <button type="button" class="dock-tab" id="editor-tab-cite" data-editor-tab="cite"
+                role="tab" aria-controls="editor-panel-cite"
+                :aria-selected="tab === 'cite' ? 'true' : 'false'" :tabindex="tab === 'cite' ? '0' : '-1'"
+                :class="tab==='cite' ? 'is-active' : ''" @click="selectTab('cite')"
+                @keydown.arrow-right.prevent="moveTab(1)" @keydown.arrow-left.prevent="moveTab(-1)"
+                @keydown.home.prevent="firstTab()" @keydown.end.prevent="lastTab()">Citations</button>
+        <button type="button" class="dock-tab" id="editor-tab-tags" data-editor-tab="tags"
+                role="tab" aria-controls="editor-panel-tags"
+                :aria-selected="tab === 'tags' ? 'true' : 'false'" :tabindex="tab === 'tags' ? '0' : '-1'"
+                :class="tab==='tags' ? 'is-active' : ''" @click="selectTab('tags')"
+                @keydown.arrow-right.prevent="moveTab(1)" @keydown.arrow-left.prevent="moveTab(-1)"
+                @keydown.home.prevent="firstTab()" @keydown.end.prevent="lastTab()">Tags</button>
+        {% if can_edit %}
+          <button type="button" class="dock-tab" id="editor-tab-ai" data-editor-tab="ai"
+                  role="tab" aria-controls="editor-panel-ai"
+                  :aria-selected="tab === 'ai' ? 'true' : 'false'" :tabindex="tab === 'ai' ? '0' : '-1'"
+                  :class="tab==='ai' ? 'is-active' : ''" @click="selectTab('ai')"
+                  @keydown.arrow-right.prevent="moveTab(1)" @keydown.arrow-left.prevent="moveTab(-1)"
+                  @keydown.home.prevent="firstTab()" @keydown.end.prevent="lastTab()">AI review</button>
         {% endif %}
-        <button type="button" class="dock-tab" :class="tab==='render' ? 'is-active' : ''" @click="tab='render'">Render</button>
+        <button type="button" class="dock-tab" id="editor-tab-req" data-editor-tab="req"
+                role="tab" aria-controls="editor-panel-req"
+                :aria-selected="tab === 'req' ? 'true' : 'false'" :tabindex="tab === 'req' ? '0' : '-1'"
+                :class="tab==='req' ? 'is-active' : ''" @click="selectTab('req')"
+                @keydown.arrow-right.prevent="moveTab(1)" @keydown.arrow-left.prevent="moveTab(-1)"
+                @keydown.home.prevent="firstTab()" @keydown.end.prevent="lastTab()">Reqs</button>
+        {% if user.role == 'ADMIN' %}
+          <button type="button" class="dock-tab" id="editor-tab-audience" data-editor-tab="audience"
+                  role="tab" aria-controls="editor-panel-audience"
+                  :aria-selected="tab === 'audience' ? 'true' : 'false'" :tabindex="tab === 'audience' ? '0' : '-1'"
+                  :class="tab==='audience' ? 'is-active' : ''" @click="selectTab('audience')"
+                  @keydown.arrow-right.prevent="moveTab(1)" @keydown.arrow-left.prevent="moveTab(-1)"
+                  @keydown.home.prevent="firstTab()" @keydown.end.prevent="lastTab()">Audience</button>
+        {% endif %}
+        <button type="button" class="dock-tab" id="editor-tab-render" data-editor-tab="render"
+                role="tab" aria-controls="editor-panel-render"
+                :aria-selected="tab === 'render' ? 'true' : 'false'" :tabindex="tab === 'render' ? '0' : '-1'"
+                :class="tab==='render' ? 'is-active' : ''" @click="selectTab('render')"
+                @keydown.arrow-right.prevent="moveTab(1)" @keydown.arrow-left.prevent="moveTab(-1)"
+                @keydown.home.prevent="firstTab()" @keydown.end.prevent="lastTab()">Render</button>
       </div>
       <div class="dock-body">
 
         <!-- Citations: sources + attachments -->
-        <div x-show="tab==='cite'">
+        <div id="editor-panel-cite" role="tabpanel" aria-labelledby="editor-tab-cite" tabindex="0" x-show="tab==='cite'">
           <h2 class="section-title mb-1">Cited sources</h2>
           <p class="text-xs mb-3" style="color:var(--muted);">Sources drawn from this notebook to back the assessment.</p>
           {% if sources %}
@@ -287,7 +320,8 @@
         </div>
 
         <!-- Tags -->
-        <div x-show="tab==='tags'" x-cloak>
+        <div id="editor-panel-tags" role="tabpanel" aria-labelledby="editor-tab-tags" tabindex="0"
+             x-show="tab==='tags'" x-cloak>
           {% if all_tags %}
             <script type="application/json" id="taxonomy-data">
             [{% for t in all_tags %}{"id": {{ t.id }}, "kind": {{ t.kind.value | tojson }}, "label": {{ t.label | tojson }}, "ext": {{ (t.external_id or '') | tojson }}, "desc": {{ (t.description or '') | tojson }}, "active": {{ t.active | tojson }}}{{ ',' if not loop.last }}{% endfor %}]
@@ -295,19 +329,21 @@
           {% endif %}
           <div x-data="tagPicker({
                  selectedIds: {{ linked_tag_ids | list | tojson }},
-                 canTag: {{ 'true' if can_tag else 'false' }}
-               })">
+                 canTag: {{ 'true' if can_tag else 'false' }},
+                 idPrefix: 'tag-picker-{{ report.id }}'
+               })" @iceberg-ai-tags.window="applySuggestedTags($event.detail.ids)">
             <div class="head-row mb-1">
-              <h2 class="section-title">Tags</h2>
+              <h2 id="tag-picker-heading-{{ report.id }}" class="section-title">Tags</h2>
               <span class="tag-summary" x-text="summaryText"></span>
             </div>
-            <p class="text-xs mb-3" style="color:var(--muted);">Classify this product against the controlled taxonomy. Editable after publication.</p>
+            <p id="tag-picker-help-{{ report.id }}" class="text-xs mb-3" style="color:var(--muted);">Classify this product against the controlled taxonomy. Editable after publication.</p>
             {% if updated == 'tags' %}<div class="inline-notice mb-3"><span class="dot"></span> Tags updated.</div>{% endif %}
             <div x-show="justSaved" x-cloak class="inline-notice mb-3"><span class="dot"></span> Tags updated.</div>
+            <span class="sr-only" aria-live="polite" x-text="announcement"></span>
 
             {% if all_tags %}
               <form method="post" action="/reports/{{ report.id }}/tags" @submit="justSaved = true">
-                <div class="tagpick" @click.outside="open = false">
+                <div class="tagpick" @click.outside="close()">
                   <div class="tagpick-control" :class="open ? 'is-focused' : (canTag ? '' : 'is-disabled')" @click="focusInput()">
                     <template x-for="t in selected" :key="t.id">
                       <span class="tagk" :class="kindClass[t.kind] + (t.active ? '' : ' is-retired')">
@@ -320,38 +356,46 @@
                       </span>
                     </template>
                     <template x-if="canTag">
-                      <input x-ref="input" class="tagpick-input" type="text"
+                      <input x-ref="input" :id="inputId" class="tagpick-input" type="text"
+                             role="combobox" aria-autocomplete="list" aria-haspopup="listbox"
+                             :aria-expanded="open ? 'true' : 'false'" :aria-controls="listboxId"
+                             :aria-activedescendant="activeDescendant" aria-labelledby="tag-picker-heading-{{ report.id }}"
+                             aria-describedby="tag-picker-help-{{ report.id }}" autocomplete="off"
                              :placeholder="selected.length ? 'Add a tag…' : 'Search the taxonomy…'"
                              x-model="q"
-                             @focus="open = true" @click.stop="open = true"
+                             @focus="openMenu()" @click.stop="openMenu()"
                              @keydown.arrow-down.prevent="move(1)" @keydown.arrow-up.prevent="move(-1)"
-                             @keydown.enter.prevent="enter()" @keydown.escape="open = false" @keydown.backspace="backspace()">
+                             @keydown.enter.prevent="enter()" @keydown.escape.prevent.stop="dismiss()"
+                             @keydown.backspace="backspace()">
                     </template>
                     <template x-if="!canTag && !selected.length"><span class="tagpick-hint">No tags · your role can’t classify products</span></template>
                   </div>
 
-                  <div class="tagpick-menu" x-show="open" x-cloak>
+                  <div class="tagpick-menu" :id="listboxId" role="listbox"
+                       aria-label="Taxonomy terms" x-show="open" x-cloak>
                     <template x-if="groups.length === 0">
-                      <div class="tagpick-empty empty">No taxonomy terms match “<span x-text="q"></span>”.</div>
+                      <div class="tagpick-empty empty" role="status">No taxonomy terms match “<span x-text="q"></span>”.</div>
                     </template>
                     <template x-for="g in groups" :key="g.kind">
-                      <div class="tagpick-group">
-                        <div class="tagpick-group-label">
+                      <div class="tagpick-group" role="group" :aria-labelledby="groupId(g.kind)">
+                        <div class="tagpick-group-label" :id="groupId(g.kind)">
                           <span class="kindtab" :class="kindClass[g.kind]" x-text="g.kind"></span>
                           <span class="gl-count" x-text="g.items.length"></span>
                         </div>
                         <template x-for="t in g.items" :key="t.id">
-                          <div class="tagpick-opt" :class="kindClass[t.kind] + (activeId === t.id ? ' is-active' : '')"
-                               @mouseenter="activeId = t.id" @click="toggle(t.id)">
-                            <div class="tagpick-opt-main">
+                          <button type="button" class="tagpick-opt" role="option" tabindex="-1"
+                                  :id="optionId(t.id)" :aria-selected="activeId === t.id ? 'true' : 'false'"
+                                  :class="kindClass[t.kind] + (activeId === t.id ? ' is-active' : '')"
+                                  @mouseenter="activeId = t.id" @click="toggle(t.id)">
+                            <span class="tagpick-opt-main">
                               <span class="tagpick-opt-label">
                                 <template x-if="t.ext"><span class="ext" x-text="t.ext"></span></template>
                                 <span x-text="t.label"></span>
                               </span>
                               <template x-if="t.desc"><span class="tagpick-opt-meta" x-text="t.desc"></span></template>
-                            </div>
+                            </span>
                             <span class="tagpick-opt-cue" x-text="activeId === t.id ? 'Add ↵' : 'add'"></span>
-                          </div>
+                          </button>
                         </template>
                       </div>
                     </template>
@@ -377,8 +421,86 @@
           </div>
         </div>
 
+        {% if can_edit %}
+        <!-- AI review: advisory suggestions stay local until an analyst applies them. -->
+        <div id="editor-panel-ai" role="tabpanel" aria-labelledby="editor-tab-ai" tabindex="0"
+             x-show="tab==='ai'" x-cloak>
+          <h2 class="section-title mb-1">AI review</h2>
+          <p class="text-xs mb-3" style="color:var(--muted);">Request an advisory second look. Nothing changes until you edit and explicitly apply a suggestion.</p>
+
+          <div class="ai-review-actions" aria-label="Request AI suggestions">
+            <button type="button" class="btn btn--ghost" :disabled="aiLoading || aiApplying"
+                    @click="requestAi('judgements')">
+              <span x-text="aiLoading === 'judgements' ? 'Reviewing…' : 'Draft judgements'"></span>
+            </button>
+            <button type="button" class="btn btn--ghost" :disabled="aiLoading || aiApplying"
+                    @click="requestAi('tags')">
+              <span x-text="aiLoading === 'tags' ? 'Reviewing…' : 'Suggest tags'"></span>
+            </button>
+            <button type="button" class="btn btn--ghost" :disabled="aiLoading || aiApplying"
+                    @click="requestAi('challenge')">
+              <span x-text="aiLoading === 'challenge' ? 'Reviewing…' : 'Challenge analysis'"></span>
+            </button>
+          </div>
+
+          <div x-show="aiStatus" x-cloak class="inline-notice ai-review-status mt-3" role="status" aria-live="polite"
+               :class="aiStatusKind === 'warn' ? 'inline-notice--warn' : ''" x-text="aiStatus"></div>
+
+          <section x-show="aiJudgements" x-cloak class="ai-review-card mt-4" aria-labelledby="ai-judgements-heading">
+            <div class="head-row mb-1">
+              <h3 id="ai-judgements-heading" class="section-title">Proposed judgements</h3>
+              <button type="button" class="btn-link" @click="discardAi('judgements')">Discard</button>
+            </div>
+            <p class="text-xs mb-3" style="color:var(--muted);">Edit these drafts before applying them to the report. Applying uses the ordinary report save, then records AI provenance for changed fields.</p>
+            <div class="ai-review-fields">
+              <label class="field-wrap"><span class="field-label">Key judgements</span>
+                <textarea rows="5" class="field field-mono ai-review-textarea" x-model="aiJudgements.key_judgements"></textarea>
+              </label>
+              <label class="field-wrap"><span class="field-label">Key assumptions</span>
+                <textarea rows="4" class="field field-mono ai-review-textarea" x-model="aiJudgements.key_assumptions"></textarea>
+              </label>
+              <label class="field-wrap"><span class="field-label">Intelligence gaps</span>
+                <textarea rows="4" class="field field-mono ai-review-textarea" x-model="aiJudgements.intelligence_gaps"></textarea>
+              </label>
+            </div>
+            <button type="button" class="btn btn--primary mt-3" :disabled="aiApplying"
+                    @click="applyAiJudgements()">
+              <span x-text="aiApplying ? 'Saving…' : 'Apply to report & save'"></span>
+            </button>
+          </section>
+
+          <section x-show="aiTagIds.length" x-cloak class="ai-review-card mt-4" aria-labelledby="ai-tags-heading">
+            <div class="head-row mb-1">
+              <h3 id="ai-tags-heading" class="section-title">Suggested taxonomy terms</h3>
+              <button type="button" class="btn-link" @click="discardAi('tags')">Discard</button>
+            </div>
+            <p class="text-xs mb-3" style="color:var(--muted);">Review the controlled terms, then add them to the tag picker. They are not persisted until you use Save tags.</p>
+            <ul class="ai-review-tags" aria-label="Suggested tags">
+              <template x-for="id in aiTagIds" :key="id"><li x-text="tagLabel(id)"></li></template>
+            </ul>
+            <button type="button" class="btn btn--primary mt-3" @click="applyAiTags()">Add to tag picker</button>
+          </section>
+
+          <section x-show="aiChallenge" x-cloak class="ai-review-card mt-4" aria-labelledby="ai-challenge-heading">
+            <div class="head-row mb-1">
+              <h3 id="ai-challenge-heading" class="section-title">Analytic challenge notes</h3>
+              <button type="button" class="btn-link" @click="discardAi('challenge')">Discard</button>
+            </div>
+            <p class="text-xs mb-3" style="color:var(--muted);">Use this as a challenge prompt, or edit it and explicitly add it to Intelligence gaps.</p>
+            <label class="field-wrap"><span class="field-label">Challenge notes</span>
+              <textarea rows="7" class="field field-mono ai-review-textarea" x-model="aiChallenge"></textarea>
+            </label>
+            <button type="button" class="btn btn--primary mt-3" :disabled="aiApplying"
+                    @click="applyAiChallenge()">
+              <span x-text="aiApplying ? 'Saving…' : 'Add to intelligence gaps & save'"></span>
+            </button>
+          </section>
+        </div>
+        {% endif %}
+
         <!-- Requirements -->
-        <div x-show="tab==='req'" x-cloak>
+        <div id="editor-panel-req" role="tabpanel" aria-labelledby="editor-tab-req" tabindex="0"
+             x-show="tab==='req'" x-cloak>
           <h2 class="section-title mb-1">Requirements satisfied</h2>
           <p class="text-xs mb-3" style="color:var(--muted);">Establishes traceability back to stakeholder needs.</p>
           {% if updated == 'requirements' %}<div class="inline-notice mb-3">Requirement links updated.</div>{% endif %}
@@ -406,7 +528,8 @@
 
         {% if user.role == 'ADMIN' %}
         <!-- Audience -->
-        <div x-show="tab==='audience'" x-cloak>
+        <div id="editor-panel-audience" role="tabpanel" aria-labelledby="editor-tab-audience" tabindex="0"
+             x-show="tab==='audience'" x-cloak>
           <h2 class="section-title mb-1">Need-to-know audience</h2>
           <p class="text-xs mb-3" style="color:var(--muted);">Restrict this published product to selected stakeholder groups. No groups means all authenticated stakeholders can browse it.</p>
           {% if updated == 'audience' %}<div class="inline-notice mb-3">Audience updated.</div>{% endif %}
@@ -434,7 +557,8 @@
         {% endif %}
 
         <!-- Render -->
-        <div x-show="tab==='render'" x-cloak>
+        <div id="editor-panel-render" role="tabpanel" aria-labelledby="editor-tab-render" tabindex="0"
+             x-show="tab==='render'" x-cloak>
           <h2 class="section-title mb-1">Rendered products</h2>
           <p class="text-xs mb-3" style="color:var(--muted);">Typeset PDF artefacts via Typst.</p>
           {% if can_edit or user.role != 'STAKEHOLDER' %}

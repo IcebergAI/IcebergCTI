@@ -10,8 +10,23 @@ from sqlmodel import Session
 
 from ..config import get_settings
 from ..models import WebhookSettings, utcnow
+from .singleton import get_or_create
 
-_SINGLETON_ID = 1
+
+DEFAULT_WEBHOOK_FORMAT = "generic"
+WEBHOOK_FORMATS = (DEFAULT_WEBHOOK_FORMAT, "slack", "teams")
+
+
+def normalise_format(value: str | None) -> str:
+    """Return a safe, supported payload format.
+
+    The database can contain a value written by an older/manual deployment, so
+    delivery must fail closed to the stable generic contract rather than emit an
+    accidental channel-specific shape. The admin form validates choices before
+    calling this helper.
+    """
+    candidate = (value or "").strip().lower()
+    return candidate if candidate in WEBHOOK_FORMATS else DEFAULT_WEBHOOK_FORMAT
 
 
 def get(session: Session) -> WebhookSettings:
@@ -20,19 +35,16 @@ def get(session: Session) -> WebhookSettings:
     For backwards compatibility with env-only deployments, ``enabled`` seeds to
     true when ``ICEBERG_WEBHOOK_URL`` is set — so a deployment that only ever set
     the env var keeps firing the webhook after the row is introduced."""
-    row = session.get(WebhookSettings, _SINGLETON_ID)
-    if row is None:
+    def defaults() -> dict:
         cfg = get_settings()
-        row = WebhookSettings(
-            id=_SINGLETON_ID,
-            enabled=bool(cfg.webhook_url),
-            url=cfg.webhook_url,
-            timeout=cfg.webhook_timeout,
-        )
-        session.add(row)
-        session.commit()
-        session.refresh(row)
-    return row
+        return {
+            "enabled": bool(cfg.webhook_url),
+            "url": cfg.webhook_url,
+            "timeout": cfg.webhook_timeout,
+            "format": normalise_format(cfg.webhook_format),
+        }
+
+    return get_or_create(session, WebhookSettings, defaults)
 
 
 def update(session: Session, **fields) -> WebhookSettings:
@@ -40,6 +52,8 @@ def update(session: Session, **fields) -> WebhookSettings:
     row = get(session)
     for key, value in fields.items():
         if value is not None and hasattr(row, key):
+            if key == "format":
+                value = normalise_format(value)
             setattr(row, key, value)
     row.updated_at = utcnow()
     session.add(row)

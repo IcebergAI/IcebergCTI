@@ -45,57 +45,297 @@ function readJSON(id) {
 document.addEventListener('alpine:init', () => {
   /* ---- App shell: ⌘K command palette (base.html) ------------------------- */
   Alpine.data('appShell', (jumpItems) => ({
-    cmdOpen: false, cmdQ: '', cmdItems: jumpItems || [], cmdActive: 0,
+    cmdOpen: false, cmdQ: '', cmdItems: jumpItems || [], cmdActive: 0, cmdOpener: null,
     get cmdResults() {
       const q = this.cmdQ.trim().toLowerCase();
-      const m = q ? this.cmdItems.filter(i => i.label.toLowerCase().includes(q) || i.group.toLowerCase().includes(q)) : this.cmdItems;
-      if (this.cmdActive >= m.length) this.cmdActive = Math.max(0, m.length - 1);
-      return m;
+      return q
+        ? this.cmdItems.filter(i => i.label.toLowerCase().includes(q) || i.group.toLowerCase().includes(q))
+        : this.cmdItems;
     },
-    openCmd() { this.cmdOpen = true; this.cmdQ = ''; this.cmdActive = 0; this.$nextTick(() => this.$refs.cmdInput?.focus()); },
-    cmdGo() { const r = this.cmdResults[this.cmdActive]; if (r) window.location.href = r.href; },
-    cmdMove(d) { const n = this.cmdResults.length; if (n) this.cmdActive = (this.cmdActive + d + n) % n; },
+    get cmdActiveDescendant() {
+      const results = this.cmdResults;
+      return this.cmdOpen && results.length
+        ? this.cmdOptionId(Math.min(this.cmdActive, results.length - 1))
+        : '';
+    },
+    cmdOptionId(index) { return `cmdk-option-${index}`; },
+    openCmd(opener) {
+      if (this.cmdOpen) return;
+      this.cmdOpener = opener instanceof HTMLElement ? opener : document.activeElement;
+      this.cmdOpen = true;
+      this.cmdQ = '';
+      this.cmdActive = 0;
+      this.$nextTick(() => this.$refs.cmdInput?.focus());
+    },
+    closeCmd() {
+      if (!this.cmdOpen) return;
+      const opener = this.cmdOpener;
+      this.cmdOpen = false;
+      this.cmdQ = '';
+      this.cmdActive = 0;
+      this.$nextTick(() => {
+        if (opener?.isConnected && typeof opener.focus === 'function') opener.focus({ preventScroll: true });
+      });
+    },
+    cmdReset() { this.cmdActive = 0; },
+    cmdGo(index = this.cmdActive) {
+      const result = this.cmdResults[index];
+      if (result) window.location.assign(result.href);
+    },
+    cmdMove(delta) {
+      const count = this.cmdResults.length;
+      if (!count) return;
+      this.cmdActive = (this.cmdActive + delta + count) % count;
+      this.$nextTick(() => document.getElementById(this.cmdOptionId(this.cmdActive))?.scrollIntoView({ block: 'nearest' }));
+    },
+    trapCmdFocus(event) {
+      if (!this.cmdOpen) return;
+      const dialog = this.$refs.cmdDialog;
+      if (!dialog) return;
+      const focusable = [...dialog.querySelectorAll('button, [href], input, select, textarea, [tabindex]')]
+        .filter(el => !el.disabled && el.tabIndex >= 0 && el.offsetParent !== null);
+      if (!focusable.length) {
+        event.preventDefault();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    },
   }));
 
   /* ---- Report editor (report_edit.html) ---------------------------------- */
   Alpine.data('reportEditor', (dataId) => ({
-    ...readJSON(dataId),  // body, kj, ka, gaps, previewHtml, warnings, reportId
+    ...readJSON(dataId),  // body, kj, ka, gaps, previewHtml, warnings, reportId, canEdit
     tab: 'cite', insertOpen: false, justSaved: false,
-    dirty: false, saving: false, timer: null, saveTimer: null,
+    tabOrder: [], dirty: false, saving: false, timer: null, saveTimer: null,
+    aiLoading: '', aiApplying: false, aiStatus: '', aiStatusKind: '',
+    aiJudgements: null, aiTagIds: [], aiChallenge: '',
+
+    init() {
+      this.tabOrder = [...this.$el.querySelectorAll('[data-editor-tab]')]
+        .map(el => el.dataset.editorTab);
+    },
+    selectTab(id, focus = false) {
+      if (this.tabOrder.length && !this.tabOrder.includes(id)) return;
+      this.tab = id;
+      if (focus) this.$nextTick(() => this.$el.querySelector(`[data-editor-tab="${id}"]`)?.focus());
+    },
+    moveTab(delta) {
+      if (!this.tabOrder.length) return;
+      const current = Math.max(0, this.tabOrder.indexOf(this.tab));
+      const next = (current + delta + this.tabOrder.length) % this.tabOrder.length;
+      this.selectTab(this.tabOrder[next], true);
+    },
+    firstTab() { if (this.tabOrder.length) this.selectTab(this.tabOrder[0], true); },
+    lastTab() { if (this.tabOrder.length) this.selectTab(this.tabOrder[this.tabOrder.length - 1], true); },
+
     markDirty() { this.dirty = true; this.scheduleSave(); },
     schedule() { this.dirty = true; clearTimeout(this.timer); this.timer = setTimeout(() => this.refresh(), 350); this.scheduleSave(); },
     scheduleSave() { clearTimeout(this.saveTimer); this.saveTimer = setTimeout(() => this.autosave(), 1200); },
-    async autosave() {
+    async saveNow() {
       const form = document.getElementById('reportform');
-      if (!form) return;
+      if (!form) return false;
       this.saving = true;
       try {
         const res = await fetch(form.action, { method: 'POST', body: new FormData(form), headers: { 'X-Requested-With': 'fetch' } });
         this.dirty = !res.ok;
-      } catch { /* leave dirty; manual Save remains available */ }
-      this.saving = false;
+        return res.ok;
+      } catch {
+        this.dirty = true;
+        return false; // Leave the manual save path available.
+      } finally { this.saving = false; }
     },
+    async autosave() { await this.saveNow(); },
     async refresh() {
-      const res = await fetch('/api/preview/product', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          report_id: this.reportId,
-          body_md: this.body,
-          key_judgements: this.kj,
-          key_assumptions: this.ka,
-          intelligence_gaps: this.gaps,
-        }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        this.previewHtml = data.html;
-        this.warnings = data.warnings || [];
-      }
+      try {
+        const res = await fetch('/api/preview/product', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            report_id: this.reportId,
+            body_md: this.body,
+            key_judgements: this.kj,
+            key_assumptions: this.ka,
+            intelligence_gaps: this.gaps,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          this.previewHtml = data.html;
+          this.warnings = data.warnings || [];
+        }
+      } catch { /* Preview is a non-blocking authoring aid. */ }
     },
     // The CSP build prohibits x-html; render the (server-sanitised) preview HTML
     // through a ref in native JS instead, re-run reactively by x-effect.
     renderPreview() { if (this.$refs.preview) this.$refs.preview.innerHTML = this.previewHtml; },
+
+    // ---- Report-level AI review ------------------------------------------
+    // All suggestion state remains in this component until an analyst explicitly
+    // applies it. Applying uses the ordinary report save endpoint first, and only
+    // then stamps the accepted fields through the existing provenance endpoint.
+    setAiStatus(message = '', kind = '') { this.aiStatus = message; this.aiStatusKind = kind; },
+    suggestionText(value) {
+      if (Array.isArray(value)) return value.map(item => this.suggestionText(item)).filter(Boolean).join('\n');
+      if (value && typeof value === 'object') return JSON.stringify(value, null, 2);
+      return value == null ? '' : String(value);
+    },
+    suggestionField(suggestion, names) {
+      for (const name of names) {
+        if (Object.hasOwn(suggestion || {}, name)) {
+          return this.suggestionText(suggestion[name]);
+        }
+      }
+      return '';
+    },
+    taxonomyTags() {
+      const tags = readJSON('taxonomy-data');
+      return Array.isArray(tags) ? tags : [];
+    },
+    tagLabel(id) {
+      const tag = this.taxonomyTags().find(item => item.id === id);
+      return tag ? `${tag.kind} · ${tag.ext ? `${tag.ext} · ` : ''}${tag.label}` : `Tag #${id}`;
+    },
+    async requestAi(task) {
+      if (this.aiLoading || this.aiApplying) return;
+      this.aiLoading = task;
+      this.setAiStatus();
+      clearTimeout(this.saveTimer);
+      // AI endpoints operate on the persisted report. Preserve the editor's
+      // existing autosave contract before asking for a second look.
+      if (this.dirty && !(await this.saveNow())) {
+        this.setAiStatus('Save the draft before requesting AI assistance.', 'warn');
+        this.aiLoading = '';
+        return;
+      }
+      const endpoints = {
+        judgements: '/api/ai/judgements',
+        tags: '/api/ai/suggest-tags',
+        challenge: '/api/ai/challenge',
+      };
+      try {
+        const response = await fetch(endpoints[task], {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'fetch' },
+          body: JSON.stringify({ report_id: this.reportId }),
+        });
+        let data = {};
+        try { data = await response.json(); } catch { /* Report a useful fail-soft message below. */ }
+        if (!response.ok || !data.available) {
+          this.setAiStatus(data.message || 'AI assistance is unavailable. Editing remains available.', 'warn');
+          return;
+        }
+        const suggestion = data.suggestion || {};
+        if (task === 'judgements') {
+          const draft = {
+            key_judgements: this.suggestionField(suggestion, ['key_judgements', 'judgements']),
+            key_assumptions: this.suggestionField(suggestion, ['key_assumptions', 'assumptions']),
+            intelligence_gaps: this.suggestionField(suggestion, ['intelligence_gaps', 'gaps']),
+          };
+          if (!Object.values(draft).some(Boolean) && Object.keys(suggestion).length) {
+            draft.key_judgements = this.suggestionText(suggestion);
+          }
+          this.aiJudgements = draft;
+          this.setAiStatus('Draft judgements are ready to review.', 'ok');
+        } else if (task === 'tags') {
+          const known = this.taxonomyTags();
+          const ids = Array.isArray(suggestion.tag_ids) ? suggestion.tag_ids : [];
+          this.aiTagIds = [...new Set(ids.map(Number))]
+            .filter(id => known.some(tag => tag.id === id && tag.active));
+          this.setAiStatus(
+            this.aiTagIds.length ? 'Suggested taxonomy terms are ready to review.' : 'No active taxonomy terms were suggested.',
+            this.aiTagIds.length ? 'ok' : 'warn',
+          );
+        } else {
+          this.aiChallenge = this.suggestionField(suggestion, ['challenge_notes', 'challenges', 'challenge', 'notes'])
+            || this.suggestionText(suggestion);
+          this.setAiStatus(this.aiChallenge ? 'Challenge notes are ready to review.' : 'No challenge notes were suggested.', this.aiChallenge ? 'ok' : 'warn');
+        }
+      } catch {
+        this.setAiStatus('AI request failed. Editing remains available.', 'warn');
+      } finally { this.aiLoading = ''; }
+    },
+    discardAi(task) {
+      if (task === 'judgements') this.aiJudgements = null;
+      else if (task === 'tags') this.aiTagIds = [];
+      else this.aiChallenge = '';
+      this.setAiStatus('Suggestion discarded.', 'ok');
+    },
+    async applyAiReportFields(fields) {
+      if (this.aiApplying || !fields.length) return false;
+      this.aiApplying = true;
+      clearTimeout(this.timer);
+      clearTimeout(this.saveTimer);
+      this.dirty = true;
+      await this.refresh();
+      if (!(await this.saveNow())) {
+        this.setAiStatus('Suggestion is in the editor, but the report could not be saved. Try Save draft before accepting it.', 'warn');
+        this.aiApplying = false;
+        return false;
+      }
+      try {
+        const response = await fetch('/api/ai/accept-provenance', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'fetch' },
+          body: JSON.stringify({ resource_type: 'report', resource_id: this.reportId, fields }),
+        });
+        if (!response.ok) {
+          this.setAiStatus('The report was saved, but AI provenance could not be recorded.', 'warn');
+          return false;
+        }
+        this.setAiStatus('Suggestion applied and AI provenance recorded.', 'ok');
+        return true;
+      } catch {
+        this.setAiStatus('The report was saved, but AI provenance could not be recorded.', 'warn');
+        return false;
+      } finally { this.aiApplying = false; }
+    },
+    async applyAiJudgements() {
+      const draft = this.aiJudgements || {};
+      const fieldMap = [
+        ['key_judgements', 'kj'],
+        ['key_assumptions', 'ka'],
+        ['intelligence_gaps', 'gaps'],
+      ];
+      const accepted = [];
+      for (const [source, target] of fieldMap) {
+        const value = this.suggestionText(draft[source]);
+        if (value.trim()) {
+          this[target] = value;
+          accepted.push(source);
+        }
+      }
+      if (!accepted.length) {
+        this.setAiStatus('Add at least one proposed field before applying it.', 'warn');
+        return;
+      }
+      if (await this.applyAiReportFields(accepted)) this.aiJudgements = null;
+    },
+    applyAiTags() {
+      if (!this.aiTagIds.length) return;
+      window.dispatchEvent(new CustomEvent('iceberg-ai-tags', { detail: { ids: [...this.aiTagIds] } }));
+      this.aiTagIds = [];
+      this.selectTab('tags');
+      this.setAiStatus('Suggested terms were added to the tag picker. Review them and use Save tags to persist.', 'ok');
+    },
+    async applyAiChallenge() {
+      const note = this.aiChallenge.trim();
+      if (!note) {
+        this.setAiStatus('Add challenge notes before applying them.', 'warn');
+        return;
+      }
+      const existing = (this.gaps || '').trim();
+      this.gaps = `${existing}${existing ? '\n\n' : ''}### Analytic challenge\n\n${note}`;
+      if (await this.applyAiReportFields(['intelligence_gaps'])) this.aiChallenge = '';
+    },
+
     // Insert an embed token at the cursor and notify x-model (dispatch 'input')
     // so the live preview refreshes; then close the Insert menu.
     insertToken(token) {
@@ -333,7 +573,8 @@ document.addEventListener('alpine:init', () => {
     selectedIds: Array.isArray(cfg.selectedIds) ? [...cfg.selectedIds] : [],
     initialIds: Array.isArray(cfg.selectedIds) ? [...cfg.selectedIds] : [],
     canTag: cfg.canTag !== false,
-    q: '', open: false, activeId: null, justSaved: false,
+    idPrefix: cfg.idPrefix || 'tag-picker',
+    q: '', open: false, activeId: null, justSaved: false, announcement: '',
     kindClass: KIND_CLASS,
 
     byId(id) { return this.all.find(t => t.id === id); },
@@ -366,18 +607,74 @@ document.addEventListener('alpine:init', () => {
       return KIND_ORDER.filter(k => g[k]).map(k => ({ kind: k, items: g[k] }));
     },
     get flat() { return this.groups.flatMap(g => g.items); },
+    get inputId() { return `${this.idPrefix}-input`; },
+    get listboxId() { return `${this.idPrefix}-listbox`; },
+    get activeDescendant() {
+      return this.open && this.activeId != null ? this.optionId(this.activeId) : '';
+    },
 
-    focusInput() { if (this.canTag) { this.open = true; this.$refs.input?.focus(); } },
+    optionId(id) { return `${this.idPrefix}-option-${id}`; },
+    groupId(kind) { return `${this.idPrefix}-group-${kind.toLowerCase()}`; },
+    focusInput() {
+      if (!this.canTag) return;
+      this.openMenu();
+      this.$refs.input?.focus();
+    },
+    openMenu() {
+      if (!this.canTag) return;
+      this.open = true;
+      this.ensureActive();
+    },
+    close() { this.open = false; this.activeId = null; },
+    dismiss() {
+      this.close();
+      this.announcement = 'Tag suggestions dismissed.';
+      this.$refs.input?.focus();
+    },
     ensureActive() { const f = this.flat; if (!f.some(t => t.id === this.activeId)) this.activeId = f.length ? f[0].id : null; },
-    move(d) { this.open = true; const f = this.flat; if (!f.length) { this.activeId = null; return; } let i = f.findIndex(t => t.id === this.activeId); i = (i + d + f.length) % f.length; this.activeId = f[i].id; },
+    move(d) {
+      this.openMenu();
+      const f = this.flat;
+      if (!f.length) { this.activeId = null; return; }
+      let i = f.findIndex(t => t.id === this.activeId);
+      i = (i + d + f.length) % f.length;
+      this.activeId = f[i].id;
+      this.$nextTick(() => document.getElementById(this.optionId(this.activeId))?.scrollIntoView({ block: 'nearest' }));
+    },
     enter() { if (this.activeId != null) this.toggle(this.activeId); },
     toggle(id) {
-      this.selectedIds = this.isSelected(id) ? this.selectedIds.filter(x => x !== id) : [...this.selectedIds, id];
+      const tag = this.byId(id);
+      const selected = this.isSelected(id);
+      this.selectedIds = selected ? this.selectedIds.filter(x => x !== id) : [...this.selectedIds, id];
+      this.announcement = `${tag?.label || 'Tag'} ${selected ? 'removed' : 'added'}.`;
       this.q = ''; this.$nextTick(() => { this.ensureActive(); this.$refs.input?.focus(); });
     },
-    remove(id) { this.selectedIds = this.selectedIds.filter(x => x !== id); },
-    backspace() { if (this.q === '' && this.selectedIds.length) this.selectedIds = this.selectedIds.slice(0, -1); },
-    init() { this.$watch('q', () => { this.open = true; this.ensureActive(); }); this.ensureActive(); },
+    remove(id) {
+      const tag = this.byId(id);
+      this.selectedIds = this.selectedIds.filter(x => x !== id);
+      this.announcement = `${tag?.label || 'Tag'} removed.`;
+    },
+    backspace() {
+      if (this.q !== '' || !this.selectedIds.length) return;
+      this.remove(this.selectedIds[this.selectedIds.length - 1]);
+    },
+    applySuggestedTags(ids) {
+      if (!this.canTag || !Array.isArray(ids)) return;
+      const offerable = new Set(this.all.filter(tag => tag.active).map(tag => tag.id));
+      const additions = [...new Set(ids.map(Number))].filter(id => offerable.has(id) && !this.isSelected(id));
+      if (!additions.length) {
+        this.announcement = 'No new suggested tags to add.';
+        return;
+      }
+      this.selectedIds = [...this.selectedIds, ...additions];
+      this.announcement = `${additions.length} suggested tag${additions.length === 1 ? '' : 's'} added. Review and save tags to persist.`;
+      this.close();
+      this.$nextTick(() => this.$refs.input?.focus());
+    },
+    init() {
+      this.$watch('q', () => { if (this.canTag) this.openMenu(); });
+      this.ensureActive();
+    },
   }));
 
   /* ---- Admin: add-a-term live chip preview (admin_tags.html) -------------- */

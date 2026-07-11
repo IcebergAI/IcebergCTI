@@ -12,7 +12,7 @@ from ..config import get_settings
 from ..db import get_session
 from ..models import AuditAction, AuditCategory, AuditOutcome, Role
 from ..services import audit
-from ..services.users import upsert_user
+from ..services.users import OIDCIdentityError, upsert_user
 from ..templating import templates
 from .dependencies import COOKIE_NAME
 from .request_actor import resolve_request_actor
@@ -137,17 +137,50 @@ async def entra_callback(
         )
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "OIDC email claim is required")
 
-    user = upsert_user(
-        session,
-        sub=claims.get("sub"),
-        email=email,
-        display_name=claims.get("name") or claims.get("email", "User"),
-        role=_role_from_claims(claims),
-        department=claims.get(settings.oidc_department_claim, ""),
-        job_title=claims.get(settings.oidc_title_claim, ""),
-        company_name=claims.get(settings.oidc_company_claim, ""),
-        office_location=claims.get(settings.oidc_office_claim, ""),
-    )
+    issuer = claims.get("iss")
+    subject = claims.get("sub")
+    if not isinstance(issuer, str) or not issuer.strip() or not isinstance(subject, str) or not subject.strip():
+        audit.record_and_emit(
+            session,
+            background_tasks=background_tasks,
+            action=AuditAction.AUTH_LOGIN,
+            category=AuditCategory.AUTHENTICATION,
+            outcome=AuditOutcome.FAILURE,
+            request=request,
+            detail={"method": "oidc", "error": "missing_identity_claim"},
+        )
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED, "OIDC issuer and subject claims are required"
+        )
+
+    try:
+        user = upsert_user(
+            session,
+            issuer=issuer,
+            sub=subject,
+            email=email,
+            display_name=claims.get("name") or claims.get("email", "User"),
+            role=_role_from_claims(claims),
+            department=claims.get(settings.oidc_department_claim, ""),
+            job_title=claims.get(settings.oidc_title_claim, ""),
+            company_name=claims.get(settings.oidc_company_claim, ""),
+            office_location=claims.get(settings.oidc_office_claim, ""),
+        )
+    except OIDCIdentityError as exc:
+        audit.record_and_emit(
+            session,
+            background_tasks=background_tasks,
+            action=AuditAction.AUTH_LOGIN,
+            category=AuditCategory.AUTHENTICATION,
+            outcome=AuditOutcome.FAILURE,
+            request=request,
+            detail={"method": "oidc", "error": exc.reason},
+        )
+        # Do not reveal whether the collision is an account, email address, or
+        # subject already present in the local directory.
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED, "OIDC identity cannot be provisioned"
+        ) from exc
     app_token = create_access_token(
         user_id=user.id,
         email=user.email,
@@ -189,9 +222,23 @@ def dev_login(
     except ValueError:
         role_enum = Role.ANALYST
 
-    user = upsert_user(
-        session, sub=None, email=email, display_name=name, role=role_enum
-    )
+    try:
+        user = upsert_user(
+            session, sub=None, email=email, display_name=name, role=role_enum
+        )
+    except OIDCIdentityError as exc:
+        audit.record_and_emit(
+            session,
+            background_tasks=background_tasks,
+            action=AuditAction.AUTH_LOGIN,
+            category=AuditCategory.AUTHENTICATION,
+            outcome=AuditOutcome.FAILURE,
+            request=request,
+            detail={"method": "dev", "error": exc.reason},
+        )
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "Email is bound to an external identity"
+        ) from exc
     app_token = create_access_token(
         user_id=user.id,
         email=user.email,
