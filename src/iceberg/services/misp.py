@@ -184,7 +184,7 @@ def _reserve_push(session: Session, report_id: int) -> tuple[ReportMispEvent, st
         .where(
             ReportMispEvent.id == record.id,
             or_(
-                ReportMispEvent.push_token == "",
+                ReportMispEvent.push_token == "",  # nosec B105 -- lease sentinel
                 ReportMispEvent.push_started_at < cutoff,
             ),
         )
@@ -296,7 +296,7 @@ def push_report(
         record.last_status = "error"
         record.error = str(exc)[:500]
     record.updated_at = utcnow()
-    record.push_token = ""
+    record.push_token = ""  # nosec B105 -- clear the non-secret lease token
     record.push_started_at = None
     session.add(record)
     try:
