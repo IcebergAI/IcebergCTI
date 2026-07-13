@@ -16,9 +16,13 @@ concurrency:
 # Third-party actions are pinned to a commit SHA (supply-chain hardening); the
 # trailing comment tracks the human-readable version so Dependabot can bump both.
 jobs:
+  # Static checks and the asset-integrity tests live in this job rather than
+  # their own: they share the same uv env, and as separate jobs their ~25s of
+  # work each billed a full rounded-up minute plus a duplicate checkout+sync.
   test:
-    name: Tests + coverage
+    name: Tests + coverage + static + assets
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
@@ -35,10 +39,43 @@ jobs:
       - run: uv sync --locked --extra dev
       - name: Run tests with coverage
         run: uv run pytest --cov=iceberg --cov-report=term-missing  # fail_under enforced from pyproject
+      - name: Ruff (lint)
+        run: uv run ruff check .
+      - name: Bandit (security)
+        run: uv run bandit -r src/iceberg
+      - name: Vulture (dead code)
+        run: uv run vulture
+      - name: djLint (templates)
+        run: uv run djlint src/iceberg/templates --lint
+      # Biome installs as a standalone binary (no Node toolchain) and lints the
+      # hand-authored CSS + Alpine component JS.
+      - uses: biomejs/setup-biome@4c91541eaada48f67d7dbd7833600ce162b68f51 # v2.7.1
+        with:
+          version: 2.5.0
+      - name: Biome (frontend css/js lint)
+        run: biome lint src/iceberg/static
+      # Fails on a known CVE in any locked dependency. Audits the full env minus
+      # the editable install; pin an unfixable advisory out with
+      # `--ignore-vuln GHSA-...`.
+      - name: pip-audit (dependency CVEs)
+        run: uv run pip-audit --skip-editable
+      # Verify the committed first-party assets offline: templates must use the
+      # vendored files, and every asset must match its recorded SRI hash. We do
+      # not rebuild Tailwind in CI because the standalone binary output can alter
+      # the committed visual bundle even when the version pin has not changed.
+      - name: Verify committed frontend assets
+        run: uv run pytest -q tests/test_frontend_assets.py
+      - name: Assert asset verification left files untouched
+        run: git diff --exit-code -- src/iceberg/static
 
+  # The Postgres and Docker smokes run on push to main + manual dispatch only:
+  # per-PR they doubled the bill re-testing what the merge push re-validates
+  # anyway. A skipped job still satisfies any future required-check config.
   postgres-smoke:
     name: PostgreSQL smoke (migrate + search + queries)
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     services:
       postgres:
         image: postgres:17
@@ -78,67 +115,11 @@ jobs:
       - name: Postgres smoke tests
         run: uv run pytest tests/test_postgres_smoke.py tests/test_dissemination.py tests/test_related.py -n0 -p no:cacheprovider
 
-  static:
-    name: Lint + security + dead code + audit + frontend
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
-        with:
-          python-version: "3.14"
-          cache: pip
-          cache-dependency-path: uv.lock
-      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v6.9.0
-        with:
-          version: "0.11.23"
-      - run: uv sync --locked --extra dev
-      - name: Ruff (lint)
-        run: uv run ruff check .
-      - name: Bandit (security)
-        run: uv run bandit -r src/iceberg
-      - name: Vulture (dead code)
-        run: uv run vulture
-      - name: djLint (templates)
-        run: uv run djlint src/iceberg/templates --lint
-      # Biome installs as a standalone binary (no Node toolchain) and lints the
-      # hand-authored CSS + Alpine component JS.
-      - uses: biomejs/setup-biome@4c91541eaada48f67d7dbd7833600ce162b68f51 # v2.7.1
-        with:
-          version: 2.5.0
-      - name: Biome (frontend css/js lint)
-        run: biome lint src/iceberg/static
-      # Fails on a known CVE in any locked dependency. Audits the full env minus
-      # the editable install; pin an unfixable advisory out with
-      # `--ignore-vuln GHSA-...`.
-      - name: pip-audit (dependency CVEs)
-        run: uv run pip-audit --skip-editable
-
-  assets:
-    name: Frontend asset integrity (self-hosted Tailwind/Alpine/fonts)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
-        with:
-          python-version: "3.14"
-          cache: pip
-          cache-dependency-path: uv.lock
-      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v6.9.0
-        with:
-          version: "0.11.23"
-      - run: uv sync --locked --extra dev
-      # Verify the committed first-party assets offline: templates must use the
-      # vendored files, and every asset must match its recorded SRI hash. We do
-      # not rebuild Tailwind in CI because the standalone binary output can alter
-      # the committed visual bundle even when the version pin has not changed.
-      - name: Verify committed frontend assets
-        run: uv run pytest -q tests/test_frontend_assets.py
-      - name: Assert asset verification left files untouched
-        run: git diff --exit-code -- src/iceberg/static
-
   docker:
     name: Docker image build + boot smoke
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     services:
       # PostgreSQL is the supported container datastore (the prod image refuses to
       # boot on SQLite), so the boot smoke runs against a real Postgres.
