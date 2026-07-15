@@ -218,3 +218,15 @@ Rate limiting is enabled automatically when `ICEBERG_ENVIRONMENT=prod`. Point
 `ICEBERG_RATE_LIMIT_REDIS_URL` at a managed Redis instance so auth, AI, render,
 outbound-test/push, and search buckets are shared across the container's uvicorn
 workers. If the URL carries credentials, keep it in `iceberg-secrets`.
+
+## Durable jobs (email / webhook / RSS)
+
+Outbound work — dissemination emails, publication webhooks and RSS polls — is
+written to a durable database outbox in the same transaction as the state that
+caused it, and normally delivered by an in-process pass right after commit. If
+the pod restarts before that pass runs, the rows wait in the queue. For
+guaranteed delivery, schedule **`iceberg-worker`** (one bounded pass per run —
+made for a `CronJob` using the same image, ConfigMap and Secret as the app) to
+sweep anything left behind, and use `iceberg-worker --inspect` to review job
+state. Jobs lease with expiry and retry with backoff, so several workers (or the
+app plus a CronJob) can safely share the queue.
