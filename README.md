@@ -101,7 +101,9 @@ trigger an on-demand fetch.*
 stages **indicators of compromise** as notebook entities (manual entry, or **AI-suggested** from a
 source's text when the governed AI backend is enabled — see *Governed AI assist*), cites a subset
 into a report's **Indicators appendix** (web view + PDF), and a
-writer **pushes the cited indicators to MISP as one event** from the report. The push is idempotent
+writer **pushes the cited indicators to MISP as one event** from the report. The push is
+lifecycle-gated (only **approved or published** reports can egress; a published report pushes from
+its frozen publication snapshot), idempotent
 (re-push updates the same event), failure-isolated, proxy-aware, and authenticated with an
 **env-only** API key (`ICEBERG_MISP_API_KEY`). Admins configure the connection at `/admin/misp`.
 Sources and IOCs carry their own **TLP** marking (manual sources default to AMBER, RSS-ingested
@@ -151,6 +153,12 @@ tagged with it).*
   (`script-src 'self'`, no `unsafe-inline`/`unsafe-eval`), HSTS (prod), `X-Frame-Options`,
   `Referrer-Policy`, `Permissions-Policy`, etc. The portal carries **no inline JavaScript**:
   Alpine runs from its **CSP build** with all components registered in `static/js/tags.js`
+- **Rate limiting** on abuse-prone routes (auth, AI assist, PDF renders, outbound tests/pushes,
+  search) — token-bucket per user/IP, in-memory or **Redis**-backed for multi-worker deployments,
+  on by default in production
+- **Durable job outbox** for external work — dissemination emails, publication webhooks and RSS
+  polls are queued in the database (same transaction as the state that caused them) and delivered
+  by an in-process pass or the `iceberg-worker` command, surviving process restarts
 
 ## Quick start
 ```bash
@@ -186,7 +194,9 @@ a browsable look at what the other roles do, and a glossary of the intelligence 
    stamped on the masthead; phrase event likelihood in prose using the editor's
    **probability yardstick**.
 5. **Submit for review**, then sign in again as a `REVIEWER` to **Approve** and
-   **Publish**.
+   **Publish**. Publishing atomically freezes an **immutable snapshot** of the finished
+   product (the web view, PDF input and MISP payload all serve from it), so later edits
+   or deletions in the notebook can never rewrite a published report.
 6. **Render** a PDF and download it: **FULL** (judgements + body + caveats +
    appendix) or **EXEC_BRIEF / ONE_PAGER** (Key-Judgements-only briefs).
 
@@ -244,7 +254,11 @@ a browsable look at what the other roles do, and a glossary of the intelligence 
 2. As an `ANALYST`/`REVIEWER`, author and **publish** a report at that level (TLP AMBER or below).
 3. Back as the stakeholder, your **Feed** shows the new report (with an unread badge on the
    dashboard); a notification email is recorded by the `console` backend (in-memory outbox).
-   Reports marked TLP:RED or AMBER+STRICT are withheld from broadcast.
+   Reports marked TLP:RED or AMBER+STRICT are withheld from broadcast. Feed entries are written
+   synchronously in the publish transaction; the email/webhook notifications are queued as
+   **durable jobs** in that same transaction and delivered right after commit (with
+   `iceberg-worker` as the retry path if the process dies first), so a crash never loses a
+   notification silently.
 4. Stakeholders can subscribe to taxonomy tags from **Preferences**; if they have any
    subscriptions, publish-time matching requires at least one shared report tag. A publication
    webhook (report metadata only) can be enabled/edited by an `ADMIN` at **Publication webhook**
@@ -280,6 +294,13 @@ articles at `/feeds` and send selected items into an existing or new notebook as
 `Source` rows. Feed URLs are admin-only, downloads are size/time bounded and
 failure-isolated, article HTML is sanitised, and promotion uses the existing
 source grading path.
+
+Writers can also stage structured external material straight into a notebook:
+`POST /api/notebooks/{id}/imports/taxii` pulls a public TAXII/STIX JSON URL
+(through the same bounded, SSRF-guarded fetcher) and files each STIX object as a
+reviewable source, and `POST /api/notebooks/{id}/imports/misp` pulls one event by
+UUID from the **configured** MISP instance, staging it as a source plus one IOC
+per attribute that maps into Iceberg's supported indicator types.
 
 ### Export and relate products
 Published reports can be exported as STIX 2.1 bundles with `GET /api/reports/{id}/stix`.
@@ -352,6 +373,11 @@ curl -G -H "Authorization: Bearer $ICEBERG_TOKEN" \
 4. Embed a report's *own* coverage matrix inline with the bare `[[attack]]` token (see
    *Embed the report's ATT&CK coverage matrix* above) so the heatmap appears in the finished
    product itself.
+5. Need more than the starter technique set? Import the **full MITRE Enterprise ATT&CK
+   catalogue** with `iceberg-import-attack --file enterprise-attack.json` (optionally
+   `--sha256 <pinned-hash>` to verify the reviewed bundle and `--update` to refresh existing
+   tags). The importer is deliberately file-only — obtain the STIX bundle through your normal
+   supply-chain process; the server never downloads it for you.
 
 ### Gauge program maturity & effectiveness
 1. Open **Maturity** (left rail, `/maturity`) — a writer-only, leadership-facing dashboard that
@@ -415,6 +441,7 @@ All settings use the `ICEBERG_` env prefix and can live in `.env` (see
 | `ICEBERG_EMAIL_BACKEND` + `ICEBERG_SMTP_*` | `console` (dev) or `smtp`; SMTP server settings |
 | `ICEBERG_WEBHOOK_URL` / `ICEBERG_WEBHOOK_TOKEN` / `ICEBERG_WEBHOOK_FORMAT` | Optional report-publication webhook (seeds the row; URL/enabled/timeout/format editable live at `/admin/webhook`). Generic JSON is the compatibility default; Slack/Teams envelopes are opt-in. Token is env-only |
 | `ICEBERG_PORTAL_BASE_URL` | Base URL used in notification email links |
+| `ICEBERG_JOBS_*` | Durable outbox tuning (lease seconds, max attempts, retry backoff base, worker poll interval) for email/webhook/RSS jobs processed by `iceberg-worker` |
 | `ICEBERG_RATE_LIMIT_ENABLED` / `ICEBERG_RATE_LIMIT_STORE` / `ICEBERG_RATE_LIMIT_REDIS_URL` | Abuse protection for auth, AI, render, outbound tests/pushes, and search; enabled by default in prod, Redis-backed for shared worker state |
 | `ICEBERG_RATE_LIMIT_*` | Per-surface rate-limit tunables (auth/dev-login, OIDC, AI, render, outbound actions, search) |
 | `ICEBERG_AI_BACKEND` + `ICEBERG_AI_*` | Governed AI assist backend (`none`/`openai-compatible`/`claude`/`bedrock`), model, key/`ICEBERG_AI_AWS_REGION`, TLP egress ceiling and timeout (off by default) |
@@ -537,6 +564,9 @@ alembic revision --autogenerate -m "add x"    # create a migration after changin
 alembic downgrade -1                          # roll back one revision
 iceberg-prune-renders                         # apply rendered-PDF retention immediately
 iceberg-rebuild-related                       # rebuild related-report vectors
+iceberg-worker                                # process durable email/webhook/RSS jobs (one pass; --forever / --inspect)
+iceberg-verify-files                          # check DB file references exist on disk (restore verification)
+iceberg-import-attack --file bundle.json      # import the full Enterprise ATT&CK technique set
 ```
 The baseline migration also owns the SQLite FTS5 search objects (the `report_fts` virtual
 table + sync triggers). A database created by an older `create_all` build has the right tables
@@ -577,7 +607,12 @@ The repo includes a production-oriented `Dockerfile`, `docker-compose.yml`, and 
 Kubernetes manifests under `deploy/k8s/`. Deployments run on **PostgreSQL** (SQLite is local
 dev/test only — the prod app refuses to boot on it). Production deployments should set
 `ICEBERG_AUTO_MIGRATE=false`, run `alembic upgrade head` as a separate job, use persistent
-volumes for `/data`, and provide a unique 32+ byte `ICEBERG_SECRET_KEY`.
+volumes for `/data`, and provide a unique 32+ byte `ICEBERG_SECRET_KEY`. Outbound work
+(dissemination emails, publication webhooks, RSS polls) lands in a durable database outbox and
+is normally delivered by an in-process pass right after commit; schedule **`iceberg-worker`**
+(a bounded single pass suitable for cron/a Kubernetes CronJob, or `--forever` under a process
+manager) to retry anything a crashed process left behind, and use `iceberg-worker --inspect`
+to review job state.
 
 ### Application layers
 A single FastAPI process serves both the JSON API and the server-rendered portal; the same
@@ -590,7 +625,7 @@ flowchart TB
 
   subgraph app["FastAPI app — single process (uvicorn --proxy-headers)"]
     direction TB
-    MW["Middleware (outer → inner)<br/>SecurityHeaders · Audit · CSRF · Session"]
+    MW["Middleware (outer → inner)<br/>SecurityHeaders · Audit · RateLimit · Session · CSRF"]
     Routers["Routers<br/>/api/* (JSON) · /* (Jinja portal) · /healthz /readyz"]
     Services["Services<br/>notebooks · reports · dissemination · search · audit/siem · misp · feeds · ai"]
     Render["Rendering<br/>markdown → HTML (nh3) · Typst → PDF · SVG diagrams"]
