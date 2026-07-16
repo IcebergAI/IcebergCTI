@@ -9,6 +9,8 @@ updates:
     groups:
       python-dev:
         dependency-type: development
+      python-prod:
+        dependency-type: production
     open-pull-requests-limit: 5
 
   # The SHA-pinned GitHub Actions in .github/workflows. Dependabot rewrites the
@@ -17,6 +19,10 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    groups:
+      actions:
+        patterns:
+          - "*"
     open-pull-requests-limit: 5
 
   # The Docker base image in the Dockerfile (digest-pinned FROM lines).
