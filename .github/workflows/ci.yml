@@ -27,24 +27,26 @@ jobs:
   # work each billed a full rounded-up minute plus a duplicate checkout+sync.
   test:
     name: Tests + coverage + static + assets
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    runs-on: ${{ vars.ICEBERG_BACKUP_RUNNER || 'ubuntu-latest' }}
+    # The backup LXC deliberately runs pytest serially to avoid an xdist/kernel
+    # deadlock, so allow the same suite more wall-clock time than hosted CI needs.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
-        with:
-          python-version: "3.14"
-          cache: pip
-          cache-dependency-path: uv.lock
-      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v6.9.0
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           version: "0.11.23"
+          python-version: "3.14"
+          enable-cache: ${{ vars.ICEBERG_BACKUP_RUNNER == '' }}
+          cache-dependency-glob: uv.lock
       # Lets tests/test_render.py exercise the real Typst PDF path instead of
       # skipping (it fetches the pinned cmarker package over the network once).
       - uses: typst-community/setup-typst@63ac138db421d586de61f7f5ac3bcef6a2e6c78c # v5.1.0
       - run: uv sync --locked --extra dev
       - name: Run tests with coverage
-        run: uv run pytest --cov=iceberg --cov-report=term-missing  # fail_under enforced from pyproject
+        # pytest-xdist workers can deadlock on the older Proxmox LXC kernel;
+        # keep hosted CI parallel while using the project's supported serial mode here.
+        run: uv run pytest ${{ vars.ICEBERG_BACKUP_RUNNER != '' && '-n0' || '' }} --cov=iceberg --cov-report=term-missing  # fail_under enforced from pyproject
       - name: Ruff (lint)
         run: uv run ruff check .
       - name: Bandit (security)
@@ -56,8 +58,13 @@ jobs:
       # Biome installs as a standalone binary (no Node toolchain) and lints the
       # hand-authored CSS + Alpine component JS.
       - uses: biomejs/setup-biome@4c91541eaada48f67d7dbd7833600ce162b68f51 # v2.7.1
+        if: runner.name != 'iceberg-actions-runner'
         with:
           version: 2.5.0
+      - name: Verify provisioned Biome
+        if: runner.name == 'iceberg-actions-runner'
+        run: |
+          test "$(biome --version)" = "Version: 2.5.0"
       - name: Biome (frontend css/js lint)
         run: biome lint src/iceberg/static
       # Fails on a known CVE in any locked dependency. Audits the full env minus
@@ -79,7 +86,7 @@ jobs:
   # anyway. A skipped job still satisfies any future required-check config.
   postgres-smoke:
     name: PostgreSQL smoke (migrate + search + queries)
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && vars.ICEBERG_BACKUP_RUNNER == ''
     runs-on: ubuntu-latest
     timeout-minutes: 10
     services:
@@ -105,14 +112,12 @@ jobs:
       ICEBERG_DATABASE_URL: "postgresql+psycopg://iceberg:iceberg@localhost:5432/iceberg"
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
-        with:
-          python-version: "3.14"
-          cache: pip
-          cache-dependency-path: uv.lock
-      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v6.9.0
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           version: "0.11.23"
+          python-version: "3.14"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
       - run: uv sync --locked --extra dev --extra postgres
       # A focused subset against Postgres: search (FTS tsvector relevance/facets/
       # access scoping), dissemination, related-product visibility, and serial
@@ -121,9 +126,52 @@ jobs:
       - name: Postgres smoke tests
         run: uv run pytest tests/test_postgres_smoke.py tests/test_dissemination.py tests/test_related.py -n0 -p no:cacheprovider
 
+  postgres-smoke-backup:
+    name: PostgreSQL and runtime smoke on backup runner
+    if: vars.ICEBERG_BACKUP_RUNNER != ''
+    runs-on: ${{ vars.ICEBERG_BACKUP_RUNNER }}
+    timeout-minutes: 15
+    env:
+      ICEBERG_DATABASE_URL: postgresql+psycopg://iceberg_ci:iceberg-ci-only@127.0.0.1:5432/icebergcti_ci
+      ICEBERG_SECRET_KEY: ci-secret-0123456789abcdef0123456789
+      ICEBERG_AUTO_MIGRATE: "false"
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Reset isolated PostgreSQL database
+        run: reset-iceberg-ci-db icebergcti_ci
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: "0.11.23"
+          python-version: "3.14"
+          enable-cache: false
+          cache-dependency-glob: uv.lock
+      - run: uv sync --locked --extra dev --extra postgres
+      - name: PostgreSQL smoke tests
+        run: uv run pytest tests/test_postgres_smoke.py tests/test_dissemination.py tests/test_related.py -n0 -p no:cacheprovider
+      - name: Direct-process runtime smoke
+        run: |
+          set -euo pipefail
+          uv run iceberg-migrate
+          uv run uvicorn iceberg.main:app --host 127.0.0.1 --port 8000 >runtime.log 2>&1 &
+          app_pid=$!
+          trap 'kill "$app_pid" 2>/dev/null || true; wait "$app_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8000/healthz >/dev/null; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              sed -n '1,200p' runtime.log
+              exit 1
+            fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:8000/readyz >/dev/null
+          curl --fail --silent http://127.0.0.1:8000/auth/login | grep --ignore-case iceberg >/dev/null
+          curl --fail --silent --output /dev/null http://127.0.0.1:8000/static/css/iceberg.css
+
   docker:
     name: Docker image build + boot smoke
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && vars.ICEBERG_BACKUP_RUNNER == ''
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
