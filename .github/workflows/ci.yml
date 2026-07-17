@@ -35,7 +35,7 @@ jobs:
         with:
           version: "0.11.23"
           python-version: "3.14"
-          enable-cache: true
+          enable-cache: ${{ vars.ICEBERG_BACKUP_RUNNER == '' }}
           cache-dependency-glob: uv.lock
       # Lets tests/test_render.py exercise the real Typst PDF path instead of
       # skipping (it fetches the pinned cmarker package over the network once).
@@ -134,7 +134,7 @@ jobs:
         with:
           version: "0.11.23"
           python-version: "3.14"
-          enable-cache: true
+          enable-cache: false
           cache-dependency-glob: uv.lock
       - run: uv sync --locked --extra dev --extra postgres
       - name: PostgreSQL smoke tests
