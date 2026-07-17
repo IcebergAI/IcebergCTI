@@ -31,14 +31,12 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
-        with:
-          python-version: "3.14"
-          cache: pip
-          cache-dependency-path: uv.lock
-      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v6.9.0
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           version: "0.11.23"
+          python-version: "3.14"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
       # Lets tests/test_render.py exercise the real Typst PDF path instead of
       # skipping (it fetches the pinned cmarker package over the network once).
       - uses: typst-community/setup-typst@63ac138db421d586de61f7f5ac3bcef6a2e6c78c # v5.1.0
@@ -105,14 +103,12 @@ jobs:
       ICEBERG_DATABASE_URL: "postgresql+psycopg://iceberg:iceberg@localhost:5432/iceberg"
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
-        with:
-          python-version: "3.14"
-          cache: pip
-          cache-dependency-path: uv.lock
-      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v6.9.0
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           version: "0.11.23"
+          python-version: "3.14"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
       - run: uv sync --locked --extra dev --extra postgres
       # A focused subset against Postgres: search (FTS tsvector relevance/facets/
       # access scoping), dissemination, related-product visibility, and serial
@@ -134,14 +130,12 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Reset isolated PostgreSQL database
         run: reset-iceberg-ci-db icebergcti_ci
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
-        with:
-          python-version: "3.14"
-          cache: pip
-          cache-dependency-path: uv.lock
-      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v6.9.0
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           version: "0.11.23"
+          python-version: "3.14"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
       - run: uv sync --locked --extra dev --extra postgres
       - name: PostgreSQL smoke tests
         run: uv run pytest tests/test_postgres_smoke.py tests/test_dissemination.py tests/test_related.py -n0 -p no:cacheprovider
