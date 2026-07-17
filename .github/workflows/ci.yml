@@ -58,8 +58,13 @@ jobs:
       # Biome installs as a standalone binary (no Node toolchain) and lints the
       # hand-authored CSS + Alpine component JS.
       - uses: biomejs/setup-biome@4c91541eaada48f67d7dbd7833600ce162b68f51 # v2.7.1
+        if: runner.name != 'iceberg-actions-runner'
         with:
           version: 2.5.0
+      - name: Verify provisioned Biome
+        if: runner.name == 'iceberg-actions-runner'
+        run: |
+          test "$(biome --version)" = "Version: 2.5.0"
       - name: Biome (frontend css/js lint)
         run: biome lint src/iceberg/static
       # Fails on a known CVE in any locked dependency. Audits the full env minus
