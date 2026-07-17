@@ -42,7 +42,9 @@ jobs:
       - uses: typst-community/setup-typst@63ac138db421d586de61f7f5ac3bcef6a2e6c78c # v5.1.0
       - run: uv sync --locked --extra dev
       - name: Run tests with coverage
-        run: uv run pytest --cov=iceberg --cov-report=term-missing  # fail_under enforced from pyproject
+        # pytest-xdist workers can deadlock on the older Proxmox LXC kernel;
+        # keep hosted CI parallel while using the project's supported serial mode here.
+        run: uv run pytest ${{ vars.ICEBERG_BACKUP_RUNNER != '' && '-n0' || '' }} --cov=iceberg --cov-report=term-missing  # fail_under enforced from pyproject
       - name: Ruff (lint)
         run: uv run ruff check .
       - name: Bandit (security)
