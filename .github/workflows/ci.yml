@@ -132,7 +132,7 @@ jobs:
     runs-on: ${{ vars.ICEBERG_BACKUP_RUNNER }}
     timeout-minutes: 15
     env:
-      ICEBERG_DATABASE_URL: postgresql+psycopg://iceberg_ci:iceberg-ci-only@127.0.0.1:5432/icebergcti_ci
+      ICEBERG_DATABASE_URL: postgresql+psycopg://iceberg_ci:${{ secrets.ICEBERG_RUNNER_DB_PASSWORD }}@127.0.0.1:5432/icebergcti_ci
       ICEBERG_SECRET_KEY: ci-secret-0123456789abcdef0123456789
       ICEBERG_AUTO_MIGRATE: "false"
     steps:
