@@ -430,7 +430,8 @@ All settings use the `ICEBERG_` env prefix and can live in `.env` (see
 | `ICEBERG_DATABASE_URL` | Datastore URL — SQLite (`sqlite:///./iceberg.db`, default) or PostgreSQL (`postgresql+psycopg://user:pass@host:5432/iceberg`); see *Production datastore* |
 | `ICEBERG_LOG_LEVEL` / `ICEBERG_LOG_FORMAT` | App log level and format; `auto` uses text outside prod and JSON in prod |
 | `ICEBERG_DEV_AUTH` | Enable the dev-login bypass (auto-off when `ICEBERG_ENVIRONMENT=prod`) |
-| `ICEBERG_OIDC_ENABLED` + `ICEBERG_OIDC_*` | Microsoft Entra ID OIDC settings |
+| `ICEBERG_OIDC_ENABLED` + `ICEBERG_OIDC_*` | Entra OIDC settings — **seed** the Entra provider on the `OIDCSettings` row; edit all providers live at `/admin/oidc` |
+| `ICEBERG_OIDC_CLIENT_SECRET` / `ICEBERG_OIDC_AUTHENTIK_CLIENT_SECRET` / `ICEBERG_OIDC_AUTH0_CLIENT_SECRET` / `ICEBERG_OIDC_OKTA_CLIENT_SECRET` | **Secret** per-provider OIDC client secrets (env-only — never stored in the DB) |
 | `ICEBERG_OIDC_DEPARTMENT_CLAIM` / `ICEBERG_OIDC_TITLE_CLAIM` / `ICEBERG_OIDC_COMPANY_CLAIM` / `ICEBERG_OIDC_OFFICE_CLAIM` | Optional Entra profile claims persisted on users |
 | `ICEBERG_TYPST_BIN` / `ICEBERG_RENDER_OUTPUT_DIR` | Typst binary + PDF output dir |
 | `ICEBERG_RENDER_RETENTION_KEEP` / `ICEBERG_RENDER_RETENTION_DAYS` | Rendered-PDF retention policy; prune manually with `iceberg-prune-renders` |
@@ -534,15 +535,24 @@ credibility from the analyst's summary and pasted source content. If only the so
 credibility is marked `6` ("cannot be judged"). There is no outbound network fetch and no
 external LLM provider — analysts can always manually override, clear, or regrade a source.
 
-### Entra ID (OIDC)
-Set `ICEBERG_OIDC_ENABLED=true` and fill in `ICEBERG_OIDC_TENANT_ID`,
-`ICEBERG_OIDC_CLIENT_ID`, `ICEBERG_OIDC_CLIENT_SECRET` and
-`ICEBERG_OIDC_REDIRECT_URI`. Iceberg maps the app-role/group claim named by
-`ICEBERG_OIDC_ROLE_CLAIM` to a role (`ADMIN`/`ANALYST`/`REVIEWER`/`STAKEHOLDER`),
-defaulting unknown users to read-only `STAKEHOLDER`, and rejects callbacks with no
-email claim. Logout increments the user's token version, invalidating existing Iceberg JWTs.
-Optional department/title/company/office claims are persisted for audience grouping and
-stakeholder administration.
+### Single sign-on (multi-provider OIDC)
+Iceberg supports **Microsoft Entra, Authentik, Auth0 and Okta simultaneously**, configured at
+**`/admin/oidc`** (admin-only). Each provider's **client secret is env-only**
+(`ICEBERG_OIDC_<PROVIDER>_CLIENT_SECRET`); everything else (client id, locator, scopes, role
+claim + map) is edited on the page. Redirect URI is `<base>/auth/oidc/<provider>/callback`.
+
+**Back-compat (Entra).** An existing single-Entra deployment keeps working unchanged: the legacy
+`ICEBERG_OIDC_ENABLED` / `ICEBERG_OIDC_TENANT_ID` / `ICEBERG_OIDC_CLIENT_ID` /
+`ICEBERG_OIDC_CLIENT_SECRET` / `ICEBERG_OIDC_REDIRECT_URI` env values **seed** the Entra provider
+on first boot, and the legacy `/auth/entra/login` + `/auth/callback` paths still resolve. To add
+other providers, enable and fill them in at `/admin/oidc`.
+
+Each provider maps its group/role claim (per-provider `role_claim` + a `role_map` of
+`group=ROLE,…`) to a role (`ADMIN`/`ANALYST`/`REVIEWER`/`STAKEHOLDER`), defaulting unmapped users
+to read-only `STAKEHOLDER`. A callback with no email — **or an explicitly unverified email** — is
+rejected. Users are keyed on `(auth_provider, issuer, sub)`; the same email may exist under two
+providers, and a cross-provider identity collision is refused. Logout increments the user's token
+version, invalidating existing Iceberg JWTs.
 
 ## PDF rendering (Typst)
 Install the [`typst`](https://github.com/typst/typst) binary and ensure it's on

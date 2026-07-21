@@ -53,17 +53,38 @@ class Settings(BaseSettings):
     dev_user_name: str = "Dev Analyst"
     dev_user_role: str = "ANALYST"
 
-    # Microsoft Entra ID / OIDC
+    # OIDC. Multi-provider (Entra + Authentik + Auth0 + Okta), admin-configurable
+    # on the OIDCSettings DB row (edit at /admin/oidc; env seeds the row on first
+    # read). The Entra env fields below remain the back-compat seed for a single
+    # existing Entra deployment. ``oidc_enabled`` is the master switch; a provider
+    # additionally needs its own ``<provider>_enabled`` flag on the row.
     oidc_enabled: bool = False
     oidc_tenant_id: str = ""
     oidc_client_id: str = ""
-    oidc_client_secret: str = ""
+    oidc_client_secret: str = ""  # Entra client secret (env-only)
     oidc_redirect_uri: str = "http://localhost:8000/auth/callback"
     oidc_role_claim: str = "roles"
     oidc_department_claim: str = "department"
     oidc_title_claim: str = "jobTitle"
     oidc_company_claim: str = "companyName"
     oidc_office_claim: str = "officeLocation"
+    # Per-provider client secrets — env-only (like the Entra one above), never a
+    # DB column. ``ICEBERG_OIDC_<PROVIDER>_CLIENT_SECRET``.
+    oidc_authentik_client_secret: str = ""
+    oidc_auth0_client_secret: str = ""
+    oidc_okta_client_secret: str = ""
+    # Base URL the provider redirects back to; the per-provider callback path
+    # (/auth/oidc/<provider>/callback) is appended. Blank derives from portal_base_url.
+    oidc_redirect_base_url: str = ""
+
+    def oidc_client_secret_for(self, provider: str) -> str:
+        """The env-sourced client secret for a provider (never DB-persisted)."""
+        return {
+            "entra": self.oidc_client_secret,
+            "authentik": self.oidc_authentik_client_secret,
+            "auth0": self.oidc_auth0_client_secret,
+            "okta": self.oidc_okta_client_secret,
+        }.get(provider, "")
 
     # Typst rendering
     typst_bin: str = "typst"

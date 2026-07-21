@@ -17,9 +17,13 @@
     <div class="title-rule"></div>
 
     {% if oidc_enabled %}
-      <a href="/auth/entra/login" class="btn btn--ink w-full mt-6" style="padding:11px;">
-        Continue with Microsoft Entra ID
-      </a>
+      <div class="mt-6 space-y-3">
+        {% for provider in oidc_providers %}
+          <a href="/auth/oidc/{{ provider.name }}/login" class="btn btn--ink w-full" style="padding:11px;">
+            Continue with {{ provider.label }}
+          </a>
+        {% endfor %}
+      </div>
     {% endif %}
 
     {% if dev_login_enabled %}

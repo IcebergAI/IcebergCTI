@@ -6,7 +6,6 @@ import pytest
 from sqlmodel import Session, select
 
 from iceberg.auth import routes as auth_routes
-from iceberg.config import get_settings
 from iceberg.models import Attachment, AuditEvent, Role, User
 from iceberg.services.users import OIDCIdentityCollisionError, upsert_user
 
@@ -38,10 +37,11 @@ def _report(client, login, *, title: str, body: str = "") -> tuple[dict, dict]:
     return notebook, report
 
 
-def test_oidc_identity_uses_issuer_subject_and_never_email_fallback(engine):
+def test_oidc_identity_keyed_on_provider_issuer_subject(engine):
     with Session(engine) as session:
         first = upsert_user(
             session,
+            auth_provider="entra",
             issuer="https://issuer-a.example.test",
             sub="subject-a",
             email="shared@example.test",
@@ -52,12 +52,15 @@ def test_oidc_identity_uses_issuer_subject_and_never_email_fallback(engine):
         original_id = first.id
         original_token_version = first.token_version
 
+        # Cross-provider spoof: the SAME (issuer, sub) presented under a DIFFERENT
+        # provider must be refused, never adopting or mutating the original.
         with pytest.raises(OIDCIdentityCollisionError):
             upsert_user(
                 session,
+                auth_provider="authentik",
                 issuer="https://issuer-a.example.test",
-                sub="subject-b",
-                email="shared@example.test",
+                sub="subject-a",
+                email="attacker@example.test",
                 display_name="Attacker",
                 role=Role.ADMIN,
                 department="Mutated",
@@ -65,15 +68,14 @@ def test_oidc_identity_uses_issuer_subject_and_never_email_fallback(engine):
 
         session.refresh(first)
         assert first.id == original_id
-        assert first.issuer == "https://issuer-a.example.test"
-        assert first.sub == "subject-a"
         assert first.role == Role.ANALYST
         assert first.department == "Original department"
         assert first.token_version == original_token_version
 
-        # Same immutable identity can make an unclaimed email change.
+        # The same immutable identity can make an unclaimed email change.
         moved = upsert_user(
             session,
+            auth_provider="entra",
             issuer="https://issuer-a.example.test",
             sub="subject-a",
             email="moved@example.test",
@@ -82,63 +84,116 @@ def test_oidc_identity_uses_issuer_subject_and_never_email_fallback(engine):
         )
         assert moved.id == original_id and moved.email == "moved@example.test"
 
-        # A subject is only unique inside its issuer, not globally.
-        other_issuer = upsert_user(
+        # A different provider sharing the email is a distinct person (email is
+        # non-identifying under multi-provider), so it provisions a new account.
+        other = upsert_user(
             session,
-            issuer="https://issuer-b.example.test",
+            auth_provider="okta",
+            issuer="https://okta.example.test",
             sub="subject-a",
-            email="other@example.test",
-            display_name="Other issuer",
+            email="moved@example.test",
+            display_name="Other provider",
             role=Role.STAKEHOLDER,
         )
-        assert other_issuer.id != original_id
+        assert other.id != original_id
 
 
-def test_oidc_callback_rejects_email_collision_without_minting_a_token(
-    client, engine, monkeypatch
-):
+def test_oidc_login_never_shadows_an_unbound_local_account(engine):
+    """A JIT OIDC identity whose email belongs to an unbound dev/legacy row is
+    refused — an administrator must link that account explicitly first."""
     with Session(engine) as session:
-        original = upsert_user(
+        upsert_user(
             session,
-            issuer="https://issuer.example.test",
-            sub="subject-a",
-            email="shared@example.test",
-            display_name="Original",
+            sub=None,
+            email="legacy@example.test",
+            display_name="Legacy",
             role=Role.ANALYST,
-            department="Original department",
         )
-        original_id = original.id
+        with pytest.raises(OIDCIdentityCollisionError):
+            upsert_user(
+                session,
+                auth_provider="entra",
+                issuer="https://issuer.example.test",
+                sub="new-subject",
+                email="legacy@example.test",
+                display_name="OIDC",
+                role=Role.ADMIN,
+            )
 
-    class FakeEntra:
-        async def authorize_access_token(self, _request):
-            return {
-                "userinfo": {
-                    "iss": "https://issuer.example.test",
-                    "sub": "subject-b",
-                    "email": "shared@example.test",
-                    "name": "Collision principal",
-                    "roles": ["ADMIN"],
-                    "department": "Mutated department",
-                }
-            }
 
-    class FakeOAuth:
-        entra = FakeEntra()
+class _FakeOIDCClient:
+    def __init__(self, claims: dict):
+        self._claims = claims
 
-    monkeypatch.setattr(get_settings(), "oidc_enabled", True)
-    monkeypatch.setattr(auth_routes, "_get_oauth", lambda: FakeOAuth())
-    response = client.get("/auth/callback", follow_redirects=False)
-    assert response.status_code == 401
-    assert "set-cookie" not in response.headers
+    async def authorize_access_token(self, _request):
+        return {"userinfo": self._claims}
 
+
+class _FakeOAuth:
+    def __init__(self, claims: dict):
+        self._claims = claims
+
+    def create_client(self, _name: str):
+        return _FakeOIDCClient(self._claims)
+
+
+def _configure_authentik(session):
+    from iceberg.services import oidc_settings
+
+    oidc_settings.update(
+        session,
+        authentik_enabled=True,
+        authentik_client_id="cid",
+        authentik_base_url="https://authentik.example.test",
+        authentik_app_slug="iceberg",
+        authentik_role_claim="groups",
+        authentik_role_map="Iceberg Admins=ADMIN",
+    )
+
+
+def test_oidc_callback_maps_group_to_role_and_mints_token(client, engine, monkeypatch):
     with Session(engine) as session:
-        saved = session.get(User, original_id)
-        assert saved is not None
-        assert saved.sub == "subject-a"
-        assert saved.role == Role.ANALYST
-        assert saved.department == "Original department"
-        assert saved.token_version == 0
-        assert session.exec(select(User)).all() == [saved]
+        _configure_authentik(session)
+    claims = {
+        "iss": "https://authentik.example.test/application/o/iceberg/",
+        "sub": "ak-subject",
+        "email": "user@example.test",
+        "email_verified": True,
+        "name": "Directory User",
+        "groups": ["Iceberg Admins"],
+    }
+    monkeypatch.setattr(auth_routes, "_get_oauth", lambda session: _FakeOAuth(claims))
+    resp = client.get("/auth/oidc/authentik/callback", follow_redirects=False)
+    assert resp.status_code == 303
+    assert "set-cookie" in resp.headers
+    with Session(engine) as session:
+        user = session.exec(
+            select(User).where(User.auth_provider == "authentik")
+        ).first()
+        assert user is not None
+        assert user.role == Role.ADMIN  # mapped from the IdP group via role_map
+        assert user.sub == "ak-subject"
+
+
+def test_oidc_callback_denies_unverified_email(client, engine, monkeypatch):
+    with Session(engine) as session:
+        _configure_authentik(session)
+    claims = {
+        "iss": "https://authentik.example.test/application/o/iceberg/",
+        "sub": "ak-subject-2",
+        "email": "user2@example.test",
+        "email_verified": False,
+        "groups": ["Iceberg Admins"],
+    }
+    monkeypatch.setattr(auth_routes, "_get_oauth", lambda session: _FakeOAuth(claims))
+    resp = client.get("/auth/oidc/authentik/callback", follow_redirects=False)
+    assert resp.status_code == 401
+    assert "set-cookie" not in resp.headers
+    with Session(engine) as session:
+        assert (
+            session.exec(select(User).where(User.auth_provider == "authentik")).first()
+            is None
+        )
 
 
 def test_admin_must_explicitly_link_a_subjectless_legacy_account(client, login, engine):
