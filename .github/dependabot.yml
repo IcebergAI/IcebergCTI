@@ -14,6 +14,11 @@ updates:
       python-dependencies:
         patterns:
           - "*"
+    ignore:
+      # Pinned to 3.2.0 in pyproject: the 3.3.x wheels omit the bundled OASIS JSON
+      # schemas, which breaks STIX 2.1 validation (tests/test_stix_validation.py).
+      # Un-ignore when a complete release restores those assets.
+      - dependency-name: "stix2-validator"
     open-pull-requests-limit: 5
 
   # The SHA-pinned GitHub Actions in .github/workflows. Dependabot rewrites the
