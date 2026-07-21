@@ -50,6 +50,9 @@ def _enable_ai_capturing(monkeypatch):
         ai_max_tlp="AMBER",
     )
     monkeypatch.setattr(ai_service, "get_settings", lambda: enabled)
+    # Endpoints resolve the AI config from the AISettings DB row; point that at
+    # the enabled settings so the mocked backend is exercised (#246).
+    monkeypatch.setattr("iceberg.services.ai_settings.resolve", lambda session: enabled)
     return captured
 
 

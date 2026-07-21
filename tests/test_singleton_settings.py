@@ -7,8 +7,15 @@ import pytest
 from sqlalchemy import event
 from sqlmodel import SQLModel, Session, create_engine, select
 
-from iceberg.models import AuditSettings, MISPSettings, ProxySettings, WebhookSettings
+from iceberg.models import (
+    AISettings,
+    AuditSettings,
+    MISPSettings,
+    ProxySettings,
+    WebhookSettings,
+)
 from iceberg.services import (
+    ai_settings,
     audit_settings,
     misp_settings,
     proxy_settings,
@@ -23,6 +30,7 @@ from iceberg.services import (
         (ProxySettings, proxy_settings.get),
         (MISPSettings, misp_settings.get),
         (WebhookSettings, webhook_settings.get),
+        (AISettings, ai_settings.get),
     ],
 )
 def test_concurrent_first_reads_create_one_usable_singleton(tmp_path, model, reader):

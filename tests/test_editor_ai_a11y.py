@@ -51,15 +51,14 @@ def _enable_judgements(monkeypatch):
             }
 
     monkeypatch.setattr(ai_service.httpx, "post", lambda *args, **kwargs: Response())
-    monkeypatch.setattr(
-        ai_service,
-        "get_settings",
-        lambda: Settings(
-            ai_backend="openai-compatible",
-            ai_base_url="https://ai.example.test/v1",
-            ai_model="test-model",
-        ),
+    enabled = Settings(
+        ai_backend="openai-compatible",
+        ai_base_url="https://ai.example.test/v1",
+        ai_model="test-model",
     )
+    monkeypatch.setattr(ai_service, "get_settings", lambda: enabled)
+    # Endpoints resolve the AI config from the AISettings DB row (#246).
+    monkeypatch.setattr("iceberg.services.ai_settings.resolve", lambda session: enabled)
 
 
 def test_report_editor_exposes_advisory_ai_review_and_aria_controls(client, login):

@@ -7,7 +7,18 @@ from functools import lru_cache
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-_AI_BACKENDS = {"none", "openai-compatible", "claude", "bedrock"}
+# ``openai``/``gemini``/``ollama`` are first-class selectable providers that ride
+# the OpenAI-compatible path; ``openai-compatible`` stays the generic escape hatch
+# for a self-hosted gateway. Keep in sync with ``services/ai._BACKENDS``.
+_AI_BACKENDS = {
+    "none",
+    "openai-compatible",
+    "openai",
+    "ollama",
+    "gemini",
+    "claude",
+    "bedrock",
+}
 _LOG_FORMATS = {"auto", "text", "json"}
 _RATE_LIMIT_STORES = {"auto", "redis", "memory"}
 _ENVIRONMENTS = {"dev", "test", "prod"}
@@ -155,15 +166,22 @@ class Settings(BaseSettings):
 
     # Governed AI analyst assist. Off by default; every feature routes through
     # services/ai.py so advisory behavior, TLP egress and audit stay consistent.
-    ai_backend: str = "none"  # none | openai-compatible | claude | bedrock
+    # These env values SEED the admin-editable AISettings DB row on first read;
+    # the row is then the source of truth (edit at /admin/ai). See
+    # services/ai_settings.py.
+    ai_backend: str = "none"  # none|openai-compatible|openai|ollama|gemini|claude|bedrock
     ai_base_url: str = ""
-    ai_api_key: str = ""  # Bearer key for openai-compatible / claude (env-only)
+    ai_api_key: str = ""  # Bearer key for openai(-compatible)/gemini/claude (env-only)
     ai_model: str = ""
     ai_aws_region: str = ""  # bedrock only; auth is the standard AWS credential chain
     ai_timeout: float = 20.0
     ai_max_tlp: str = "AMBER"
     ai_embeddings_enabled: bool = False
     ai_embedding_model: str = ""
+    # Operator-approved Ollama base URL. The DB-editable AISettings.base_url for
+    # the ``ollama`` provider must match this exact value — so a DB edit can't
+    # redirect a real key to an attacker host (anti-SSRF; base-URL pinning).
+    ai_ollama_base_url: str = "http://localhost:11434/v1"
 
     # Inbound collection — RSS feed ingestion (FR #50). The poller is opt-in
     # (off by default, so tests/dev never reach out to the network); fetches are
