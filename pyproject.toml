@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=82.0.1"]
+requires = ["setuptools>=83.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -26,8 +26,8 @@ classifiers = [
 # silently pull an ancient (potentially vulnerable) release. The committed
 # uv.lock pins the tested transitive graph for CI and repeatable installs.
 dependencies = [
-    "fastapi>=0.139.0",
-    "uvicorn>=0.49",
+    "fastapi>=0.139.2",
+    "uvicorn>=0.51.0",
     "sqlmodel>=0.0.39",
     "jinja2>=3.1.6",
     "python-multipart>=0.0.32",
@@ -36,7 +36,7 @@ dependencies = [
     # it. Starlette TestClient has moved to the maintained httpx2 package; keep
     # both explicit until Authlib completes that transition.
     "httpx>=0.28.1",
-    "httpx2>=2.5.0",
+    "httpx2>=2.7.0",
     "pyjwt>=2.13",
     "pydantic-settings>=2.14.2",
     "redis>=6.4.0",
@@ -65,26 +65,26 @@ postgres = [
 # `bedrock` backend additionally needs the SDK's AWS auth deps. See CLAUDE.md
 # *Governed AI assist*.
 anthropic = [
-    "anthropic>=0.116.0",
+    "anthropic>=0.117.0",
 ]
 bedrock = [
-    "anthropic[bedrock]>=0.116.0",
+    "anthropic[bedrock]>=0.117.0",
 ]
 dev = [
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
     "pytest-xdist>=3.8.0",
-    "ruff>=0.15.20",
+    "ruff>=0.15.22",
     "bandit>=1.9.4",
     "vulture>=2.16",
     "pip-audit>=2.10.1",
     "pre-commit>=4.6.0",
-    "djlint>=1.40.1",
+    "djlint>=1.42.1",
     "mypy>=2.3.0",
     # 3.3.1's published wheel omits the bundled OASIS JSON schemas, making
     # schema validation silently unusable. Pin the last complete release until
     # its successor restores those assets.
-    "stix2-validator==3.2.0",
+    "stix2-validator==3.3.1",
 ]
 
 [project.scripts]
