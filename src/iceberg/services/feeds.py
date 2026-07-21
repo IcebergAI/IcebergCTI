@@ -25,7 +25,7 @@ import socket
 import ssl
 from collections.abc import Mapping
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from ipaddress import ip_address
 from urllib.parse import urljoin, urlsplit
 from urllib.request import getproxies, proxy_bypass
@@ -35,7 +35,7 @@ import httpcore
 import httpx
 import nh3
 from fastapi import HTTPException, status
-from sqlalchemy import text
+from sqlalchemy import delete, func, text
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
 
@@ -508,6 +508,27 @@ def fetch_all_enabled_once(session: Session) -> int:
             logger.info("RSS poll cycle skipped: another worker holds the lock")
             return 0
         return fetch_all_enabled(session)
+
+
+def prune_feed_items(session: Session) -> int:
+    """Delete un-ingested feed items older than ``ICEBERG_FEED_ITEM_RETENTION_DAYS``.
+
+    Only items never captured into a notebook are pruned — a captured item has
+    ``ingested_at`` set and already became a durable :class:`Source`, so the
+    reader inventory can be reclaimed without losing analyst value. A retention
+    window ``<= 0`` disables pruning (keep forever). Returns the rows deleted.
+    Intended for the ``iceberg-prune-audit`` CLI / a scheduled Job.
+    """
+    days = max(0, get_settings().feed_item_retention_days)
+    if not days:
+        return 0
+    cutoff = utcnow() - timedelta(days=days)
+    stale = (col(FeedItem.ingested_at).is_(None)) & (col(FeedItem.fetched_at) < cutoff)
+    count = session.scalar(select(func.count()).select_from(FeedItem).where(stale))
+    if count:
+        session.execute(delete(FeedItem).where(stale))
+        session.commit()
+    return count or 0
 
 
 class FeedPollError(RuntimeError):
