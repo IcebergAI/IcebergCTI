@@ -121,3 +121,70 @@ def test_admin_config_page_shows_status_not_secret(client, login, monkeypatch):
     page = client.get("/admin/config").text
     assert "TOP-SECRET-TOKEN" not in page
     assert "Effective configuration" in page
+
+
+def _ai_tile(snapshot: dict) -> dict:
+    return next(t for t in snapshot["tiles"] if t["label"] == "AI backend")
+
+
+def test_ai_tile_reports_the_resolved_backend_not_the_stored_one(engine, monkeypatch):
+    """A selected-but-invalid provider is the most misleading AI state there is:
+    ``ai_settings.resolve`` fail-closes it to "none", so assist is off while the
+    row still says "openai". The page must show what the runtime will use, or an
+    operator debugging "why is AI doing nothing?" is sent the wrong way."""
+    monkeypatch.setattr(get_settings(), "ai_api_key", "")  # openai needs a key
+    with Session(engine) as session:
+        ai_settings.update(session, backend="openai", model="gpt-5")
+        row = ai_settings.get(session)
+        assert ai_settings.validate_selection(row), "fixture must be invalid"
+        # The runtime really does disable it — this is the behaviour being mirrored.
+        assert ai_settings.resolve(session).ai_backend == "none"
+
+        snap = effective_config.snapshot(session)
+        tile = _ai_tile(snap)
+        assert tile["ok"] is False
+        assert tile["value"].startswith("none")
+        assert "openai" in tile["value"]
+        # …and the reason is spelled out, not just the red pill.
+        assert any(
+            "openai" in advisory and "fail-closed" in advisory
+            for advisory in snap["advisories"]
+        )
+
+
+def test_ai_tile_is_green_only_for_a_selection_that_actually_resolves(
+    engine, monkeypatch
+):
+    monkeypatch.setattr(get_settings(), "ai_api_key", "k" * 20)
+    with Session(engine) as session:
+        ai_settings.update(session, backend="openai", model="gpt-5")
+        assert not ai_settings.validate_selection(ai_settings.get(session))
+
+        snap = effective_config.snapshot(session)
+        assert _ai_tile(snap) == {"label": "AI backend", "value": "openai", "ok": True}
+        assert not [a for a in snap["advisories"] if "fail-closed" in a]
+
+
+def test_ai_tile_off_when_no_backend_is_selected(engine):
+    with Session(engine) as session:
+        tile = _ai_tile(effective_config.snapshot(session))
+        assert (tile["value"], tile["ok"]) == ("none", False)
+
+
+def test_secret_looking_settings_are_all_classified_as_secret():
+    """SECRET_FIELDS is a manual allowlist while the row set is built
+    automatically, so a future ``*_api_key`` would be rendered in full unless a
+    developer remembered to classify it. Catch that omission by name."""
+    suspicious = [
+        field
+        for field in Settings.model_fields
+        if field.endswith(("_key", "_secret", "_password", "_token"))
+        or "password" in field
+        or "secret" in field
+    ]
+    assert suspicious, "the heuristic matched nothing — it has stopped working"
+    unclassified = [f for f in suspicious if f not in effective_config.SECRET_FIELDS]
+    assert not unclassified, (
+        f"secret-looking settings are not in SECRET_FIELDS and would be rendered "
+        f"in full: {unclassified}"
+    )
