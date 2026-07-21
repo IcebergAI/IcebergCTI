@@ -49,7 +49,10 @@ UTC = timezone.utc
 
 
 def dt(days_ago: int, hour: int = 9, minute: int = 0) -> datetime:
-    base = datetime(2026, 6, 12, hour, minute, tzinfo=UTC)
+    # Anchor to "yesterday" so relative widgets (Published (30d), "last edited")
+    # look current whenever the screenshots are regenerated.
+    today = datetime.now(UTC)
+    base = datetime(today.year, today.month, today.day, hour, minute, tzinfo=UTC) - timedelta(days=1)
     return base - timedelta(days=days_ago)
 
 
