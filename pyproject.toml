@@ -80,6 +80,7 @@ dev = [
     "pip-audit>=2.10.1",
     "pre-commit>=4.6.0",
     "djlint>=1.40.1",
+    "mypy>=2.3.0",
     # 3.3.1's published wheel omits the bundled OASIS JSON schemas, making
     # schema validation silently unusable. Pin the last complete release until
     # its successor restores those assets.
@@ -153,6 +154,68 @@ ignore_decorators = [
     "@field_validator",
     "@property",
 ]
+
+[tool.mypy]
+# Type-checking at module boundaries. mypy checks the pure-logic / interface
+# modules (config, schemas, embeds, rendering, source_grading, tradecraft, attack,
+# proxy, …); the ORM-query-heavy modules are staged out below because SQLModel's
+# declarative column expressions (`.where`, `Model.col.desc()`, column `select()`)
+# produce overwhelming false positives that no maintained SQLModel-aware plugin
+# fixes. pydantic.mypy teaches mypy about BaseModel/Settings construction. Widen
+# real coverage by annotating a staged module and removing it from the list below.
+python_version = "3.14"
+files = ["src/iceberg"]
+plugins = ["pydantic.mypy"]
+ignore_missing_imports = true
+check_untyped_defs = true
+disallow_untyped_defs = false
+warn_return_any = false
+warn_unused_ignores = false
+# Auto-generated Alembic scripts — framework boilerplate, excluded like it is from
+# ruff/vulture/coverage.
+exclude = "(?x)(^|/)migrations/"
+
+# Modules staged for annotation: each still imports and runs, only its type errors
+# are suppressed for now. Burn this list down over time (annotate → remove entry).
+[[tool.mypy.overrides]]
+module = [
+    "iceberg.api.ai",
+    "iceberg.api.notebooks",
+    "iceberg.api.reports",
+    "iceberg.api.requirements",
+    "iceberg.api.tags",
+    "iceberg.auth.routes",
+    "iceberg.maintenance",
+    "iceberg.services.ach",
+    "iceberg.services.attachments",
+    "iceberg.services.diamond",
+    "iceberg.services.dissemination",
+    "iceberg.services.feedback",
+    "iceberg.services.feed",
+    "iceberg.services.figures",
+    "iceberg.services.inbound",
+    "iceberg.services.iocs",
+    "iceberg.services.jobs",
+    "iceberg.services.maturity",
+    "iceberg.services.misp",
+    "iceberg.services.product_html",
+    "iceberg.services.publication",
+    "iceberg.services.related",
+    "iceberg.services.reports",
+    "iceberg.services.search",
+    "iceberg.services.singleton",
+    "iceberg.services.tags",
+    "iceberg.services.taxii",
+    "iceberg.services.upload_validation",
+    "iceberg.services.users",
+    "iceberg.web.analytics",
+    "iceberg.web.discovery",
+    "iceberg.web.feeds",
+    "iceberg.web.notebooks",
+    "iceberg.web.reports",
+    "iceberg.web.requirements",
+]
+ignore_errors = true
 
 [tool.djlint]
 # Jinja-aware template lint (structure / nesting / duplicate-attribute / a11y).

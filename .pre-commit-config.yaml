@@ -40,6 +40,14 @@ repos:
         pass_filenames: false
         require_serial: true
 
+      - id: mypy
+        name: mypy (types)
+        entry: mypy src/iceberg
+        language: system
+        types: [python]
+        pass_filenames: false
+        require_serial: true
+
       - id: djlint
         name: djlint (templates)
         entry: djlint src/iceberg/templates --lint

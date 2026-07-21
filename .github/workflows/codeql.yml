@@ -1,0 +1,57 @@
+name: CodeQL
+
+# SAST via GitHub CodeQL, in its own workflow (not ci.yml) so the elevated
+# security-events: write scope lives in exactly one place and the CI gates stay
+# least-privilege (contents: read). Source / no-build extraction over both
+# languages; the weekly schedule re-scans already-merged code as new advisories
+# and query versions land, not just new PRs. Actions are SHA-pinned like ci.yml.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      security-events: write # upload SARIF to code scanning
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # Python is the substantial surface. javascript-typescript is small but
+        # real: our hand-authored static/js/*.js. The vendored Alpine CSP build
+        # (static/js/vendor) is third-party minified code we don't maintain and is
+        # excluded via paths-ignore so its alert noise isn't attributed here.
+        language: [python, javascript-typescript]
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@7188fc363630916deb702c7fdcf4e481b751f97a # v4.37.1
+        with:
+          languages: ${{ matrix.language }}
+          # No build step (uv-only Python, hand-written self-hosted JS, no node
+          # toolchain), so source extraction is correct for both legs.
+          build-mode: none
+          config: |
+            paths-ignore:
+              - src/iceberg/static/js/vendor
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@7188fc363630916deb702c7fdcf4e481b751f97a # v4.37.1
+        with:
+          category: "/language:${{ matrix.language }}"
