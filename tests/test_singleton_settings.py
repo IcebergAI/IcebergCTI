@@ -11,6 +11,7 @@ from iceberg.models import (
     AISettings,
     AuditSettings,
     MISPSettings,
+    OIDCSettings,
     ProxySettings,
     WebhookSettings,
 )
@@ -18,6 +19,7 @@ from iceberg.services import (
     ai_settings,
     audit_settings,
     misp_settings,
+    oidc_settings,
     proxy_settings,
     webhook_settings,
 )
@@ -31,6 +33,7 @@ from iceberg.services import (
         (MISPSettings, misp_settings.get),
         (WebhookSettings, webhook_settings.get),
         (AISettings, ai_settings.get),
+        (OIDCSettings, oidc_settings.get),
     ],
 )
 def test_concurrent_first_reads_create_one_usable_singleton(tmp_path, model, reader):

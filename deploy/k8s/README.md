@@ -71,6 +71,13 @@ no credentials required.
 
 The login page then shows "Continue with Microsoft Entra ID" and the dev bypass stays off.
 
+**Other providers (Authentik / Auth0 / Okta).** Iceberg supports multiple OIDC providers at
+once. The Entra env values above **seed** the Entra provider on first boot; to add another IdP,
+sign in as an admin, open **`/admin/oidc`**, enable the provider and fill in its client id +
+locator + role map, and put its client secret in `iceberg-secrets` as
+`ICEBERG_OIDC_<PROVIDER>_CLIENT_SECRET`. Each provider's redirect/callback URL is
+`<base>/auth/oidc/<provider>/callback` (the legacy `/auth/callback` remains valid for Entra).
+
 ## PostgreSQL (recommended for production)
 
 1. **Provision Postgres.** Prefer a **managed** instance. For demo/self-hosted,

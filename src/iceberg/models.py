@@ -306,6 +306,7 @@ class AuditAction(StrEnum):
     # Authentication
     AUTH_LOGIN = "AUTH_LOGIN"
     AUTH_LOGOUT = "AUTH_LOGOUT"
+    OIDC_SETTINGS_UPDATED = "OIDC_SETTINGS_UPDATED"
     RATE_LIMITED = "RATE_LIMITED"
     NOTEBOOK_DELETED = "NOTEBOOK_DELETED"
     # Authorization (failure outcomes captured centrally)
@@ -535,15 +536,23 @@ class ReportAudienceGroup(SQLModel, table=True):
 # Core tables
 # --------------------------------------------------------------------------- #
 class User(SQLModel, table=True):
-    # ``sub`` is only unique within an OpenID Provider.  Keep legacy/dev
-    # accounts unbound (both values NULL) until an administrator explicitly
-    # links them; OIDC provisioning must never use email as an identity key.
-    __table_args__ = (UniqueConstraint("issuer", "sub", name="uq_user_issuer_sub"),)
+    # ``sub`` is only unique within an OpenID Provider, and multi-provider support
+    # means two IdPs could in theory reuse an (issuer, sub) pair — so identity is
+    # keyed on ``(auth_provider, issuer, sub)``. Legacy/dev accounts stay unbound
+    # (all three NULL) until an administrator explicitly links them; OIDC
+    # provisioning must never use email as an identity key. ``email`` is therefore
+    # NOT globally unique — the same person may exist under two providers.
+    __table_args__ = (
+        UniqueConstraint(
+            "auth_provider", "issuer", "sub", name="uq_user_provider_issuer_sub"
+        ),
+    )
 
     id: int | None = Field(default=None, primary_key=True)
+    auth_provider: str | None = Field(default=None, index=True)
     issuer: str | None = Field(default=None, index=True)
     sub: str | None = Field(default=None, index=True)
-    email: str = Field(index=True, unique=True)
+    email: str = Field(index=True)
     display_name: str
     role: Role = Field(default=Role.ANALYST)
     preferred_intel_level: IntelLevel | None = Field(default=None)
@@ -1374,4 +1383,57 @@ class AISettings(SQLModel, table=True):
     max_tlp: str = "AMBER"  # AI egress ceiling — a CTI differentiator, kept
     embeddings_enabled: bool = False
     embedding_model: str = ""
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class OIDCSettings(SQLModel, table=True):
+    """Multi-provider OIDC configuration, admin-editable (single row, id=1).
+
+    Supports Microsoft Entra, Authentik, Auth0 and Okta simultaneously via one
+    generic flow. Flattened per-provider fields (``<p>_enabled``, ``<p>_client_id``,
+    a provider locator, ``<p>_scopes``, ``<p>_role_claim``, ``<p>_role_map``). The
+    per-provider **client secret is env-only** (``ICEBERG_OIDC_<PROVIDER>_CLIENT_SECRET``)
+    and never stored here (same discipline as the MISP/webhook/proxy/SIEM secrets).
+    Env seeds the row on first read; see ``services/oidc_settings.py`` +
+    ``auth/oidc/``. A ``role_map`` is ``"group=ROLE,other=ROLE"``; an unmapped
+    group falls back to least-privilege ``STAKEHOLDER``."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    # Base URL the IdP redirects back to (per-provider callback path appended).
+    redirect_base_url: str = ""
+
+    # Microsoft Entra ID
+    entra_enabled: bool = False
+    entra_client_id: str = ""
+    entra_tenant_id: str = ""
+    entra_scopes: str = "openid email profile"
+    entra_role_claim: str = "roles"
+    entra_role_map: str = ""
+
+    # Authentik (self-hosted): locator is base_url + application slug
+    authentik_enabled: bool = False
+    authentik_client_id: str = ""
+    authentik_base_url: str = ""
+    authentik_app_slug: str = ""
+    authentik_scopes: str = "openid email profile"
+    authentik_role_claim: str = "groups"
+    authentik_role_map: str = ""
+
+    # Auth0: locator is the tenant domain
+    auth0_enabled: bool = False
+    auth0_client_id: str = ""
+    auth0_domain: str = ""
+    auth0_scopes: str = "openid email profile"
+    auth0_role_claim: str = "roles"
+    auth0_role_map: str = ""
+
+    # Okta: locator is domain + authorization server id
+    okta_enabled: bool = False
+    okta_client_id: str = ""
+    okta_domain: str = ""
+    okta_auth_server: str = "default"
+    okta_scopes: str = "openid email profile"
+    okta_role_claim: str = "groups"
+    okta_role_map: str = ""
+
     updated_at: datetime = Field(default_factory=utcnow)

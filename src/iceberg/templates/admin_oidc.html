@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}Single sign-on · {{ app_name }}{% endblock %}
+{% block crumb %}Single sign-on{% endblock %}
+{% block content %}
+
+<div class="head-row mb-7">
+  <div>
+    <div class="eyebrow eyebrow-accent">Administration</div>
+    <h1 class="page-title mt-2">Single sign-on (OIDC)</h1>
+    <div class="title-rule"></div>
+    <p class="text-sm mt-3" style="color:var(--muted);max-width:70ch;">Configure one or more OpenID Connect providers. Each provider's client secret is read from the environment (<span class="mono">ICEBERG_OIDC_&lt;PROVIDER&gt;_CLIENT_SECRET</span>) and never stored here. A user's role is mapped from their IdP group/role claim via the role map, defaulting to read-only STAKEHOLDER. Enabled: {% if enabled_providers %}<strong>{{ enabled_providers | join(', ') }}</strong>{% else %}<strong style="color:var(--c-crit);">none</strong>{% endif %}.</p>
+  </div>
+</div>
+
+<form method="post" action="/admin/oidc">
+  <section class="card card-pad-lg mb-5">
+    <h2 class="section-title mb-4">Global</h2>
+    <label class="field-wrap">
+      <span class="field-label">Redirect base URL <span class="opt">blank derives from ICEBERG_PORTAL_BASE_URL; the callback path /auth/oidc/&lt;provider&gt;/callback is appended</span></span>
+      <input name="redirect_base_url" class="field mono" value="{{ settings.redirect_base_url }}" placeholder="https://iceberg.example.org">
+    </label>
+  </section>
+
+  {# --- Microsoft Entra ID --- #}
+  <section class="card card-pad-lg mb-5">
+    <h2 class="section-title mb-4">Microsoft Entra ID</h2>
+    <label class="chip-check">
+      <input type="checkbox" name="entra_enabled" {% if settings.entra_enabled %}checked{% endif %}>
+      <span>Enable Entra</span>
+    </label>
+    <label class="field-wrap"><span class="field-label">Client ID</span>
+      <input name="entra_client_id" class="field mono" value="{{ settings.entra_client_id }}"></label>
+    <label class="field-wrap"><span class="field-label">Tenant ID</span>
+      <input name="entra_tenant_id" class="field mono" value="{{ settings.entra_tenant_id }}"></label>
+    <label class="field-wrap"><span class="field-label">Scopes</span>
+      <input name="entra_scopes" class="field mono" value="{{ settings.entra_scopes }}"></label>
+    <label class="field-wrap"><span class="field-label">Role claim</span>
+      <input name="entra_role_claim" class="field mono" value="{{ settings.entra_role_claim }}"></label>
+    <label class="field-wrap"><span class="field-label">Role map <span class="opt">group=ROLE,other=ROLE</span></span>
+      <input name="entra_role_map" class="field mono" value="{{ settings.entra_role_map }}" placeholder="Iceberg-Admins=ADMIN,Analysts=ANALYST"></label>
+    <p class="text-sm mt-2" style="color:var(--muted);">Client secret: {% if secret_status.entra %}<strong>configured</strong>{% else %}<strong style="color:var(--c-crit);">not set</strong>{% endif %} (<span class="mono">ICEBERG_OIDC_CLIENT_SECRET</span>).</p>
+  </section>
+
+  {# --- Authentik --- #}
+  <section class="card card-pad-lg mb-5">
+    <h2 class="section-title mb-4">Authentik</h2>
+    <label class="chip-check">
+      <input type="checkbox" name="authentik_enabled" {% if settings.authentik_enabled %}checked{% endif %}>
+      <span>Enable Authentik</span>
+    </label>
+    <label class="field-wrap"><span class="field-label">Client ID</span>
+      <input name="authentik_client_id" class="field mono" value="{{ settings.authentik_client_id }}"></label>
+    <label class="field-wrap"><span class="field-label">Base URL</span>
+      <input name="authentik_base_url" class="field mono" value="{{ settings.authentik_base_url }}" placeholder="https://authentik.example.org"></label>
+    <label class="field-wrap"><span class="field-label">Application slug</span>
+      <input name="authentik_app_slug" class="field mono" value="{{ settings.authentik_app_slug }}" placeholder="iceberg"></label>
+    <label class="field-wrap"><span class="field-label">Scopes</span>
+      <input name="authentik_scopes" class="field mono" value="{{ settings.authentik_scopes }}"></label>
+    <label class="field-wrap"><span class="field-label">Role claim</span>
+      <input name="authentik_role_claim" class="field mono" value="{{ settings.authentik_role_claim }}"></label>
+    <label class="field-wrap"><span class="field-label">Role map <span class="opt">group=ROLE,other=ROLE</span></span>
+      <input name="authentik_role_map" class="field mono" value="{{ settings.authentik_role_map }}"></label>
+    <p class="text-sm mt-2" style="color:var(--muted);">Client secret: {% if secret_status.authentik %}<strong>configured</strong>{% else %}<strong style="color:var(--c-crit);">not set</strong>{% endif %} (<span class="mono">ICEBERG_OIDC_AUTHENTIK_CLIENT_SECRET</span>).</p>
+  </section>
+
+  {# --- Auth0 --- #}
+  <section class="card card-pad-lg mb-5">
+    <h2 class="section-title mb-4">Auth0</h2>
+    <label class="chip-check">
+      <input type="checkbox" name="auth0_enabled" {% if settings.auth0_enabled %}checked{% endif %}>
+      <span>Enable Auth0</span>
+    </label>
+    <label class="field-wrap"><span class="field-label">Client ID</span>
+      <input name="auth0_client_id" class="field mono" value="{{ settings.auth0_client_id }}"></label>
+    <label class="field-wrap"><span class="field-label">Domain</span>
+      <input name="auth0_domain" class="field mono" value="{{ settings.auth0_domain }}" placeholder="your-tenant.eu.auth0.com"></label>
+    <label class="field-wrap"><span class="field-label">Scopes</span>
+      <input name="auth0_scopes" class="field mono" value="{{ settings.auth0_scopes }}"></label>
+    <label class="field-wrap"><span class="field-label">Role claim</span>
+      <input name="auth0_role_claim" class="field mono" value="{{ settings.auth0_role_claim }}"></label>
+    <label class="field-wrap"><span class="field-label">Role map <span class="opt">group=ROLE,other=ROLE</span></span>
+      <input name="auth0_role_map" class="field mono" value="{{ settings.auth0_role_map }}"></label>
+    <p class="text-sm mt-2" style="color:var(--muted);">Client secret: {% if secret_status.auth0 %}<strong>configured</strong>{% else %}<strong style="color:var(--c-crit);">not set</strong>{% endif %} (<span class="mono">ICEBERG_OIDC_AUTH0_CLIENT_SECRET</span>).</p>
+  </section>
+
+  {# --- Okta --- #}
+  <section class="card card-pad-lg mb-5">
+    <h2 class="section-title mb-4">Okta</h2>
+    <label class="chip-check">
+      <input type="checkbox" name="okta_enabled" {% if settings.okta_enabled %}checked{% endif %}>
+      <span>Enable Okta</span>
+    </label>
+    <label class="field-wrap"><span class="field-label">Client ID</span>
+      <input name="okta_client_id" class="field mono" value="{{ settings.okta_client_id }}"></label>
+    <label class="field-wrap"><span class="field-label">Domain</span>
+      <input name="okta_domain" class="field mono" value="{{ settings.okta_domain }}" placeholder="your-org.okta.com"></label>
+    <label class="field-wrap"><span class="field-label">Authorization server <span class="opt">default</span></span>
+      <input name="okta_auth_server" class="field mono" value="{{ settings.okta_auth_server }}"></label>
+    <label class="field-wrap"><span class="field-label">Scopes</span>
+      <input name="okta_scopes" class="field mono" value="{{ settings.okta_scopes }}"></label>
+    <label class="field-wrap"><span class="field-label">Role claim</span>
+      <input name="okta_role_claim" class="field mono" value="{{ settings.okta_role_claim }}"></label>
+    <label class="field-wrap"><span class="field-label">Role map <span class="opt">group=ROLE,other=ROLE</span></span>
+      <input name="okta_role_map" class="field mono" value="{{ settings.okta_role_map }}"></label>
+    <p class="text-sm mt-2" style="color:var(--muted);">Client secret: {% if secret_status.okta %}<strong>configured</strong>{% else %}<strong style="color:var(--c-crit);">not set</strong>{% endif %} (<span class="mono">ICEBERG_OIDC_OKTA_CLIENT_SECRET</span>).</p>
+  </section>
+
+  <div style="margin-bottom:24px;">
+    <button class="btn btn--primary" type="submit">Save configuration</button>
+  </div>
+</form>
+
+{% endblock %}

@@ -41,6 +41,7 @@
     <symbol id="ic-rss" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15v4a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-4"/><path d="M8 11l4 4 4-4"/><path d="M12 3v12"/></symbol>
     <symbol id="ic-proxy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="6" height="6" rx="1"/><path d="M3 12h6M15 12h6M12 3v6M12 15v6"/></symbol>
     <symbol id="ic-misp" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2.2"/><circle cx="5" cy="18" r="2.2"/><circle cx="19" cy="18" r="2.2"/><path d="M12 7.2v3.3M11 12.2 6.5 16M13 12.2 17.5 16"/></symbol>
+    <symbol id="ic-sso" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M15 7a4 4 0 1 0-4 4"/><path d="M10 14h9M19 14l-2.5-2.5M19 14l-2.5 2.5"/></symbol>
     <symbol id="ic-ai" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 4.7L18.5 9.5 13.8 11.3 12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M18 15l.8 2.2L21 18l-2.2.8L18 21l-.8-2.2L15 18l2.2-.8z"/></symbol>
     <symbol id="ic-webhook" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 9a3 3 0 1 1 4 2.83L10.5 16"/><path d="M15 13a3 3 0 1 1-2.5 4.66H8"/><path d="M7.5 12.5 5 17a3 3 0 1 0 3 1"/></symbol>
   </defs></svg>
@@ -79,6 +80,7 @@
       {'label': 'Taxonomy', 'href': '/admin/tags', 'group': 'Administration'},
       {'label': 'Audience groups', 'href': '/admin/audience', 'group': 'Administration'},
       {'label': 'Audit log', 'href': '/admin/audit', 'group': 'Administration'},
+      {'label': 'Single sign-on', 'href': '/admin/oidc', 'group': 'Administration'},
       {'label': 'RSS feeds', 'href': '/admin/feeds', 'group': 'Administration'},
       {'label': 'Outbound proxy', 'href': '/admin/proxy', 'group': 'Administration'},
       {'label': 'AI provider', 'href': '/admin/ai', 'group': 'Administration'},
@@ -156,6 +158,7 @@
             {{ rail_link('/admin/tags', 'ic-taxonomy', 'Taxonomy', path.startswith('/admin/tags')) }}
             {{ rail_link('/admin/audience', 'ic-entity', 'Audience', path.startswith('/admin/audience')) }}
             {{ rail_link('/admin/audit', 'ic-audit', 'Audit log', path.startswith('/admin/audit')) }}
+            {{ rail_link('/admin/oidc', 'ic-sso', 'Single sign-on', path.startswith('/admin/oidc')) }}
             {{ rail_link('/admin/feeds', 'ic-rss', 'RSS feeds', path.startswith('/admin/feeds')) }}
             {{ rail_link('/admin/proxy', 'ic-proxy', 'Outbound proxy', path.startswith('/admin/proxy')) }}
             {{ rail_link('/admin/ai', 'ic-ai', 'AI provider', path.startswith('/admin/ai')) }}
