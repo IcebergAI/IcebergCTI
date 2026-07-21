@@ -6,10 +6,11 @@ on:
     paths-ignore:
       - "docs/**"
       - "**.md"
+  # No paths-ignore on pull_request: the `test` + `lint-workflows` jobs are
+  # required status checks, so a paths-ignored PR (e.g. docs-only) would never
+  # report them and deadlock on branch protection. Running the suite on a docs
+  # PR is cheap on hosted runners; the push filter still skips the main re-run.
   pull_request:
-    paths-ignore:
-      - "docs/**"
-      - "**.md"
   workflow_dispatch:
 
 permissions:
