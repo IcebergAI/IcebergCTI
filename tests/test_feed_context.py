@@ -153,6 +153,25 @@ def test_level_preference_and_the_no_preference_default(engine, reader):
         assert "TACTICAL" in match["label"]
 
 
+def test_a_preference_changed_since_delivery_is_not_claimed_as_a_match(engine, reader):
+    """Delivery is never retracted, so a product stays in the feed after the
+    reader changes their level preference. Saying it "matches" would be the
+    exact false present-tense claim this split exists to prevent — it must name
+    the product's level *and* the preference it no longer satisfies."""
+    with Session(engine) as session:
+        user = session.get(User, reader)
+        report = _report(session, intel_level=IntelLevel.TACTICAL)
+        user.preferred_intel_level = IntelLevel.STRATEGIC
+        session.add(user)
+        session.commit()
+
+        match = feed_service.delivery_context(user, report)["match"]
+        assert match["kind"] == "level_changed"
+        assert "TACTICAL" in match["label"]      # what the product is
+        assert "STRATEGIC" in match["label"]     # what they now prefer
+        assert "Matches your" not in match["label"]
+
+
 def test_feed_page_shows_the_reason_and_a_way_to_close_the_loop(client, login, engine):
     email = login("STAKEHOLDER", email="feedreader@example.com")
     with Session(engine) as session:

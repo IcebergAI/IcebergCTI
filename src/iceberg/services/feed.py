@@ -23,7 +23,7 @@ class FeedMatch(TypedDict):
     infer harder here.)
     """
 
-    kind: str  # tag | audience | level | all
+    kind: str  # tag | audience | level | level_changed | all
     label: str
 
 
@@ -56,9 +56,21 @@ def _match(user: User, report: Report) -> FeedMatch:
     if matched_groups:
         return {"kind": "audience", "label": f"For {matched_groups[0].name}"}
     if user.preferred_intel_level is not None:
+        # Compare, don't assume. A product delivered under a preference the
+        # reader has since changed is still in their feed (delivery is not
+        # retracted), and claiming it "matches" would be exactly the false
+        # present-tense statement this split was meant to avoid.
+        if user.preferred_intel_level == report.intel_level:
+            return {
+                "kind": "level",
+                "label": f"Matches your {report.intel_level.value} preference",
+            }
         return {
-            "kind": "level",
-            "label": f"Matches your {report.intel_level.value} preference",
+            "kind": "level_changed",
+            "label": (
+                f"{report.intel_level.value} · outside your current "
+                f"{user.preferred_intel_level.value} preference"
+            ),
         }
     return {"kind": "all", "label": "You receive all levels"}
 
