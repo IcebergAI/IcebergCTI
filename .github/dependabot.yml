@@ -1,8 +1,10 @@
 version: 2
 updates:
-  # Python dependencies (pyproject floors + dev tools). Keeps the tested
-  # baselines current and surfaces security bumps; pairs with pip-audit in CI.
-  - package-ecosystem: pip
+  # Python dependencies (pyproject floors + dev tools). The `uv` ecosystem is
+  # lockfile-aware — bump PRs refresh uv.lock alongside pyproject, which the
+  # `uv sync --locked` CI gate requires. Keeps the tested baselines current and
+  # surfaces security bumps; pairs with pip-audit in CI.
+  - package-ecosystem: uv
     directory: "/"
     schedule:
       interval: weekly
