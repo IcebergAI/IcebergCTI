@@ -24,7 +24,7 @@ Roles: `ADMIN`, `ANALYST`, `REVIEWER`, `STAKEHOLDER` (read-only).
 - **Inline-embed tokens** `[[diamond|figure|ach:ID]]` + bare `[[attack]]` (single source `embeds.py`); SVG / base64 `data:` URIs are injected **after** nh3 sanitisation; tokens are notebook-scoped, unknown/cross-notebook ids degrade to an "unavailable" notice.
 - **TLP** is a display + dissemination-routing marking (never an in-portal read gate) that gates **AI egress** (`ICEBERG_AI_MAX_TLP`), **dissemination** (`ICEBERG_DISSEMINATION_MAX_TLP`), and the **MISP push** (`ICEBERG_MISP_MAX_TLP`).
 - **Every outbound HTTP call honours the global proxy** (`proxy.resolve` — RSS/SIEM/MISP/AI/webhook); **external work rides the durable `OutboxJob` outbox**, enqueued in the same transaction as its cause and drained by `iceberg-worker` (lease/retry/backoff).
-- **CSP-safe Alpine** — strict `script-src 'self'` (no `unsafe-inline`/`unsafe-eval`): the vendored CSP build, every component registered in `static/js/tags.js`, no inline JS / `on*=` handlers / `x-html`. **Middleware order** (outer→inner): `SecurityHeaders → Audit → RateLimit → Session → CSRF`.
+- **CSP-safe Alpine** — strict `script-src 'self'` (no `unsafe-inline`/`unsafe-eval`): the vendored CSP build, every component registered in `static/js/tags.js`, no inline JS / `on*=` handlers / `x-html`. **Middleware order** (outer→inner): `SecurityHeaders → BodySizeLimit → Audit → RateLimit → Session → CSRF` (`BodySizeLimit` rejects an oversized body with 413 before any inner middleware buffers it; `ICEBERG_MAX_BODY_MB`).
 - **Hardening** — the one server-side fetcher (RSS + writer TAXII/MISP pull) rides a full **SSRF guard** (http(s)-only, private/loopback rejected, byte/timeout-bounded, redirect hops re-validated); uploads are MIME-whitelisted + size-capped + **magic-byte validated** (`services/upload_validation.py`); the audit `detail` JSON never carries secrets/PII; prod guards (`config._guard_production`) refuse a SQLite URL / weak `ICEBERG_SECRET_KEY` / wildcard `FORWARDED_ALLOW_IPS`.
 
 ### Technologies
@@ -79,7 +79,7 @@ src/iceberg/
   seed.py          # CLI: import the tag taxonomy (python -m iceberg.seed)
   attack_import.py # CLI: file-only MITRE Enterprise ATT&CK bundle import (iceberg-import-attack)
   help_content.py  # structured /help copy: per-role guides + concepts glossary
-  maintenance.py   # console scripts: migrate (deploy entrypoint) + render retention prune + related-index rebuild + jobs worker (iceberg-worker) + restore file check (iceberg-verify-files)
+  maintenance.py   # console scripts: migrate (deploy entrypoint) + render retention prune + audit/feed-item retention prune (iceberg-prune-audit) + related-index rebuild + jobs worker (iceberg-worker) + restore file check (iceberg-verify-files)
   embeds.py        # single source of the inline-embed token grammar ([[diamond|figure|ach:ID]] / [[attack]])
   logging_config.py # app-log setup (level/format env, correlation-id contextvar)
   templating.py    # shared Jinja2Templates instance

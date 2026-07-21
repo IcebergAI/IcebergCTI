@@ -10,6 +10,8 @@ from .db import engine, init_db, run_migrations, schema_is_current
 from .models import Attachment, Figure, JobStatus, RenderedProduct
 from .services import attachments, figures, related
 from .services import jobs
+from .services.audit import prune_audit_events
+from .services.feeds import prune_feed_items
 from .services.reports import prune_rendered_products
 
 
@@ -30,6 +32,21 @@ def prune_renders_main() -> None:
     with Session(engine) as session:
         count = prune_rendered_products(session)
     print(f"Pruned {count} rendered product(s)")
+
+
+def prune_audit_main() -> None:
+    """Prune the append-forever tables per their retention windows.
+
+    Bounds the local ``AuditEvent`` forensic buffer (the SIEM is the long-term
+    store) and the un-ingested ``FeedItem`` reader inventory. Windows are set by
+    ``ICEBERG_AUDIT_RETENTION_DAYS`` / ``ICEBERG_FEED_ITEM_RETENTION_DAYS`` (0 =
+    keep forever). Made for a cron / Kubernetes CronJob alongside the app image.
+    """
+    init_db()
+    with Session(engine) as session:
+        audit_count = prune_audit_events(session)
+        feed_count = prune_feed_items(session)
+    print(f"Pruned {audit_count} audit event(s) and {feed_count} feed item(s)")
 
 
 def rebuild_related_main() -> None:

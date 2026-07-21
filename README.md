@@ -435,6 +435,8 @@ All settings use the `ICEBERG_` env prefix and can live in `.env` (see
 | `ICEBERG_OIDC_DEPARTMENT_CLAIM` / `ICEBERG_OIDC_TITLE_CLAIM` / `ICEBERG_OIDC_COMPANY_CLAIM` / `ICEBERG_OIDC_OFFICE_CLAIM` | Optional Entra profile claims persisted on users |
 | `ICEBERG_TYPST_BIN` / `ICEBERG_RENDER_OUTPUT_DIR` | Typst binary + PDF output dir |
 | `ICEBERG_RENDER_RETENTION_KEEP` / `ICEBERG_RENDER_RETENTION_DAYS` | Rendered-PDF retention policy; prune manually with `iceberg-prune-renders` |
+| `ICEBERG_AUDIT_RETENTION_DAYS` | Local `AuditEvent` trail retention (default 365; `0` = keep forever). SIEM is the long-term store; prune with `iceberg-prune-audit` |
+| `ICEBERG_FEED_ITEM_RETENTION_DAYS` | Un-ingested `FeedItem` retention (default 90; `0` = keep forever). Items captured into a notebook are kept; prune with `iceberg-prune-audit` |
 | `ICEBERG_ATTACHMENTS_DIR` / `ICEBERG_ATTACHMENT_MAX_MB` | Notebook attachment storage dir + size cap (default 25 MB) |
 | `ICEBERG_ATTACHMENT_ALLOWED_TYPES` | Comma-separated MIME whitelist for uploads (override the default set) |
 | `ICEBERG_FIGURES_DIR` / `ICEBERG_FIGURE_MAX_MB` | Notebook figure (embeddable image) storage dir + size cap (default 10 MB) |
@@ -573,6 +575,7 @@ alembic upgrade head                          # apply migrations to ICEBERG_DATA
 alembic revision --autogenerate -m "add x"    # create a migration after changing a model
 alembic downgrade -1                          # roll back one revision
 iceberg-prune-renders                         # apply rendered-PDF retention immediately
+iceberg-prune-audit                           # apply AuditEvent + un-ingested FeedItem retention (cron/CronJob)
 iceberg-rebuild-related                       # rebuild related-report vectors
 iceberg-worker                                # process durable email/webhook/RSS jobs (one pass; --forever / --inspect)
 iceberg-verify-files                          # check DB file references exist on disk (restore verification)

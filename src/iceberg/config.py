@@ -124,6 +124,13 @@ class Settings(BaseSettings):
     figures_dir: str = "./figures"
     figure_max_mb: int = 10
 
+    # Global request-body ceiling enforced by BodySizeLimitMiddleware. Uploads are
+    # already streamed with a mid-stream cap, but every non-upload endpoint reads
+    # the whole body into memory before validation — this backstops that against a
+    # memory-exhaustion DoS regardless of which proxy fronts the app. Set just
+    # above ``attachment_max_mb`` so real uploads still pass. 0 disables the cap.
+    max_body_mb: int = 30
+
     # Dissemination (Milestone 3)
     portal_base_url: str = "http://localhost:8000"
     # Auto-disseminate reports at or below this TLP; RED / AMBER_STRICT are
@@ -197,6 +204,11 @@ class Settings(BaseSettings):
     rss_max_response_bytes: int = 2 * 1024 * 1024
     rss_max_items_per_feed: int = 100
     rss_allow_private_hosts: bool = False
+    # Retention for fetched feed items. The per-fetch cap above bounds one poll;
+    # this bounds accumulation across polls. Only un-ingested items are pruned —
+    # anything captured into a notebook already became a durable Source. Age in
+    # days; 0 = keep forever. Prune with ``iceberg-prune-audit`` (see #165).
+    feed_item_retention_days: int = 90
 
     # Global outbound proxy connectivity. Routing config (mode/url/no-proxy) is
     # admin-editable on the ProxySettings DB row; these env values seed that row.
@@ -241,6 +253,12 @@ class Settings(BaseSettings):
     audit_syslog_port: int = 514
     audit_syslog_protocol: str = "UDP"  # UDP | TCP
     audit_http_endpoint: str = ""
+    # Retention for the local AuditEvent trail. The SIEM is the long-term store;
+    # this table is the forensic buffer and needn't hold years of events (every
+    # middleware-recorded 401/403 lands here, so it's the fastest-growing table on
+    # a scanned public instance). Age in days; 0 = keep forever. Prune with
+    # ``iceberg-prune-audit`` (see #165).
+    audit_retention_days: int = 365
 
     @property
     def audit_default_methods(self) -> list[str]:
@@ -253,6 +271,10 @@ class Settings(BaseSettings):
     @property
     def max_figure_bytes(self) -> int:
         return self.figure_max_mb * 1024 * 1024
+
+    @property
+    def max_body_bytes(self) -> int:
+        return self.max_body_mb * 1024 * 1024
 
     @property
     def allowed_attachment_types(self) -> frozenset[str]:
