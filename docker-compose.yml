@@ -2,12 +2,14 @@
 # zero-dependency local dev/test default only; it is NOT a container deployment
 # option — the app refuses to boot on SQLite when ICEBERG_ENVIRONMENT=prod.)
 #
-#   docker compose up                  # app on localhost:8000 + PostgreSQL
+#   docker compose up                  # https://localhost via Caddy (local-CA cert) + PostgreSQL
 #   ICEBERG_DOMAIN=intel.example.com \
-#     docker compose --profile tls up  # add a Caddy TLS reverse proxy on :80/:443
+#     docker compose up                # automatic Let's Encrypt TLS on the real domain
 #
-# A single app service always pairs with the `postgres` service, so no two
-# services ever bind the same host port.
+# Caddy is the default public entry point (:80/:443), matching the sibling
+# IcebergTTX/EBS stacks; the app's plain-HTTP :8000 stays published on loopback
+# only as a local/debug side door. A single app service always pairs with the
+# `postgres` service, so no two services ever bind the same host port.
 services:
   iceberg:
     build: .
@@ -85,31 +87,74 @@ services:
       retries: 10
     networks: [iceberg-internal]
 
-  # Opt-in TLS reverse proxy for a single-host Docker deployment:
-  #   ICEBERG_DOMAIN=intel.example.com docker compose --profile tls up
-  # Caddy terminates TLS (automatic Let's Encrypt for a real domain; a local-CA
-  # cert for the default `localhost`) and proxies to the app over the compose
-  # network. For real production also set ICEBERG_ENVIRONMENT=prod in .env
-  # (Secure cookies + HSTS), ICEBERG_AUTO_MIGRATE=false, a real
-  # ICEBERG_SECRET_KEY and non-default Postgres credentials. The app's plain HTTP
-  # port is bound to loopback, so Caddy is the public entry point.
+  # TLS reverse proxy — the default front end for a single-host Docker
+  # deployment (same shape as the sibling IcebergTTX/EBS stacks). Caddy
+  # terminates TLS (automatic Let's Encrypt for a real ICEBERG_DOMAIN; a
+  # local-CA cert for the default `localhost`) and proxies to the app over the
+  # compose network. For real production also set ICEBERG_ENVIRONMENT=prod in
+  # .env (Secure cookies + HSTS), ICEBERG_AUTO_MIGRATE=false, a real
+  # ICEBERG_SECRET_KEY and non-default Postgres credentials. The app's plain
+  # HTTP port is bound to loopback, so Caddy is the public entry point.
+  caddy-init:
+    # One-shot: the named cert/config volumes initialise root-owned from the
+    # image, so chown them for the non-root caddy user below (k8s does the same
+    # job with fsGroup). Runs and exits before caddy starts.
+    image: caddy:2-alpine
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-c", "chown -R 1000:1000 /data /config"]
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      # Caddy creates data/caddy/{certificates,locks,pki} mode 0700 owned by uid
+      # 1000. Root cannot descend into them without its DAC bypass, which
+      # cap_drop ALL removed — so on every run after the first, chown -R fails
+      # EPERM without DAC_READ_SEARCH.
+      - DAC_READ_SEARCH
+    restart: "no"
+    networks: [iceberg-internal]
+
   caddy:
-    profiles: ["tls"]
-    image: caddy:2
+    image: caddy:2-alpine
     restart: unless-stopped
+    # Non-root (the official image defaults to root): run as uid 1000. The caddy
+    # binary ships the cap_net_bind_service file capability, so NET_BIND_SERVICE
+    # must stay in the bounding set (cap_add below) — both so exec of the setcap
+    # binary succeeds under cap_drop ALL and so the non-root process can bind
+    # :80/:443.
+    user: "1000:1000"
     depends_on:
       iceberg:
         condition: service_healthy
+      caddy-init:
+        condition: service_completed_successfully
     environment:
+      # localhost (local-CA self-signed) | your.domain.com (Let's Encrypt)
       ICEBERG_DOMAIN: ${ICEBERG_DOMAIN:-localhost}
     ports:
       - "80:80"
       - "443:443"
+      - "443:443/udp"   # HTTP/3
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy-data:/data
+      - caddy-data:/data      # issued certs — persist across restarts (required)
       - caddy-config:/config
     networks: [iceberg-internal]
+    # Read-only rootfs with the cert/config stores on volumes and a writable /tmp.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    read_only: true
+    tmpfs:
+      - /tmp
 
 networks:
   iceberg-internal:

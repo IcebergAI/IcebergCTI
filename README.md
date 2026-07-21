@@ -486,12 +486,18 @@ needs shared storage (RWX volume or object store) — a follow-on to the datasto
 [`deploy/k8s/`](deploy/k8s/) and [`docker-compose.yml`](docker-compose.yml). Compose runs a
 **single** app service always paired with its `postgres` database container. The default
 Compose path also includes Redis for rate-limit buckets shared across uvicorn workers
-(`ICEBERG_RATE_LIMIT_REDIS_URL=redis://redis:6379/0`) and exposes the app on loopback only:
+(`ICEBERG_RATE_LIMIT_REDIS_URL=redis://redis:6379/0`) and a **Caddy TLS front end** on
+`:80`/`:443` (same shape as the sibling IcebergTTX/EBS stacks); the app's plain-HTTP `:8000`
+stays published on loopback only, as a local/debug side door:
 
 ```bash
-docker compose up                       # app on http://localhost:8000 + PostgreSQL (no .env needed)
+docker compose up                        # https://localhost via Caddy + PostgreSQL (no .env needed)
 cp .env.example .env                     # optional: customise settings, then re-run
 ```
+
+For the default `localhost` Caddy issues a certificate from its own local CA, so the browser
+shows a one-time trust warning (or import Caddy's root CA); plain <http://localhost:8000>
+also still works locally.
 
 A fresh clone needs no pre-step — `.env` is optional (`env_file` is `required: false`) and is
 merged in automatically when present. For production-style Compose, set
@@ -500,15 +506,17 @@ non-default `POSTGRES_*` credentials.
 
 ### TLS / running behind a proxy
 Iceberg always runs behind a **TLS-terminating reverse proxy** — a Kubernetes ingress, a cloud
-load balancer, or (for a single-host Docker deployment) the opt-in **Caddy** profile:
+load balancer, or (for a single-host Docker deployment) the bundled **Caddy** front end, which
+Compose starts by default:
 
 ```bash
-ICEBERG_DOMAIN=intel.example.com docker compose --profile tls up   # auto Let's Encrypt TLS
+ICEBERG_DOMAIN=intel.example.com docker compose up   # auto Let's Encrypt TLS (needs public :80/:443 + DNS)
 ```
 
 Caddy ([`deploy/Caddyfile`](deploy/Caddyfile)) terminates TLS and proxies to the app; pair it with
-`ICEBERG_ENVIRONMENT=prod` for `Secure` cookies + HSTS. In this profile Caddy publishes
-`:80`/`:443`, while the app's plain-HTTP `:8000` publish remains loopback-only. The container starts uvicorn with
+`ICEBERG_ENVIRONMENT=prod` for `Secure` cookies + HSTS. Caddy publishes
+`:80`/`:443` (the only public ports; it runs non-root with all capabilities dropped except
+`NET_BIND_SERVICE`, on a read-only rootfs), while the app's plain-HTTP `:8000` publish remains loopback-only. The container starts uvicorn with
 `--proxy-headers` and trusts `X-Forwarded-*` only from `FORWARDED_ALLOW_IPS` (Compose scopes this
 to its dedicated proxy network; Kubernetes requires the ingress pod CIDR) so the request scheme is correct and the **audit log records
 the real client IP** rather than the proxy's. On **Kubernetes**, terminate TLS at an Ingress
@@ -663,7 +671,7 @@ flowchart TB
 ```
 
 ### Deployment topologies
-Four supported shapes, from a zero-dependency local run to Kubernetes. Cylinders are persistent
+Three supported shapes, from a zero-dependency local run to Kubernetes. Cylinders are persistent
 storage; dashed links are config/credential injection.
 
 **1. Local development** — uvicorn with the SQLite default and on-disk working dirs. No external
@@ -676,46 +684,32 @@ flowchart LR
   App --> FS["Local dirs<br/>./attachments · ./figures · ./rendered"]
 ```
 
-**2. Docker Compose (default)** — one app service paired with its own PostgreSQL container on the
-compose network; only the app publishes a host port, bound to loopback (`localhost:8000`). Each
-service has its own named volume.
+**2. Docker Compose (default)** — a Caddy reverse proxy terminates TLS (Let's Encrypt for a real
+`ICEBERG_DOMAIN`, a local-CA cert for the default `localhost`) and forwards `X-Forwarded-*`; the
+app trusts those headers (`--proxy-headers`) so the scheme and client IP are correct. Caddy
+publishes `:80`/`:443` — the only public ports; the app service pairs with its own PostgreSQL
+container on the compose network and keeps a loopback-only plain-HTTP publish
+(`localhost:8000`) as a local/debug side door. Each service has its own named volume.
 
 ```mermaid
 flowchart TB
-  Client["Browser / API client"] -->|"localhost:8000"| App
+  Client["Browser / API client"] -->|"https :443 · http→https :80"| Caddy
+  Client -.->|"localhost:8000 (loopback debug)"| App
 
-  subgraph net["docker compose — default bridge network"]
-    App["iceberg service<br/>FastAPI + uvicorn --proxy-headers<br/>container :8000"]
+  subgraph net["docker compose — iceberg-internal network"]
+    Caddy["caddy service<br/>TLS termination (Let's Encrypt / local CA)<br/>:80 · :443 · non-root, read-only"]
+    App["iceberg service<br/>FastAPI + uvicorn --proxy-headers · :8000<br/>prod → Secure cookies + HSTS"]
     PG["postgres service<br/>postgres:17 · :5432 (network-internal)"]
+    Caddy -->|"reverse proxy + X-Forwarded-*"| App
     App -->|"postgresql+psycopg://iceberg@postgres:5432"| PG
   end
 
+  Caddy --- CV[("caddy-data · caddy-config<br/>certificates")]
   App --- V1[("iceberg-data volume<br/>/data: attachments · figures · rendered")]
   PG --- V2[("iceberg-pg-data volume<br/>/var/lib/postgresql/data")]
 ```
 
-**3. Docker Compose + TLS (`--profile tls`)** — adds a Caddy reverse proxy that terminates TLS and
-forwards `X-Forwarded-*`; the app trusts those headers (`--proxy-headers`) so the scheme and client
-IP are correct. Caddy publishes `:80`/`:443`; the app's plain-HTTP publish remains loopback-only.
-
-```mermaid
-flowchart TB
-  Client["Browser"] -->|"https :443 · http→https :80"| Caddy
-
-  subgraph net["docker compose --profile tls"]
-    Caddy["caddy service<br/>TLS termination (Let's Encrypt / local CA)<br/>:80 · :443"]
-    App["iceberg service<br/>uvicorn --proxy-headers · :8000<br/>prod → Secure cookies + HSTS"]
-    PG["postgres service · :5432"]
-    Caddy -->|"reverse proxy + X-Forwarded-*"| App
-    App -->|"psycopg"| PG
-  end
-
-  Caddy --- CV[("caddy-data · caddy-config<br/>certificates")]
-  App --- V1[("iceberg-data<br/>/data")]
-  PG --- V2[("iceberg-pg-data")]
-```
-
-**4. Kubernetes** — an Ingress terminates TLS to a ClusterIP Service and the single-replica
+**3. Kubernetes** — an Ingress terminates TLS to a ClusterIP Service and the single-replica
 Deployment (`Recreate`, non-root, read-only rootfs). A migrate Job runs `alembic upgrade head` out
 of band; config comes from a ConfigMap (non-secret) and the `ICEBERG_DATABASE_URL`/secrets from a
 Secret. PostgreSQL is a managed instance or the optional StatefulSet; uploads/renders live on a
