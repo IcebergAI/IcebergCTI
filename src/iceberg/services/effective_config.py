@@ -18,7 +18,10 @@ import os
 import shutil
 from dataclasses import asdict, dataclass
 
+from sqlmodel import col, select
+
 from ..config import _INSECURE_DEFAULT_SECRET, get_settings
+from ..models import Feed, ProxyMode
 from . import (
     ai_settings,
     audit_settings,
@@ -248,6 +251,227 @@ def _advisories(s, providers: list[str], ai_row, ai_errors: list[str]) -> list[s
             "shared across workers."
         )
     return out
+
+
+@dataclass(frozen=True)
+class HubTile:
+    """One subsystem on the ``/admin`` Settings hub: where to configure it, what
+    state it is in right now, and one line of context."""
+
+    group: str  # "Outbound integrations" | "Governance"
+    title: str
+    href: str
+    status: str  # short pill label (OFF / ENABLED / 3 ACTIVE …)
+    tone: str  # tag modifier: is-neutral | is-warn | is-ok
+    meta: str
+
+
+def admin_hub_tiles(session) -> list[dict]:
+    """Status pills for the ``/admin`` hub — one per admin-configurable subsystem.
+
+    Reads the same settings singletons the deep config pages own, so the hub can
+    never disagree with them, and it introduces no new state. Secrets are only
+    ever reported as set/not-set (an unset env key is what makes an otherwise
+    "enabled" integration NOT CONFIGURED).
+    """
+    s = get_settings()
+    ai = ai_settings.get(session)
+    # Same discipline as the /admin/config AI tile: report what the runtime will
+    # actually use. ``ai_settings.resolve`` fail-closes an invalid selection to
+    # "none", so a green pill on a row that says "openai" would be a lie.
+    ai_errors = ai_settings.validate_selection(ai)
+    misp = misp_settings.get(session)
+    webhook = webhook_settings.get(session)
+    audit = audit_settings.get(session)
+    proxy = proxy_settings.get(session)
+    # A provider with a client id but no env client secret cannot complete the
+    # authorization-code flow — it looks enabled and fails at login, so it must
+    # not read green here either.
+    configs = oidc_settings.enabled_providers(session)
+    providers = [c.name for c in configs]
+    unusable_sso = [c.name for c in configs if not c.client_secret]
+    active_feeds = len(
+        list(session.exec(select(Feed).where(col(Feed.enabled).is_(True))).all())
+    )
+    # An HTTP sink with no endpoint claims off-box forwarding it cannot perform.
+    audit_broken = (
+        "HTTP sink selected but no endpoint is set — nothing is forwarded"
+        if "http" in audit.methods and not audit.http_endpoint.strip()
+        else ""
+    )
+    issues = len(_validation(s)["errors"])
+
+    tiles = [
+        HubTile(
+            group="Outbound integrations",
+            title="AI provider",
+            href="/admin/ai",
+            status=(
+                "OFF"
+                if ai.backend == "none"
+                else "NOT CONFIGURED"
+                if ai_errors
+                else ai.backend.upper()
+            ),
+            tone=(
+                "is-neutral"
+                if ai.backend == "none"
+                else "is-warn"
+                if ai_errors
+                else "is-ok"
+            ),
+            meta=(
+                "Governed AI assist · backend not selected"
+                if ai.backend == "none"
+                else f"{ai.backend} selected but disabled at runtime: {ai_errors[0]}"
+                if ai_errors
+                else f"Governed AI assist · egress ceiling TLP:{ai.max_tlp}"
+            ),
+        ),
+        _integration_tile(
+            title="MISP push",
+            href="/admin/misp",
+            enabled=misp.enabled,
+            configured=bool(misp.url.strip() and s.misp_api_key),
+            ready_meta="Indicator egress · one event per report",
+            unconfigured_meta=(
+                "Indicator egress · no MISP URL set"
+                if not misp.url.strip()
+                else "Indicator egress · no API key set"
+            ),
+            off_meta="Indicator egress · push disabled",
+        ),
+        HubTile(
+            group="Outbound integrations",
+            title="Outbound proxy",
+            href="/admin/proxy",
+            status=(
+                "DIRECT"
+                if proxy.mode == ProxyMode.NONE
+                else ("EXPLICIT" if proxy.proxy_url.strip() else "NOT CONFIGURED")
+                if proxy.mode == ProxyMode.EXPLICIT
+                else "SYSTEM"
+            ),
+            tone=(
+                "is-warn"
+                if proxy.mode == ProxyMode.EXPLICIT and not proxy.proxy_url.strip()
+                else "is-ok"
+            ),
+            meta="RSS · SIEM · MISP · AI · webhook routing",
+        ),
+        HubTile(
+            group="Outbound integrations",
+            title="RSS feeds",
+            href="/admin/feeds",
+            status=f"{active_feeds} ACTIVE" if active_feeds else "NONE",
+            tone="is-ok" if active_feeds else "is-neutral",
+            meta="Inbound collection · SSRF-guarded fetcher",
+        ),
+        _integration_tile(
+            title="Publication webhook",
+            href="/admin/webhook",
+            enabled=webhook.enabled,
+            configured=bool(webhook.url.strip()),
+            ready_meta=f"{webhook.format.capitalize()} envelope on publish",
+            unconfigured_meta="No endpoint URL set",
+            off_meta="No publication callout",
+        ),
+        HubTile(
+            group="Outbound integrations",
+            title="Single sign-on",
+            href="/admin/oidc",
+            status=(
+                "NOT CONFIGURED"
+                if not providers or unusable_sso
+                else ", ".join(p.upper() for p in providers)
+            ),
+            tone="is-warn" if (not providers or unusable_sso) else "is-ok",
+            meta=(
+                f"No client secret set for {', '.join(unusable_sso)} — sign-in will fail"
+                if unusable_sso
+                else f"{len(providers)} provider{'' if len(providers) == 1 else 's'} · "
+                f"dev-login {'on' if s.dev_login_enabled else 'off'}"
+            ),
+        ),
+        HubTile(
+            group="Governance",
+            title="Audit log & SIEM",
+            href="/admin/audit",
+            status=(
+                "OFF"
+                if not audit.enabled
+                else "LOCAL ONLY"
+                if set(audit.methods) <= {"stdout"}
+                else "NOT CONFIGURED"
+                if audit_broken
+                else ", ".join(m.upper() for m in audit.methods)
+            ),
+            tone=(
+                "is-neutral"
+                if not audit.enabled
+                else "is-warn"
+                if set(audit.methods) <= {"stdout"} or audit_broken
+                else "is-ok"
+            ),
+            meta=(
+                "Security events are not being recorded"
+                if not audit.enabled
+                else "No SIEM sink enabled"
+                if set(audit.methods) <= {"stdout"}
+                else audit_broken
+                if audit_broken
+                else "Forensic trail forwarded off-box"
+            ),
+        ),
+        HubTile(
+            group="Governance",
+            title="Effective config",
+            href="/admin/config",
+            status=f"{issues} ISSUE{'' if issues == 1 else 'S'}" if issues else "VIEW",
+            tone="is-warn" if issues else "is-neutral",
+            meta="Resolved runtime settings, provenance + prod guards",
+        ),
+    ]
+    return [asdict(t) for t in tiles]
+
+
+def _integration_tile(
+    *,
+    title: str,
+    href: str,
+    enabled: bool,
+    configured: bool,
+    ready_meta: str,
+    unconfigured_meta: str,
+    off_meta: str,
+) -> HubTile:
+    """An opt-in outbound integration: off → not configured → enabled."""
+    if not enabled:
+        return HubTile(
+            group="Outbound integrations",
+            title=title,
+            href=href,
+            status="OFF",
+            tone="is-neutral",
+            meta=off_meta,
+        )
+    if not configured:
+        return HubTile(
+            group="Outbound integrations",
+            title=title,
+            href=href,
+            status="NOT CONFIGURED",
+            tone="is-warn",
+            meta=unconfigured_meta,
+        )
+    return HubTile(
+        group="Outbound integrations",
+        title=title,
+        href=href,
+        status="ENABLED",
+        tone="is-ok",
+        meta=ready_meta,
+    )
 
 
 def _tiles(session, s, providers: list[str], ai_row, ai_errors: list[str]) -> list[dict]:

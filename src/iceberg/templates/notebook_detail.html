@@ -12,103 +12,53 @@
   <div class="title-rule"></div>
 </div>
 
-<nav class="collection-strip mb-6" aria-label="Notebook collection checklist">
-  <a href="#sources" class="collection-step {{ 'is-done' if sources else '' }}">
-    <span class="step-kicker">Sources</span>
-    <strong>{{ sources | length }}</strong>
-    <span>Evidence captured</span>
-  </a>
-  <a href="#notes" class="collection-step {{ 'is-done' if notes else '' }}">
-    <span class="step-kicker">Notes</span>
-    <strong>{{ notes | length }}</strong>
-    <span>Analyst observations</span>
-  </a>
-  <a href="#attachments" class="collection-step {{ 'is-done' if attachments else '' }}">
-    <span class="step-kicker">Files</span>
-    <strong>{{ attachments | length }}</strong>
-    <span>Reference material</span>
-  </a>
-  <a href="#diamonds" class="collection-step {{ 'is-done' if diamonds else '' }}">
-    <span class="step-kicker">Diamond</span>
-    <strong>{{ diamonds | length }}</strong>
-    <span>Intrusion models</span>
-  </a>
-  <a href="#ach" class="collection-step {{ 'is-done' if ach_models else '' }}">
-    <span class="step-kicker">ACH</span>
-    <strong>{{ ach_models | length }}</strong>
-    <span>Hypothesis matrices</span>
-  </a>
-  <a href="#figures" class="collection-step {{ 'is-done' if figures else '' }}">
-    <span class="step-kicker">Figures</span>
-    <strong>{{ figures | length }}</strong>
-    <span>Embeddable images</span>
-  </a>
-  <a href="#indicators" class="collection-step {{ 'is-done' if iocs else '' }}">
-    <span class="step-kicker">Indicators</span>
-    <strong>{{ iocs | length }}</strong>
-    <span>IOCs for MISP</span>
-  </a>
-  <a href="#products" class="collection-step {{ 'is-done' if reports else '' }}">
-    <span class="step-kicker">Products</span>
-    <strong>{{ reports | length }}</strong>
-    <span>Finished intelligence</span>
-  </a>
-  <a href="#requirements" class="collection-step {{ 'is-done' if linked_req_ids else '' }}">
-    <span class="step-kicker">Requirements</span>
-    <strong>{{ linked_req_ids | length }}</strong>
-    <span>Traceability links</span>
-  </a>
-</nav>
+{# The notebook is worked in phases, not scrolled end to end: the collection
+   strip becomes a phase tab bar and only one phase's sections render at a time.
+   Tabs stay real anchors, so without Alpine every section is still reachable
+   (the <noscript> below cancels the x-cloak that hides the other phases).
 
-<!-- Intelligence products -->
-<section id="products" class="card card-pad-lg mb-6">
-  <div class="head-row mb-4">
-    <h2 class="section-title">Intelligence products</h2>
-    <span class="eyebrow">{{ reports | length }}</span>
-  </div>
-  {% if reports %}
-    <div class="rows">
-      {% for r in reports %}
-        <div class="row">
-          <a href="/reports/{{ r.id }}" class="row-title flex-1 hover:text-accent-deep">{{ r.title }}</a>
-          <span class="flex gap-1.5 items-center flex-wrap">
-            {{ m.status_badge(r.status) }}
-            {{ m.level_badge(r.intel_level) }}
-            {{ m.tlp_badge(r.tlp) }}
-            {% if can_write %}<a href="/reports/{{ r.id }}/edit" class="btn btn--ghost btn--sm ml-1">Edit</a>{% endif %}
-          </span>
-        </div>
-      {% endfor %}
-    </div>
-  {% else %}
-    <p class="empty">No products authored from this notebook yet. Start one when the collection has enough context for an assessment.</p>
-  {% endif %}
+   `phases` is the single source of the section → phase mapping: it drives the
+   tab bar AND is handed to the Alpine component as JSON, so a deep link or a
+   post-action redirect to #diamonds / #ach opens the phase that owns it instead
+   of landing on a cloaked section. Adding a section in one place cannot leave
+   the two out of step. #}
+{% set phases = [
+  ('collect', 'Collect', [
+    ('sources', 'Sources', sources | length),
+    ('notes', 'Notes', notes | length),
+    ('attachments', 'Files', attachments | length),
+    ('figures', 'Figures', figures | length),
+    ('indicators', 'Indicators', iocs | length),
+  ]),
+  ('analyze', 'Analyze', [
+    ('diamonds', 'Diamond', diamonds | length),
+    ('ach', 'ACH', ach_models | length),
+  ]),
+  ('produce', 'Produce', [('products', 'Products', reports | length)]),
+  ('trace', 'Trace', [('requirements', 'Requirements', linked_req_ids | length)]),
+] %}
+{% set section_phase = {} %}
+{% for phase, _label, sections in phases %}
+  {% for section, _l, _c in sections %}{% set _ = section_phase.update({section: phase}) %}{% endfor %}
+{% endfor %}
 
-  {% if can_write %}
-    <form method="post" action="/notebooks/{{ notebook.id }}/reports" class="well card-pad mt-4">
-      <div class="eyebrow mb-3">New product</div>
-      <div class="grid sm:grid-cols-12 gap-3 items-end">
-        <div class="sm:col-span-6">
-          <label class="field-label">Title</label>
-          <input name="title" required placeholder="Product title" class="field">
-        </div>
-        <div class="sm:col-span-3">
-          <label class="field-label">Intel level</label>
-          <select name="intel_level" class="field">
-            {% for lvl in IntelLevel %}<option value="{{ lvl.value }}">{{ lvl.value }}</option>{% endfor %}
-          </select>
-        </div>
-        <div class="sm:col-span-3">
-          <label class="field-label">TLP</label>
-          <select name="tlp" class="field">
-            {% for t in TLP %}<option value="{{ t.value }}" {% if t.value=='AMBER' %}selected{% endif %}>{{ tlp_label(t) }}</option>{% endfor %}
-          </select>
-        </div>
+<div x-data="notebookTabs('notebook-phase-data')">
+  <script type="application/json" id="notebook-phase-data">{{ section_phase | tojson }}</script>
+  <noscript><style>[x-cloak] { display: revert; }</style></noscript>
+
+  <nav class="nb-phases mb-6" aria-label="Notebook phases">
+    {% for phase, label, sections in phases %}
+      <div class="nb-phase-group">
+        <span class="eyebrow">{{ label }}</span>
+        {% for section, section_label, count in sections %}
+          <a href="#{{ section }}" class="help-tab" :class="section === '{{ section }}' ? 'is-active' : ''"
+             @click="show('{{ phase }}', '{{ section }}')">{{ section_label }} <span class="nb-count">{{ count }}</span></a>
+        {% endfor %}
       </div>
-      <button class="btn btn--ink mt-4">Create product</button>
-    </form>
-  {% endif %}
-</section>
+    {% endfor %}
+  </nav>
+
+<div x-show="phase === 'collect'">
 
 <div class="grid md:grid-cols-2 gap-6 mb-6">
   <!-- Sources -->
@@ -446,6 +396,10 @@
   {% endif %}
 </section>
 
+</div><!-- /collect -->
+
+<div x-show="phase === 'analyze'" x-cloak>
+
 <!-- Diamond models -->
 <section id="diamonds" class="card card-pad-lg mb-6">
   <div class="head-row mb-4">
@@ -553,6 +507,64 @@
   {% endif %}
 </section>
 
+</div><!-- /analyze -->
+
+<div x-show="phase === 'produce'" x-cloak>
+
+<!-- Intelligence products -->
+<section id="products" class="card card-pad-lg mb-6">
+  <div class="head-row mb-4">
+    <h2 class="section-title">Intelligence products</h2>
+    <span class="eyebrow">{{ reports | length }}</span>
+  </div>
+  {% if reports %}
+    <div class="rows">
+      {% for r in reports %}
+        <div class="row">
+          <a href="/reports/{{ r.id }}" class="row-title flex-1 hover:text-accent-deep">{{ r.title }}</a>
+          <span class="flex gap-1.5 items-center flex-wrap">
+            {{ m.status_badge(r.status) }}
+            {{ m.level_badge(r.intel_level) }}
+            {{ m.tlp_badge(r.tlp) }}
+            {% if can_write %}<a href="/reports/{{ r.id }}/edit" class="btn btn--ghost btn--sm ml-1">Edit</a>{% endif %}
+          </span>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="empty">No products authored from this notebook yet. Start one when the collection has enough context for an assessment.</p>
+  {% endif %}
+
+  {% if can_write %}
+    <form method="post" action="/notebooks/{{ notebook.id }}/reports" class="well card-pad mt-4">
+      <div class="eyebrow mb-3">New product</div>
+      <div class="grid sm:grid-cols-12 gap-3 items-end">
+        <div class="sm:col-span-6">
+          <label class="field-label">Title</label>
+          <input name="title" required placeholder="Product title" class="field">
+        </div>
+        <div class="sm:col-span-3">
+          <label class="field-label">Intel level</label>
+          <select name="intel_level" class="field">
+            {% for lvl in IntelLevel %}<option value="{{ lvl.value }}">{{ lvl.value }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="sm:col-span-3">
+          <label class="field-label">TLP</label>
+          <select name="tlp" class="field">
+            {% for t in TLP %}<option value="{{ t.value }}" {% if t.value=='AMBER' %}selected{% endif %}>{{ tlp_label(t) }}</option>{% endfor %}
+          </select>
+        </div>
+      </div>
+      <button class="btn btn--ink mt-4">Create product</button>
+    </form>
+  {% endif %}
+</section>
+
+</div><!-- /produce -->
+
+<div x-show="phase === 'trace'" x-cloak>
+
 <!-- Requirements addressed -->
 <section id="requirements" class="card card-pad-lg">
   <h2 class="section-title mb-1">Requirements addressed</h2>
@@ -577,4 +589,7 @@
     <p class="empty">No open requirements to link. Stakeholder requirements will appear here when they are available for tasking.</p>
   {% endif %}
 </section>
+
+</div><!-- /trace -->
+</div><!-- /notebookTabs -->
 {% endblock %}

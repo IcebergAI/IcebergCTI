@@ -119,3 +119,7 @@ schedule_notifications  # unused function (src/iceberg/services/dissemination.py
 queue_dissemination  # unused function (src/iceberg/services/dissemination.py)
 fetch_all_enabled_once  # unused function (src/iceberg/services/feeds.py)
 _.connect_unix_socket  # unused attribute (httpcore backend protocol method)
+
+# /admin Settings-hub tile fields — read only in templates/admin_home.html.
+tone  # unused variable (src/iceberg/services/effective_config.py)
+meta  # unused variable (src/iceberg/services/effective_config.py)

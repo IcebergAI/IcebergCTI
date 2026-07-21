@@ -446,3 +446,130 @@ def test_valid_token_for_deleted_user_is_anonymous(client, login, engine):
     )
     assert resp.status_code == 303
     assert resp.headers["location"] == "/auth/login"
+
+
+def test_editor_markings_live_in_the_header(client, login):
+    """TLP / intel level / confidence are edited from the always-visible header
+    chips, and only there — a second copy in the dock footer would be a second
+    source of truth for the same three form fields."""
+    login("ANALYST", email="marks@example.com")
+    nb = client.post("/api/notebooks", json={"title": "Markings nb"}).json()
+    rid = client.post(
+        "/api/reports", json={"notebook_id": nb["id"], "title": "Marked product"}
+    ).json()["id"]
+
+    page = client.get(f"/reports/{rid}/edit").text
+    head = page.split('class="editor-head-actions"', 1)[0]
+    for field in ("intel_level", "tlp", "analytic_confidence"):
+        assert page.count(f'name="{field}"') == 1
+        assert f'name="{field}"' in head
+    # Each chip's <select> still posts with the product form, so autosave and a
+    # plain submit both carry the markings.
+    assert head.count('class="marking-chip-select"') == 3
+    assert head.count('form="reportform"') == 4  # title input + three markings
+
+
+def test_editor_markings_are_read_only_for_a_non_author(client, login):
+    """A reviewer opening someone else's product sees the markings as static
+    chips — visible, but with no editable control smuggled into the page."""
+    login("ANALYST", email="author2@example.com")
+    nb = client.post("/api/notebooks", json={"title": "Read-only nb"}).json()
+    rid = client.post(
+        "/api/reports", json={"notebook_id": nb["id"], "title": "Someone else's"}
+    ).json()["id"]
+
+    login("REVIEWER", email="reviewer2@example.com")
+    page = client.get(f"/reports/{rid}/edit").text
+    assert "marking-chip" in page
+    assert "marking-chip-select" not in page
+    assert 'name="tlp"' not in page
+
+
+def test_notebook_phases_keep_every_section_reachable(client, login):
+    """The nine sections are re-cut into four phases, not removed: each section
+    id still renders, and the <noscript> rule cancels x-cloak so a browser
+    without Alpine still sees all of them."""
+    login("ANALYST", email="phases@example.com")
+    nb = client.post("/api/notebooks", json={"title": "Phased nb"}).json()
+
+    page = client.get(f"/notebooks/{nb['id']}").text
+    for section in (
+        "sources",
+        "notes",
+        "attachments",
+        "figures",
+        "indicators",
+        "diamonds",
+        "ach",
+        "products",
+        "requirements",
+    ):
+        assert f'id="{section}"' in page
+        assert f'href="#{section}"' in page  # its phase tab
+    for phase in ("collect", "analyze", "produce", "trace"):
+        assert f"phase === '{phase}'" in page
+    # Collect is the server-rendered default: it alone is not cloaked.
+    assert "x-show=\"phase === 'collect'\">" in page
+    assert "[x-cloak] { display: revert; }" in page
+
+
+def test_notebook_phase_map_covers_every_section_and_redirect_target(client, login):
+    """Every post-action redirect lands on #<section> (creating a Diamond model
+    returns to /notebooks/{id}#diamonds). The component resolves that hash to the
+    owning phase via this map, so a section missing from it would leave the user
+    on a cloaked page that looks like their work vanished."""
+    import json
+    import re
+
+    login("ANALYST", email="deeplink@example.com")
+    nb = client.post("/api/notebooks", json={"title": "Deep link nb"}).json()
+    page = client.get(f"/notebooks/{nb['id']}").text
+
+    raw = re.search(
+        r'id="notebook-phase-data">(.*?)</script>', page, re.S
+    ).group(1)
+    mapping = json.loads(raw.replace("&#34;", '"'))
+    assert mapping == {
+        "sources": "collect",
+        "notes": "collect",
+        "attachments": "collect",
+        "figures": "collect",
+        "indicators": "collect",
+        "diamonds": "analyze",
+        "ach": "analyze",
+        "products": "produce",
+        "requirements": "trace",
+    }
+    # Every id the map claims really exists as a section on the page.
+    for section in mapping:
+        assert f'id="{section}"' in page
+
+
+def test_analyze_phase_redirects_land_on_a_resolvable_anchor(client, login):
+    """The regression this guards: #diamonds and #ach sit in the Analyze phase,
+    which is cloaked on load. Any route that redirects there must use an anchor
+    the phase map knows, or the user is returned to a page that looks empty."""
+    import json
+    import re
+
+    login("ANALYST", email="diamondlink@example.com")
+    nb = client.post("/api/notebooks", json={"title": "Diamond nb"}).json()
+    created = client.post(
+        f"/notebooks/{nb['id']}/diamonds",
+        data={"title": "Volt Typhoon", "confidence": "MODERATE"},
+        follow_redirects=False,
+    )
+    assert created.status_code == 303
+    # Creating lands on the model's own editor; deleting is what returns to the
+    # notebook's #diamonds anchor.
+    diamond_id = created.headers["location"].rstrip("/edit").rsplit("/", 1)[1]
+
+    resp = client.post(
+        f"/notebooks/{nb['id']}/diamonds/{diamond_id}/delete", follow_redirects=False
+    )
+    assert resp.status_code == 303
+    anchor = resp.headers["location"].split("#")[1]
+
+    page = client.get(f"/notebooks/{nb['id']}").text
+    raw = re.search(r'id="notebook-phase-data">(.*?)</script>', page, re.S).group(1)
+    assert json.loads(raw.replace("&#34;", '"'))[anchor] == "analyze"
