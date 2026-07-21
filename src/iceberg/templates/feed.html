@@ -70,7 +70,11 @@
                     <span class="dot"></span>Answers your RFI
                   </span>
                 {% endif %}
-                <span class="tag" title="Why this is in your feed, based on your current preferences">
+                {# Non-causal wording on purpose: for a `level_changed` match the
+                   reader's current preferences would *not* deliver this product,
+                   so a "why this is in your feed" tooltip would contradict the
+                   label it sits on. #}
+                <span class="tag" title="How this product relates to your current preferences">
                   <span class="dot"></span>{{ ctx.match.label }}
                 </span>
                 {{ m.level_badge(r.intel_level) }}

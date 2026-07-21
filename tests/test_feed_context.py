@@ -256,3 +256,29 @@ def test_read_rows_are_never_cloaked(client, login, engine):
     )
     # The bucket wrapper around an all-read group must not be cloaked either.
     assert 'x-show="!unreadOnly" x-cloak' not in page
+
+
+def test_feed_renders_the_changed_preference_state_without_a_causal_claim(
+    client, login, engine
+):
+    """The rendered mismatch state: the chip must say the product is outside the
+    reader's current preference, and nothing around it may claim those
+    preferences are why it arrived — they would not deliver it today."""
+    email = login("STAKEHOLDER", email="changed@example.com")
+    with Session(engine) as session:
+        user = session.exec(select(User).where(User.email == email)).one()
+        report = _report(
+            session, intel_level=IntelLevel.TACTICAL, status=ReportStatus.PUBLISHED
+        )
+        report.title = "Delivered before the switch"
+        session.add(report)
+        user.preferred_intel_level = IntelLevel.STRATEGIC
+        session.add(user)
+        session.add(DisseminationEvent(report_id=report.id, stakeholder_id=user.id))
+        session.commit()
+
+    page = client.get("/feed").text
+    assert "Delivered before the switch" in page
+    assert "outside your current STRATEGIC preference" in page
+    assert "Why this is in your feed" not in page
+    assert "How this product relates to your current preferences" in page
