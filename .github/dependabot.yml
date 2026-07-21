@@ -41,3 +41,16 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+
+  # The postgres/redis/caddy image pins in docker-compose.yml, matching the
+  # sibling repos' compose tracking (the Dockerfile ecosystem above only reads
+  # FROM lines, not compose `image:` keys).
+  - package-ecosystem: docker-compose
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      compose-images:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 5
