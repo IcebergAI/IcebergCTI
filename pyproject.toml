@@ -229,7 +229,8 @@ ignore_errors = true
 #   J004  literal /static href — the portal links assets by path, not url_for
 #   J018  literal internal hrefs — the portal uses path literals, not url_for
 #   T003  unnamed {% endblock %} — consistent house style
-# H037 (duplicate attribute) is kept on; its one Alpine false positive is
-# suppressed inline in admin_tags.html.
+#   H037  duplicate attribute — djLint 1.42.1 misreads Alpine event-modifier
+#         syntax (@keydown.arrow-right.prevent, @click.stop) as duplicate
+#         `prevent`/`stop` attributes; djLint can't parse Alpine modifiers.
 profile = "jinja"
-ignore = "H006,H021,H023,H030,H031,J004,J018,T003"
+ignore = "H006,H021,H023,H030,H031,H037,J004,J018,T003"
