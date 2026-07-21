@@ -188,12 +188,16 @@ def snapshot(session) -> dict:
 
     categories = list(dict.fromkeys(r.category for r in rows))
     providers = [p.name for p in oidc_settings.enabled_providers(session)]
+    # The AI tile must report what ``ai_settings.resolve`` will actually use, not
+    # what the row says: resolve fail-closes an invalid selection to "none".
+    ai_row = ai_settings.get(session)
+    ai_errors = ai_settings.validate_selection(ai_row)
     return {
         "rows": [asdict(r) for r in rows],
         "categories": categories,
         "validation": _validation(s),
-        "advisories": _advisories(s, providers),
-        "tiles": _tiles(session, s, providers),
+        "advisories": _advisories(s, providers, ai_row, ai_errors),
+        "tiles": _tiles(session, s, providers, ai_row, ai_errors),
     }
 
 
@@ -218,8 +222,16 @@ def _validation(s) -> dict:
     return {"ok": not errors, "errors": errors}
 
 
-def _advisories(s, providers: list[str]) -> list[str]:
+def _advisories(s, providers: list[str], ai_row, ai_errors: list[str]) -> list[str]:
     out: list[str] = []
+    # A selected-but-invalid provider is the most misleading AI state there is:
+    # the row says "openai", the runtime resolves to "none", and assist silently
+    # does nothing. Name the provider and every reason it was rejected.
+    if ai_row.backend != "none" and ai_errors:
+        out.append(
+            f"AI provider {ai_row.backend!r} is selected but invalid, so AI assist "
+            f"is disabled at runtime (fail-closed): {'; '.join(ai_errors)}"
+        )
     if not s.dev_login_enabled and not providers:
         out.append(
             "No login path is configured: dev-auth is off and no OIDC provider is "
@@ -238,17 +250,26 @@ def _advisories(s, providers: list[str]) -> list[str]:
     return out
 
 
-def _tiles(session, s, providers: list[str]) -> list[dict]:
+def _tiles(session, s, providers: list[str], ai_row, ai_errors: list[str]) -> list[dict]:
     def onoff(flag: bool) -> str:
         return "on" if flag else "off"
 
-    ai = ai_settings.get(session)
     misp = misp_settings.get(session)
     webhook = webhook_settings.get(session)
     typst = shutil.which(s.typst_bin) is not None
     return [
         {"label": "Environment", "value": s.environment, "ok": s.is_prod},
-        {"label": "AI backend", "value": ai.backend, "ok": ai.backend != "none"},
+        {
+            "label": "AI backend",
+            # Mirror the fail-closed resolution, so the tile can never show a
+            # green backend while ``resolve`` is handing "none" to services/ai.
+            "value": (
+                f"none (selected {ai_row.backend}: invalid)"
+                if ai_errors and ai_row.backend != "none"
+                else ai_row.backend
+            ),
+            "ok": not ai_errors and ai_row.backend != "none",
+        },
         {
             "label": "SSO providers",
             "value": ", ".join(providers) or "none",
