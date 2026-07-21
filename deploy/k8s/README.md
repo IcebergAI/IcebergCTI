@@ -82,7 +82,7 @@ The login page then shows "Continue with Microsoft Entra ID" and the dev bypass 
 3. **Migrate and release.** `ICEBERG_AUTO_MIGRATE` stays `false`. Use a unique
    release id and the same immutable digest for migration and application:
    ```bash
-   IMAGE=ghcr.io/icebergai/iceberg@sha256:<digest> RELEASE=2026-07-11-1 ./release.sh
+   IMAGE=ghcr.io/icebergai/icebergcti@sha256:<digest> RELEASE=2026-07-11-1 ./release.sh
    ```
    The script refuses mutable images and reused release names, waits with a
    timeout, prints failed migration logs, and rolls out only after success.
@@ -97,7 +97,7 @@ The login page then shows "Continue with Microsoft Entra ID" and the dev bypass 
 # evaluation) — see "Authentication / Login". They share the ConfigMap name.
 kubectl apply -f configmap.yaml -f service.yaml -f pvc.yaml
 kubectl apply -f secret.yaml          # from secret.example.yaml (sets ICEBERG_DATABASE_URL)
-IMAGE=ghcr.io/icebergai/iceberg@sha256:<digest> RELEASE=<unique-id> ./release.sh
+IMAGE=ghcr.io/icebergai/icebergcti@sha256:<digest> RELEASE=<unique-id> ./release.sh
 kubectl apply -f ingress.yaml         # optional — TLS exposure (edit host + secret first)
 ```
 

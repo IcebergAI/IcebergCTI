@@ -20,7 +20,7 @@ if kubectl get job "$job" >/dev/null 2>&1; then
 fi
 
 sed -e "s/name: iceberg-migrate/name: $job/" \
-    -e "s|image: ghcr.io/theslopbucket/iceberg:latest|image: $IMAGE|" \
+    -e "s|image: ghcr.io/icebergai/icebergcti:latest|image: $IMAGE|" \
     "$(dirname "$0")/migrate-job.yaml" | kubectl create -f -
 
 if ! kubectl wait --for=condition=complete --timeout="$MIGRATION_TIMEOUT" "job/$job"; then
