@@ -129,3 +129,31 @@ def test_admin_ai_save_persists_and_never_exposes_key(client, login, monkeypatch
     # The secret value / prefix must never render — only a "configured" status.
     assert "super-secret-value" not in page
     assert "configured" in page
+
+
+def test_invalid_ollama_base_url_cannot_egress_at_runtime(engine, monkeypatch):
+    """A saved Ollama base URL that doesn't match the operator-approved value
+    must fail closed at resolution — no writer AI call can reach it (review of
+    #246: base-URL pinning has to hold at runtime, not just on the admin page)."""
+    monkeypatch.setattr(get_settings(), "ai_ollama_base_url", "http://approved.internal/v1")
+    monkeypatch.setattr(get_settings(), "ai_api_key", "env-key")
+    monkeypatch.setattr(
+        ai_service.httpx, "post", lambda *a, **k: pytest.fail("AI content egressed")
+    )
+    with Session(engine) as session:
+        ai_settings.update(
+            session,
+            backend="ollama",
+            model="llama3.1",
+            base_url="http://attacker.example/v1",  # not the approved URL
+        )
+        resolved = ai_settings.resolve(session)
+        # Resolution neutralises the invalid selection.
+        assert resolved.ai_backend == "none"
+        result = ai_service.assist(
+            "judgements",
+            {"x": 1},
+            actor=User(id=1, email="a@x.com", display_name="A"),
+            settings=resolved,
+        )
+    assert result.available is False

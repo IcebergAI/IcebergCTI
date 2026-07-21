@@ -60,11 +60,18 @@ def resolve(session: Session) -> Settings:
 
     The secret ``ai_api_key`` is deliberately NOT overridden — it stays sourced
     from the environment. Everything downstream (``assist``, the backends, the TLP
-    gate) reads ``settings.ai_*`` and so transparently uses the resolved config."""
+    gate) reads ``settings.ai_*`` and so transparently uses the resolved config.
+
+    **Fail-closed**: an invalid selection (see ``validate_selection`` — including
+    an Ollama base URL that does not match the operator-approved value) resolves
+    to ``ai_backend="none"`` so **no** content can egress. This is the runtime
+    enforcement point — the admin page/test surface the same errors, but the guard
+    must hold regardless of how the row was written (e.g. a direct DB edit)."""
     row = get(session)
+    backend = "none" if validate_selection(row) else row.backend
     return get_settings().model_copy(
         update={
-            "ai_backend": row.backend,
+            "ai_backend": backend,
             "ai_base_url": row.base_url,
             "ai_model": row.model,
             "ai_aws_region": row.aws_region,
