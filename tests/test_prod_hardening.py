@@ -100,8 +100,6 @@ def test_compose_prod_overrides_and_loopback_port(tmp_path):
             str(env_file),
             "-f",
             str(_REPO_ROOT / "docker-compose.yml"),
-            "--profile",
-            "tls",
             "config",
             "--format",
             "json",
@@ -139,3 +137,21 @@ def test_compose_prod_overrides_and_loopback_port(tmp_path):
             "protocol": "tcp",
         }
     ]
+
+    # Caddy is the default front end (no profile flag needed): sole public
+    # ports, non-root, minimal capabilities, gated on a healthy app.
+    caddy = config["services"]["caddy"]
+    assert {(p["target"], p["protocol"]) for p in caddy["ports"]} == {
+        (80, "tcp"),
+        (443, "tcp"),
+        (443, "udp"),
+    }
+    assert all("host_ip" not in p for p in caddy["ports"])  # public, not loopback
+    assert caddy["user"] == "1000:1000"
+    assert caddy["cap_drop"] == ["ALL"]
+    assert caddy["cap_add"] == ["NET_BIND_SERVICE"]
+    assert caddy["read_only"] is True
+    assert caddy["depends_on"]["iceberg"]["condition"] == "service_healthy"
+    assert (
+        caddy["depends_on"]["caddy-init"]["condition"] == "service_completed_successfully"
+    )

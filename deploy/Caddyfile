@@ -1,9 +1,10 @@
-# Caddy reverse proxy for a single-host Docker deployment (opt-in `tls` profile;
-# see docker-compose.yml). Set ICEBERG_DOMAIN to your public hostname for
-# automatic Let's Encrypt TLS; it defaults to `localhost`, for which Caddy issues
-# a local-CA certificate (handy for a demo). Caddy forwards X-Forwarded-For/-Proto
-# by default, which the app honours via uvicorn's --proxy-headers (so the real
-# client IP reaches the audit log and the scheme is correct for Secure cookies).
+# Caddy reverse proxy — the default front end for a single-host Docker
+# deployment (see docker-compose.yml). Set ICEBERG_DOMAIN to your public
+# hostname for automatic Let's Encrypt TLS; it defaults to `localhost`, for
+# which Caddy issues a local-CA certificate (handy for a demo or local run).
+# Caddy forwards X-Forwarded-For/-Proto by default, which the app honours via
+# uvicorn's --proxy-headers (so the real client IP reaches the audit log and
+# the scheme is correct for Secure cookies).
 {$ICEBERG_DOMAIN:localhost} {
 	# Proxy-level request-body cap. Keep this at/above ICEBERG_MAX_BODY_MB (default
 	# 30 MB, itself just above ICEBERG_ATTACHMENT_MAX_MB=25 MB) so real uploads
@@ -12,5 +13,14 @@
 	request_body {
 		max_size 30MB
 	}
-	reverse_proxy iceberg:8000
+	# Security headers (CSP, HSTS, X-Frame-Options, …) are emitted by the app's
+	# SecurityHeaders middleware — the single source of truth — so Caddy adds
+	# nothing here. The transport timeouts bound a hung upstream so a stalled app
+	# worker returns 502 instead of holding client connections open indefinitely.
+	reverse_proxy iceberg:8000 {
+		transport http {
+			dial_timeout 10s
+			response_header_timeout 60s
+		}
+	}
 }
