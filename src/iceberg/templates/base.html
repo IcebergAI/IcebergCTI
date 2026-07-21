@@ -31,7 +31,9 @@
     <symbol id="ic-taxonomy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h9l5 5v11H5z"/><path d="M9 9h4M9 13h6M9 17h6"/></symbol>
     <symbol id="ic-feed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1.4" fill="currentColor"/></symbol>
     <symbol id="ic-prefs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M4.2 7l2.1 1.2M17.7 15.8l2.1 1.2M4.2 17l2.1-1.2M17.7 8.2l2.1-1.2"/></symbol>
-    <symbol id="ic-cmd" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></symbol>
+    {# Deliberately NOT the magnifier: the palette jumps between screens, Search
+       queries the corpus, and two magnifiers made them look like one feature. #}
+    <symbol id="ic-cmd" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3z"/></symbol>
     <symbol id="ic-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></symbol>
     <symbol id="ic-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></symbol>
     <symbol id="ic-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
@@ -52,9 +54,9 @@
   {% set _seg = (path.strip('/').split('/')[0]) if path != '/' else '' %}
   {% set _crumbs = {
     '': 'Dashboard', 'reports': 'Reports', 'notebooks': 'Notebooks',
-    'search': 'Search', 'tags': 'Entities', 'matrix': 'ATT&CK matrix',
+    'search': 'Search', 'tags': 'Entities', 'matrix': 'ATT&CK coverage',
     'requirements': 'Tasking', 'feed': 'Feed', 'feeds': 'Feed reader', 'preferences': 'Preferences',
-    'maturity': 'Program maturity', 'help': 'Help', 'admin': 'Administration'
+    'maturity': 'Program maturity', 'help': 'Help', 'admin': 'Settings & integrations'
   } %}
   {% set crumb_default = _crumbs.get(_seg, _seg | replace('-', ' ') | title) %}
   {% set role = (user.role.value if user.role is not string else user.role) if (user is defined and user) else none %}
@@ -65,20 +67,23 @@
       {'label': 'Feed', 'href': '/feed', 'group': 'Intelligence'},
       {'label': 'Reports', 'href': '/reports', 'group': 'Intelligence'},
       {'label': 'Search', 'href': '/search', 'group': 'Intelligence'},
-      {'label': 'ATT&CK matrix', 'href': '/matrix', 'group': 'Intelligence'},
+      {'label': 'ATT&CK coverage', 'href': '/matrix', 'group': 'Intelligence'},
       {'label': 'My requirements', 'href': '/requirements', 'group': 'My inputs'},
       {'label': 'Preferences', 'href': '/preferences', 'group': 'My inputs'},
       {'label': 'Help', 'href': '/help', 'group': 'Help'}
     ] %}
   {% elif role == 'ADMIN' %}
+    {# The rail collapses the integration/governance consoles behind /admin; the
+       palette stays exhaustive so a power user can still jump straight in. #}
     {% set jump_items = [
       {'label': 'Dashboard', 'href': '/', 'group': 'Workspace'},
       {'label': 'Reports', 'href': '/reports', 'group': 'Workspace'},
-      {'label': 'Feed reader', 'href': '/feeds', 'group': 'Collection'},
-      {'label': 'Search', 'href': '/search', 'group': 'Discovery'},
-      {'label': 'Entities', 'href': '/tags', 'group': 'Discovery'},
-      {'label': 'ATT&CK matrix', 'href': '/matrix', 'group': 'Discovery'},
-      {'label': 'Program maturity', 'href': '/maturity', 'group': 'Discovery'},
+      {'label': 'Tasking', 'href': '/requirements', 'group': 'Workspace'},
+      {'label': 'Feed reader', 'href': '/feeds', 'group': 'Collect'},
+      {'label': 'Search', 'href': '/search', 'group': 'Discover'},
+      {'label': 'Entities', 'href': '/tags', 'group': 'Discover'},
+      {'label': 'ATT&CK coverage', 'href': '/matrix', 'group': 'Discover'},
+      {'label': 'Program maturity', 'href': '/maturity', 'group': 'Discover'},
       {'label': 'Settings & integrations', 'href': '/admin', 'group': 'Administration'},
       {'label': 'Taxonomy', 'href': '/admin/tags', 'group': 'Administration'},
       {'label': 'Audience groups', 'href': '/admin/audience', 'group': 'Administration'},
@@ -90,20 +95,19 @@
       {'label': 'AI provider', 'href': '/admin/ai', 'group': 'Administration'},
       {'label': 'MISP push', 'href': '/admin/misp', 'group': 'Administration'},
       {'label': 'Publication webhook', 'href': '/admin/webhook', 'group': 'Administration'},
-      {'label': 'Tasking', 'href': '/requirements', 'group': 'Administration'},
       {'label': 'Help', 'href': '/help', 'group': 'Help'}
     ] %}
   {% elif role %}
     {% set jump_items = [
       {'label': 'Dashboard', 'href': '/', 'group': 'Workspace'},
-      {'label': 'Notebooks', 'href': '/notebooks', 'group': 'Workspace'},
-      {'label': 'Reports', 'href': '/reports', 'group': 'Workspace'},
-      {'label': 'Search', 'href': '/search', 'group': 'Discovery'},
-      {'label': 'Entities', 'href': '/tags', 'group': 'Discovery'},
-      {'label': 'ATT&CK matrix', 'href': '/matrix', 'group': 'Discovery'},
-      {'label': 'Program maturity', 'href': '/maturity', 'group': 'Discovery'},
-      {'label': 'Feed reader', 'href': '/feeds', 'group': 'Collection'},
-      {'label': 'Tasking', 'href': '/requirements', 'group': 'Collection'},
+      {'label': 'Notebooks', 'href': '/notebooks', 'group': 'Collect'},
+      {'label': 'Feed reader', 'href': '/feeds', 'group': 'Collect'},
+      {'label': 'Tasking', 'href': '/requirements', 'group': 'Collect'},
+      {'label': 'Reports', 'href': '/reports', 'group': 'Produce'},
+      {'label': 'Search', 'href': '/search', 'group': 'Discover'},
+      {'label': 'Entities', 'href': '/tags', 'group': 'Discover'},
+      {'label': 'ATT&CK coverage', 'href': '/matrix', 'group': 'Discover'},
+      {'label': 'Program maturity', 'href': '/maturity', 'group': 'Discover'},
       {'label': 'Help', 'href': '/help', 'group': 'Help'}
     ] %}
   {% else %}
@@ -136,7 +140,7 @@
                          (feed_unread if feed_unread is defined and feed_unread else '')) }}
             {{ rail_link('/reports', 'ic-reports', 'Reports', path.startswith('/reports')) }}
             {{ rail_link('/search', 'ic-search', 'Search', path.startswith('/search')) }}
-            {{ rail_link('/matrix', 'ic-matrix', 'Matrix', path.startswith('/matrix')) }}
+            {{ rail_link('/matrix', 'ic-matrix', 'ATT&CK coverage', path.startswith('/matrix')) }}
           </div>
           <div class="rail-group">
             <div class="rail-group-label">My inputs</div>
@@ -148,48 +152,49 @@
             <div class="rail-group-label">Workspace</div>
             {{ rail_link('/', 'ic-home', 'Dashboard', path == '/') }}
             {{ rail_link('/reports', 'ic-reports', 'Reports', path.startswith('/reports')) }}
-            {{ rail_link('/feeds', 'ic-feed', 'Feed reader', path == '/feeds') }}
+            {{ rail_link('/requirements', 'ic-tasking', 'Tasking', path.startswith('/requirements')) }}
           </div>
           <div class="rail-group">
-            <div class="rail-group-label">Discovery</div>
+            <div class="rail-group-label">Discover</div>
             {{ rail_link('/search', 'ic-search', 'Search', path.startswith('/search')) }}
             {{ rail_link('/tags', 'ic-entity', 'Entities', path.startswith('/tags')) }}
-            {{ rail_link('/matrix', 'ic-matrix', 'Matrix', path.startswith('/matrix')) }}
+            {{ rail_link('/matrix', 'ic-matrix', 'ATT&CK coverage', path.startswith('/matrix')) }}
             {{ rail_link('/maturity', 'ic-maturity', 'Maturity', path.startswith('/maturity')) }}
           </div>
+          {# The six integration + governance consoles live behind the /admin hub,
+             which stays lit while you are inside any of them; every one of them
+             is still a ⌘K jump target (see jump_items above). #}
+          {% set own_rail_links = ['/admin/tags', '/admin/audience', '/admin/audit'] %}
+          {% set in_hub = path.startswith('/admin') and not own_rail_links | select('in', path) | list %}
           <div class="rail-group">
             <div class="rail-group-label">Administration</div>
-            {{ rail_link('/admin', 'ic-settings', 'Settings & integrations', path == '/admin') }}
             {{ rail_link('/admin/tags', 'ic-taxonomy', 'Taxonomy', path.startswith('/admin/tags')) }}
             {{ rail_link('/admin/audience', 'ic-entity', 'Audience', path.startswith('/admin/audience')) }}
+            {{ rail_link('/admin', 'ic-settings', 'Settings & integrations', in_hub) }}
             {{ rail_link('/admin/audit', 'ic-audit', 'Audit log', path.startswith('/admin/audit')) }}
-            {{ rail_link('/admin/config', 'ic-config', 'Effective config', path == '/admin/config') }}
-            {{ rail_link('/admin/oidc', 'ic-sso', 'Single sign-on', path.startswith('/admin/oidc')) }}
-            {{ rail_link('/admin/feeds', 'ic-rss', 'RSS feeds', path.startswith('/admin/feeds')) }}
-            {{ rail_link('/admin/proxy', 'ic-proxy', 'Outbound proxy', path.startswith('/admin/proxy')) }}
-            {{ rail_link('/admin/ai', 'ic-ai', 'AI provider', path.startswith('/admin/ai')) }}
-            {{ rail_link('/admin/misp', 'ic-misp', 'MISP push', path.startswith('/admin/misp')) }}
-            {{ rail_link('/admin/webhook', 'ic-webhook', 'Webhook', path.startswith('/admin/webhook')) }}
-            {{ rail_link('/requirements', 'ic-tasking', 'Tasking', path.startswith('/requirements')) }}
           </div>
         {% else %}
           <div class="rail-group">
             <div class="rail-group-label">Workspace</div>
             {{ rail_link('/', 'ic-home', 'Dashboard', path == '/') }}
+          </div>
+          {# Ordered by the intelligence cycle: collect → produce → discover. #}
+          <div class="rail-group">
+            <div class="rail-group-label">Collect</div>
             {{ rail_link('/notebooks', 'ic-notebook', 'Notebooks', path.startswith('/notebooks')) }}
+            {{ rail_link('/feeds', 'ic-rss', 'Feed reader', path == '/feeds') }}
+            {{ rail_link('/requirements', 'ic-tasking', 'Tasking', path.startswith('/requirements')) }}
+          </div>
+          <div class="rail-group">
+            <div class="rail-group-label">Produce</div>
             {{ rail_link('/reports', 'ic-reports', 'Reports', path.startswith('/reports')) }}
           </div>
           <div class="rail-group">
-            <div class="rail-group-label">Discovery</div>
+            <div class="rail-group-label">Discover</div>
             {{ rail_link('/search', 'ic-search', 'Search', path.startswith('/search')) }}
             {{ rail_link('/tags', 'ic-entity', 'Entities', path.startswith('/tags')) }}
-            {{ rail_link('/matrix', 'ic-matrix', 'Matrix', path.startswith('/matrix')) }}
+            {{ rail_link('/matrix', 'ic-matrix', 'ATT&CK coverage', path.startswith('/matrix')) }}
             {{ rail_link('/maturity', 'ic-maturity', 'Maturity', path.startswith('/maturity')) }}
-          </div>
-          <div class="rail-group">
-            <div class="rail-group-label">Collection</div>
-            {{ rail_link('/feeds', 'ic-feed', 'Feed reader', path == '/feeds') }}
-            {{ rail_link('/requirements', 'ic-tasking', 'Tasking', path.startswith('/requirements')) }}
           </div>
         {% endif %}
       </nav>

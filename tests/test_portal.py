@@ -511,3 +511,74 @@ def test_notebook_phases_keep_every_section_reachable(client, login):
     # Collect is the server-rendered default: it alone is not cloaked.
     assert "x-show=\"phase === 'collect'\">" in page
     assert "[x-cloak] { display: revert; }" in page
+
+
+def test_analyst_rail_follows_the_intelligence_cycle(client, login):
+    login("ANALYST", email="cycle@example.com")
+    page = client.get("/").text
+    rail = page.split('class="rail-nav"', 1)[1].split("</nav>", 1)[0]
+    labels = ["Workspace", "Collect", "Produce", "Discover"]
+    positions = [rail.index(f">{label}</div>") for label in labels]
+    assert positions == sorted(positions), "rail groups are out of cycle order"
+    # Tasking is collection, not administration.
+    collect = rail.split(">Collect</div>", 1)[1].split(">Produce</div>", 1)[0]
+    assert "/requirements" in collect and "/notebooks" in collect
+
+
+def test_admin_rail_collapses_the_config_consoles_behind_the_hub(client, login):
+    """Eleven admin links become four; every collapsed console is still one ⌘K
+    keystroke away, so nothing became unreachable."""
+    login("ADMIN", email="railadmin@example.com")
+    page = client.get("/").text
+    rail = page.split('class="rail-nav"', 1)[1].split("</nav>", 1)[0]
+    admin = rail.split(">Administration</div>", 1)[1]
+    assert admin.count("<a href=") == 4
+    for collapsed in ("/admin/ai", "/admin/misp", "/admin/proxy", "/admin/webhook",
+                      "/admin/oidc", "/admin/config", "/admin/feeds"):
+        assert f'href="{collapsed}"' not in admin
+        assert f"'href': '{collapsed}'" in page or f'"href": "{collapsed}"' in page
+
+
+def test_every_command_palette_destination_resolves(client, login):
+    """The palette is the safety net for the collapsed rail — a dead entry in it
+    would strand a whole console."""
+    import json
+    import re
+
+    for role in ("ANALYST", "ADMIN", "STAKEHOLDER"):
+        login(role, email=f"palette-{role.lower()}@example.com")
+        page = client.get("/").text
+        raw = re.search(r"x-data='appShell\((\[.*?\])\)'", page, re.S).group(1)
+        items = json.loads(raw.replace("&#34;", '"').replace("&amp;", "&"))
+        assert items, f"{role} has an empty palette"
+        for item in items:
+            resp = client.get(item["href"], follow_redirects=False)
+            assert resp.status_code in (200, 303), f"{role} → {item['href']}"
+
+
+def test_editor_has_one_save_model_and_a_publish_tab(client, login):
+    """Autosave is the only save path (plus a <noscript> fallback), and the
+    lifecycle + render + transition all live under Publish rather than being
+    spread over a subhead and a separate tab."""
+    login("ANALYST", email="publish@example.com")
+    nb = client.post("/api/notebooks", json={"title": "Publish nb"}).json()
+    rid = client.post(
+        "/api/reports", json={"notebook_id": nb["id"], "title": "Publishable"}
+    ).json()["id"]
+
+    page = client.get(f"/reports/{rid}/edit").text
+    assert "Save draft" not in page
+    assert "All changes saved" in page
+    assert "<noscript><button form=\"reportform\"" in page
+    assert 'class="editor-subhead"' not in page
+
+    # Four verb-labelled tabs (+ Assist, which is conditional on AI being on).
+    tabs = page.split('class="dock-tabs"', 1)[1].split("</div>", 1)[0]
+    assert tabs.count("data-editor-tab") in (4, 5)
+    for label in (">Cite<", ">Classify<", ">Link<", ">Publish<"):
+        assert label in tabs
+    # Publish owns the lifecycle stepper, the renders, and the transition.
+    publish = page.split('id="editor-panel-publish"', 1)[1]
+    assert 'class="flow"' in publish
+    assert "Rendered products" in publish
+    assert "Submit for review" in page.split('class="dock-foot"', 1)[1]
