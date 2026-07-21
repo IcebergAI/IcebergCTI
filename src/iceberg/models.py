@@ -324,6 +324,9 @@ class AuditAction(StrEnum):
     TAG_MERGED = "TAG_MERGED"
     # Governed analyst-assist calls (prompt/response bodies are never audited).
     AI_ASSIST = "AI_ASSIST"
+    # AI provider configuration (admin)
+    AI_SETTINGS_UPDATED = "AI_SETTINGS_UPDATED"
+    AI_TEST = "AI_TEST"
     # Audit configuration (admin)
     AUDIT_SETTINGS_UPDATED = "AUDIT_SETTINGS_UPDATED"
     AUDIT_TEST = "AUDIT_TEST"
@@ -1353,6 +1356,33 @@ class WebhookSettings(SQLModel, table=True):
     # ``generic`` is deliberately the default so existing integrations retain
     # their exact JSON envelope. Slack and Teams are metadata-only adapters.
     format: str = Field(default="generic", max_length=16)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class AISettings(SQLModel, table=True):
+    """Governed AI-assist provider configuration, admin-editable (single row, id=1).
+
+    Selects and tunes the AI backend at runtime instead of via env-only settings
+    (seeded from ``ICEBERG_AI_*`` on first read). Holds only non-secret config —
+    the API key is read from the environment (``ICEBERG_AI_API_KEY``, plus the AWS
+    credential chain for Bedrock) and injected at call time, never persisted here
+    (same discipline as the MISP/webhook/proxy/SIEM secrets). ``backend == "none"``
+    disables assist. See ``services/ai_settings.py`` + ``services/ai.py``."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    # Selected provider. ``none`` disables AI assist; the others map to a backend
+    # in ``services/ai._BACKENDS`` (config._AI_BACKENDS is the validated set).
+    backend: str = "none"
+    # Base URL for the OpenAI-compatible path. Ignored for the pinned providers
+    # (openai/gemini) and for claude/bedrock; validated for openai-compatible and
+    # (against the operator env value) for ollama. No credentials in the URL.
+    base_url: str = ""
+    model: str = ""
+    aws_region: str = ""  # Bedrock region (AWS credential chain, no API key)
+    timeout: float = 20.0
+    max_tlp: str = "AMBER"  # AI egress ceiling — a CTI differentiator, kept
+    embeddings_enabled: bool = False
+    embedding_model: str = ""
     updated_at: datetime = Field(default_factory=utcnow)
 
 

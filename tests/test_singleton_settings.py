@@ -8,6 +8,7 @@ from sqlalchemy import event
 from sqlmodel import SQLModel, Session, create_engine, select
 
 from iceberg.models import (
+    AISettings,
     AuditSettings,
     MISPSettings,
     OIDCSettings,
@@ -15,6 +16,7 @@ from iceberg.models import (
     WebhookSettings,
 )
 from iceberg.services import (
+    ai_settings,
     audit_settings,
     misp_settings,
     oidc_settings,
@@ -30,6 +32,7 @@ from iceberg.services import (
         (ProxySettings, proxy_settings.get),
         (MISPSettings, misp_settings.get),
         (WebhookSettings, webhook_settings.get),
+        (AISettings, ai_settings.get),
         (OIDCSettings, oidc_settings.get),
     ],
 )

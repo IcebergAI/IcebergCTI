@@ -1,7 +1,7 @@
 """multi-provider OIDC: auth_provider identity + OIDCSettings
 
 Revision ID: c3d4e5f6a7b8
-Revises: a6b7c8d9e0f1
+Revises: b1c2d3e4f5a6
 Create Date: 2026-07-21 13:00:00.000000
 
 Re-keys user identity on (auth_provider, issuer, sub) so two IdPs can't collide
@@ -18,7 +18,7 @@ import sqlmodel  # SQLModel renders columns as sqlmodel.sql.sqltypes.AutoString
 
 # revision identifiers, used by Alembic.
 revision: str = 'c3d4e5f6a7b8'
-down_revision: Union[str, Sequence[str], None] = 'a6b7c8d9e0f1'
+down_revision: Union[str, Sequence[str], None] = 'b1c2d3e4f5a6'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

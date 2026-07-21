@@ -31,6 +31,13 @@ _DEFAULT_CLAUDE_MODEL = "claude-opus-4-8"
 # Bedrock model ids carry the ``anthropic.`` provider prefix.
 _DEFAULT_BEDROCK_MODEL = "anthropic.claude-opus-4-8"
 
+# Pinned base URLs for the first-class OpenAI-compatible providers. Because the
+# base URL is now DB-editable, these are hard-coded (not read from the DB row) so
+# a config edit can't redirect a real API key to an attacker-controlled host.
+# Ollama's approved base URL is operator env (``ai_ollama_base_url``).
+_OPENAI_BASE_URL = "https://api.openai.com/v1"
+_GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
+
 
 @dataclass(frozen=True)
 class AISuggestion:
@@ -223,14 +230,24 @@ class AIBackend(ABC):
 
 
 class OpenAICompatibleBackend(AIBackend):
-    """A generic OpenAI-style ``/chat/completions`` endpoint."""
+    """A generic OpenAI-style ``/chat/completions`` endpoint.
+
+    ``pinned_base_url`` locks the target host for a named provider (OpenAI,
+    Gemini) so the DB-editable base URL can't redirect the API key; a ``None``
+    pin (the generic ``openai-compatible`` escape hatch, and ``ollama`` whose base
+    URL is validated against the operator env value) uses ``settings.ai_base_url``."""
 
     name = "openai-compatible"
+    pinned_base_url: str | None = None
+
+    def _resolved_base_url(self, settings) -> str:
+        return self.pinned_base_url or settings.ai_base_url
 
     def _complete(self, prompt, *, settings, proxy_settings):
-        if not settings.ai_base_url or not settings.ai_model:
+        resolved = self._resolved_base_url(settings)
+        if not resolved or not settings.ai_model:
             raise BackendUnavailable("AI backend is not configured")
-        base_url = f"{settings.ai_base_url.rstrip('/')}/chat/completions"
+        base_url = f"{resolved.rstrip('/')}/chat/completions"
         headers = {"Content-Type": "application/json"}
         if settings.ai_api_key:
             headers["Authorization"] = f"Bearer {settings.ai_api_key}"
@@ -248,6 +265,28 @@ class OpenAICompatibleBackend(AIBackend):
         )
         resp.raise_for_status()
         return json.loads(resp.json()["choices"][0]["message"]["content"])
+
+
+class OpenAIBackend(OpenAICompatibleBackend):
+    """OpenAI's first-party API, base URL pinned to ``api.openai.com``."""
+
+    name = "openai"
+    pinned_base_url = _OPENAI_BASE_URL
+
+
+class GeminiBackend(OpenAICompatibleBackend):
+    """Google Gemini via its OpenAI-compatible endpoint (pinned)."""
+
+    name = "gemini"
+    pinned_base_url = _GEMINI_BASE_URL
+
+
+class OllamaBackend(OpenAICompatibleBackend):
+    """A local/self-hosted Ollama server (OpenAI-compatible). The base URL is
+    free-form on the row but validated against ``ai_ollama_base_url`` before use
+    (``ai_settings.validate_selection``), so it can't be repointed arbitrarily."""
+
+    name = "ollama"
 
 
 class _AnthropicBackend(AIBackend):
@@ -318,8 +357,38 @@ class BedrockBackend(_AnthropicBackend):
 # layering cycle).
 _BACKENDS: dict[str, AIBackend] = {
     b.name: b
-    for b in (OpenAICompatibleBackend(), ClaudeBackend(), BedrockBackend())
+    for b in (
+        OpenAICompatibleBackend(),
+        OpenAIBackend(),
+        GeminiBackend(),
+        OllamaBackend(),
+        ClaudeBackend(),
+        BedrockBackend(),
+    )
 }
+
+
+def probe(settings: Settings, proxy_settings: ProxySettings | None = None) -> str:
+    """Best-effort connectivity check for the admin console. Returns a short
+    status string (``"ok"``/``"disabled"``/a specific failure message); never
+    raises. Metadata-only — no prompt/response bodies are logged."""
+    if settings.ai_backend == "none":
+        return "disabled"
+    backend = _BACKENDS.get(settings.ai_backend)
+    if backend is None:
+        return f"unknown backend: {settings.ai_backend}"
+    try:
+        backend._complete(
+            _advisory_prompt("connectivity_test", {"ping": "pong"}),
+            settings=settings,
+            proxy_settings=proxy_settings,
+        )
+    except BackendUnavailable as exc:
+        return exc.message
+    except Exception:
+        logger.warning("AI connectivity probe failed", exc_info=True)
+        return "provider error"
+    return "ok"
 
 
 def local_embedding(text: str, dimensions: int = 32) -> list[float]:

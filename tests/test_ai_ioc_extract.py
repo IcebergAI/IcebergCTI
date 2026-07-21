@@ -79,6 +79,8 @@ def _enable_ai(monkeypatch, candidates):
         ai_model="m",
     )
     monkeypatch.setattr(ai_service, "get_settings", lambda: enabled)
+    # Endpoints resolve the AI config from the AISettings DB row (#246).
+    monkeypatch.setattr("iceberg.services.ai_settings.resolve", lambda session: enabled)
 
 
 # --------------------------------------------------------------------------- #
@@ -183,6 +185,7 @@ def test_notebook_panel_shown_when_ai_enabled(client, login, monkeypatch):
         ai_backend="openai-compatible", ai_base_url="https://x", ai_model="m"
     )
     monkeypatch.setattr(ai_service, "get_settings", lambda: enabled)
+    monkeypatch.setattr("iceberg.services.ai_settings.resolve", lambda session: enabled)
     login("ANALYST")
     nb = _notebook(client)
     _source(client, nb["id"])
