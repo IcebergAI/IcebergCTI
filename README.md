@@ -273,11 +273,16 @@ Stakeholders outside a scoped report's groups cannot see it in search, feeds, di
 reads, or dissemination. Unscoped published reports remain visible to authenticated stakeholders.
 
 ### Governed AI assist
-AI assist is off by default (`ICEBERG_AI_BACKEND=none`). Four backends are selectable:
-`openai-compatible` (a generic chat endpoint, `ICEBERG_AI_BASE_URL` + `ICEBERG_AI_API_KEY`),
-`claude` (Anthropic's first-party API — `pip install '.[anthropic]'`, key in `ICEBERG_AI_API_KEY`,
-default model `claude-opus-4-8`), and `bedrock` (Amazon Bedrock — `pip install '.[bedrock]'`,
-`ICEBERG_AI_AWS_REGION` plus the standard AWS credential chain, no API key). When configured,
+AI assist is off by default (`ICEBERG_AI_BACKEND=none`). The provider is **admin-editable** at
+`/admin/ai` (the `ICEBERG_AI_*` env values seed the `AISettings` row on first read, then the row is
+the source of truth). Selectable backends: `openai` and `gemini` (first-party APIs on **pinned**
+base URLs, key in `ICEBERG_AI_API_KEY`), `ollama` (a local server, base URL validated against the
+operator-approved `ICEBERG_AI_OLLAMA_BASE_URL`), `openai-compatible` (a generic chat endpoint,
+`ICEBERG_AI_BASE_URL` + `ICEBERG_AI_API_KEY`), `claude` (Anthropic's first-party API —
+`pip install '.[anthropic]'`, key in `ICEBERG_AI_API_KEY`, default model `claude-opus-4-8`), and
+`bedrock` (Amazon Bedrock — `pip install '.[bedrock]'`, `ICEBERG_AI_AWS_REGION` plus the standard AWS
+credential chain, no API key). The API key stays env-only (the admin page shows a set/not-set pill,
+never the value); base-URL pinning ensures a DB edit can't redirect a real key. When configured,
 writer-only API endpoints can draft judgement text, source summaries, tag suggestions, Diamond/ACH
 starts, analytic challenge notes, and **candidate indicators extracted from a source** (the notebook
 Indicators section shows a "Suggest indicators" review list — candidates are refanged and constrained
@@ -446,7 +451,8 @@ All settings use the `ICEBERG_` env prefix and can live in `.env` (see
 | `ICEBERG_JOBS_*` | Durable outbox tuning (lease seconds, max attempts, retry backoff base, worker poll interval) for email/webhook/RSS jobs processed by `iceberg-worker` |
 | `ICEBERG_RATE_LIMIT_ENABLED` / `ICEBERG_RATE_LIMIT_STORE` / `ICEBERG_RATE_LIMIT_REDIS_URL` | Abuse protection for auth, AI, render, outbound tests/pushes, and search; enabled by default in prod, Redis-backed for shared worker state |
 | `ICEBERG_RATE_LIMIT_*` | Per-surface rate-limit tunables (auth/dev-login, OIDC, AI, render, outbound actions, search) |
-| `ICEBERG_AI_BACKEND` + `ICEBERG_AI_*` | Governed AI assist backend (`none`/`openai-compatible`/`claude`/`bedrock`), model, key/`ICEBERG_AI_AWS_REGION`, TLP egress ceiling and timeout (off by default) |
+| `ICEBERG_AI_BACKEND` + `ICEBERG_AI_*` | Governed AI assist backend (`none`/`openai`/`openai-compatible`/`ollama`/`gemini`/`claude`/`bedrock`), model, key/`ICEBERG_AI_AWS_REGION`, TLP egress ceiling and timeout — **seeds** the `AISettings` row, then edit live at `/admin/ai` (off by default) |
+| `ICEBERG_AI_OLLAMA_BASE_URL` | Operator-approved Ollama base URL; the DB-editable base URL for the `ollama` provider must match it exactly (anti-SSRF base-URL pinning) |
 | `ICEBERG_RSS_POLL_ENABLED` / `ICEBERG_RSS_POLL_INTERVAL_MINUTES` | Opt-in RSS poller switch and interval |
 | `ICEBERG_RSS_FETCH_TIMEOUT` / `ICEBERG_RSS_MAX_RESPONSE_BYTES` / `ICEBERG_RSS_MAX_ITEMS_PER_FEED` | RSS/Atom fetch timeout, response byte cap, and per-feed item cap |
 | `ICEBERG_RSS_ALLOW_PRIVATE_HOSTS` | Allow private/internal feed hosts for trusted deployments |

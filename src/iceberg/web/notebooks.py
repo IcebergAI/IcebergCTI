@@ -36,6 +36,7 @@ from ..models import (
 from ..services import (
     ach as ach_service,
     ai as ai_service,
+    ai_settings as ai_settings_service,
     attachments as attachment_service,
     diamond as diamond_service,
     feed as feed_service,
@@ -237,7 +238,7 @@ def notebook_detail(
             "figures": list(nb.figures),
             "iocs": ioc_service.list_for_notebook(session, nb.id),
             "ioc_types": list(IOCType),
-            "ai_enabled": ai_service.is_enabled(),
+            "ai_enabled": ai_service.is_enabled(ai_settings_service.resolve(session)),
             "ai_ioc_type_choices": [
                 {"value": t.value, "label": ioc_type_label(t)} for t in IOCType
             ],

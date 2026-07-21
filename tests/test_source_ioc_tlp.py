@@ -128,6 +128,8 @@ def _enable_ai(monkeypatch, candidates=None):
         ai_max_tlp="AMBER",
     )
     monkeypatch.setattr(ai_service, "get_settings", lambda: enabled)
+    # Endpoints resolve the AI config from the AISettings DB row (#246).
+    monkeypatch.setattr("iceberg.services.ai_settings.resolve", lambda session: enabled)
     return called
 
 

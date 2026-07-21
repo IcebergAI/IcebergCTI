@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}AI provider · {{ app_name }}{% endblock %}
+{% block crumb %}AI provider{% endblock %}
+{% block content %}
+
+<div class="head-row mb-7">
+  <div>
+    <div class="eyebrow eyebrow-accent">Administration</div>
+    <h1 class="page-title mt-2">AI provider</h1>
+    <div class="title-rule"></div>
+    <p class="text-sm mt-3" style="color:var(--muted);max-width:64ch;">The governed AI-assist backend. Assist is advisory-only, audited, and never egresses report or source content above the TLP ceiling below. The API key is read from the environment and never stored here.</p>
+  </div>
+</div>
+
+{% if validation_errors %}
+<div class="card card-pad-lg mb-5" style="border-color:var(--c-crit);">
+  <h2 class="section-title mb-2" style="color:var(--c-crit);">Needs attention</h2>
+  <ul class="text-sm" style="color:var(--muted);margin:0;padding-left:18px;">
+    {% for err in validation_errors %}<li>{{ err }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<section class="card card-pad-lg mb-5">
+  <h2 class="section-title mb-4">Provider</h2>
+  <form method="post" action="/admin/ai" class="add-form">
+    <label class="field-wrap">
+      <span class="field-label">Backend <span class="opt">select "none" to disable AI assist</span></span>
+      <select name="backend" class="field mono">
+        {% for choice in backend_choices %}
+        <option value="{{ choice }}" {% if settings.backend == choice %}selected{% endif %}>{{ choice }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label class="field-wrap">
+      <span class="field-label">Model <span class="opt">e.g. gpt-4o-mini, gemini-2.0-flash, claude-opus-4-8, llama3.1</span></span>
+      <input name="model" class="field mono" value="{{ settings.model }}" placeholder="model identifier">
+    </label>
+
+    <label class="field-wrap">
+      <span class="field-label">Base URL <span class="opt">openai-compatible: your gateway · ollama: must equal <span class="mono">{{ ollama_base_url }}</span> · openai/gemini: pinned (ignored) · claude/bedrock: n/a</span></span>
+      <input name="base_url" class="field mono" value="{{ settings.base_url }}" placeholder="https://…/v1">
+    </label>
+
+    <label class="field-wrap">
+      <span class="field-label">AWS region <span class="opt">Bedrock only (auth is the AWS credential chain)</span></span>
+      <input name="aws_region" class="field mono" value="{{ settings.aws_region }}" placeholder="us-east-1">
+    </label>
+
+    <label class="field-wrap">
+      <span class="field-label">Request timeout <span class="opt">seconds</span></span>
+      <input name="timeout" type="number" min="1" step="1" class="field mono" value="{{ settings.timeout }}">
+    </label>
+
+    <label class="field-wrap">
+      <span class="field-label">AI egress ceiling <span class="opt">report/source content above this TLP is never sent to the provider</span></span>
+      <select name="max_tlp" class="field mono">
+        {% for choice in tlp_choices %}
+        <option value="{{ choice }}" {% if settings.max_tlp == choice %}selected{% endif %}>{{ choice }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label class="chip-check">
+      <input type="checkbox" name="embeddings_enabled" {% if settings.embeddings_enabled %}checked{% endif %}>
+      <span>Enable embeddings <span class="opt">(related-report vectors)</span></span>
+    </label>
+
+    <label class="field-wrap">
+      <span class="field-label">Embedding model <span class="opt">optional; blank uses the local non-egress fallback</span></span>
+      <input name="embedding_model" class="field mono" value="{{ settings.embedding_model }}" placeholder="embedding model identifier">
+    </label>
+
+    <p class="text-sm mt-2" style="color:var(--muted);">
+      API key:
+      {% if key_configured %}<strong>configured</strong> (from the environment){% else %}<strong style="color:var(--c-crit);">not set</strong>{% endif %}.
+      Set <span class="mono">ICEBERG_AI_API_KEY</span> (openai/openai-compatible/gemini/claude). Bedrock uses the AWS credential chain.
+    </p>
+
+    <div style="margin-top:12px;">
+      <button class="btn btn--primary" type="submit">Save configuration</button>
+    </div>
+  </form>
+
+  <form method="post" action="/admin/ai/test" class="add-form" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px;">
+    <div>
+      <button class="btn btn--ghost btn--sm" type="submit">Test connection</button>
+      {% if test_result %}<span class="mono text-sm" style="margin-left:10px;color:{{ 'var(--muted)' if test_result == 'ok' else 'var(--c-crit)' }};">{{ test_result }}</span>{% endif %}
+    </div>
+  </form>
+</section>
+
+{% endblock %}

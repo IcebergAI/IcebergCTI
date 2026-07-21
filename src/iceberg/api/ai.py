@@ -34,7 +34,9 @@ from ..schemas import (
     AISuggestionResponse,
     AITagSuggestRequest,
 )
+from ..config import Settings
 from ..services import ai as ai_service
+from ..services import ai_settings as ai_settings_service
 from ..services import audit
 from ..services import iocs as ioc_service
 from ..services import proxy_settings as proxy_settings_service
@@ -43,6 +45,17 @@ from ..services import reports as report_service
 router = APIRouter(prefix="/ai", tags=["ai"])
 SessionDep = Annotated[Session, Depends(get_session)]
 Writer = Annotated[object, Depends(require_role(Role.ANALYST, Role.REVIEWER))]
+
+
+def _resolve_ai_config(session: SessionDep) -> Settings:
+    """The effective AI config (env seed overlaid by the AISettings DB row).
+
+    Threaded into every ``ai_service`` call so the admin-editable provider/model/
+    TLP ceiling drives assist, egress gating and dispatch — not just env."""
+    return ai_settings_service.resolve(session)
+
+
+AIConfig = Annotated[Settings, Depends(_resolve_ai_config)]
 
 
 def _record_ai(
@@ -108,6 +121,7 @@ def suggest_judgements(
     user: CurrentUser,
     request: Request,
     background_tasks: BackgroundTasks,
+    ai_cfg: AIConfig,
     _w: Writer,
 ) -> AISuggestionResponse:
     report = _report_or_404(session, body.report_id)
@@ -129,7 +143,7 @@ def suggest_judgements(
                 "summary": s.summary,
                 "content_md": s.content_md,
             }
-            for s in ai_service.sendable_sources(notebook.sources)
+            for s in ai_service.sendable_sources(notebook.sources, ai_cfg)
         ],
         "notes": [n.body_md for n in notebook.notes],
     }
@@ -137,6 +151,7 @@ def suggest_judgements(
         "judgements",
         payload,
         actor=user,
+        settings=ai_cfg,
         report=report,
         proxy_settings=proxy_settings_service.get(session),
     )
@@ -151,16 +166,17 @@ def summarise_source(
     user: CurrentUser,
     request: Request,
     background_tasks: BackgroundTasks,
+    ai_cfg: AIConfig,
     _w: Writer,
 ) -> AISuggestionResponse:
     source = _source_or_404(session, body.source_id)
     # Check the backend first so a disabled backend doesn't surface the TLP gate's
     # message (which would mislead — TLP isn't the blocker when AI is off, #117).
-    if not ai_service.is_enabled():
+    if not ai_service.is_enabled(ai_cfg):
         result = ai_service.disabled("summarise_source", "AI backend is disabled")
         _record_ai(session, background_tasks, request, user, result, resource_type="source", resource_id=source.id)
         return AISuggestionResponse(**result.as_dict())
-    if not ai_service.should_send_source(source):
+    if not ai_service.should_send_source(source, ai_cfg):
         result = ai_service.disabled(
             "summarise_source", "Source TLP exceeds the configured AI egress ceiling"
         )
@@ -176,6 +192,7 @@ def summarise_source(
         "summarise_source",
         payload,
         actor=user,
+        settings=ai_cfg,
         proxy_settings=proxy_settings_service.get(session),
     )
     _record_ai(session, background_tasks, request, user, result, resource_type="source", resource_id=source.id)
@@ -189,6 +206,7 @@ def extract_iocs(
     user: CurrentUser,
     request: Request,
     background_tasks: BackgroundTasks,
+    ai_cfg: AIConfig,
     _w: Writer,
 ) -> AISuggestionResponse:
     """Suggest indicators from a source's text (advisory; the analyst promotes a
@@ -197,11 +215,11 @@ def extract_iocs(
     source = _source_or_404(session, body.source_id)
     # Check the backend first so a disabled backend doesn't surface the TLP gate's
     # message (which would mislead — TLP isn't the blocker when AI is off, #117).
-    if not ai_service.is_enabled():
+    if not ai_service.is_enabled(ai_cfg):
         result = ai_service.disabled("ioc_extract", "AI backend is disabled")
         _record_ai(session, background_tasks, request, user, result, resource_type="source", resource_id=source.id)
         return AISuggestionResponse(**result.as_dict())
-    if not ai_service.should_send_source(source):
+    if not ai_service.should_send_source(source, ai_cfg):
         result = ai_service.disabled(
             "ioc_extract", "Source TLP exceeds the configured AI egress ceiling"
         )
@@ -221,6 +239,7 @@ def extract_iocs(
         "ioc_extract",
         payload,
         actor=user,
+        settings=ai_cfg,
         proxy_settings=proxy_settings_service.get(session),
     )
     if result.available:
@@ -238,6 +257,7 @@ def suggest_tags(
     user: CurrentUser,
     request: Request,
     background_tasks: BackgroundTasks,
+    ai_cfg: AIConfig,
     _w: Writer,
 ) -> AISuggestionResponse:
     report = _report_or_404(session, body.report_id)
@@ -263,6 +283,7 @@ def suggest_tags(
         "suggest_tags",
         payload,
         actor=user,
+        settings=ai_cfg,
         report=report,
         proxy_settings=proxy_settings_service.get(session),
     )
@@ -281,10 +302,11 @@ def suggest_diamond(
     user: CurrentUser,
     request: Request,
     background_tasks: BackgroundTasks,
+    ai_cfg: AIConfig,
     _w: Writer,
 ) -> AISuggestionResponse:
     reports = list(session.exec(select(Report).where(Report.notebook_id == body.notebook_id)).all())
-    sendable = ai_service.sendable_reports(reports)
+    sendable = ai_service.sendable_reports(reports, ai_cfg)
     if not sendable:
         result = ai_service.disabled(
             "diamond", "No notebook reports are within the AI egress ceiling"
@@ -297,6 +319,7 @@ def suggest_diamond(
             "diamond",
             payload,
             actor=user,
+            settings=ai_cfg,
             proxy_settings=proxy_settings_service.get(session),
         )
     _record_ai(session, background_tasks, request, user, result, resource_type="notebook", resource_id=body.notebook_id)
@@ -310,10 +333,11 @@ def suggest_ach(
     user: CurrentUser,
     request: Request,
     background_tasks: BackgroundTasks,
+    ai_cfg: AIConfig,
     _w: Writer,
 ) -> AISuggestionResponse:
     reports = list(session.exec(select(Report).where(Report.notebook_id == body.notebook_id)).all())
-    sendable = ai_service.sendable_reports(reports)
+    sendable = ai_service.sendable_reports(reports, ai_cfg)
     if not sendable:
         result = ai_service.disabled(
             "ach", "No notebook reports are within the AI egress ceiling"
@@ -327,6 +351,7 @@ def suggest_ach(
             "ach",
             payload,
             actor=user,
+            settings=ai_cfg,
             proxy_settings=proxy_settings_service.get(session),
         )
     _record_ai(session, background_tasks, request, user, result, resource_type="notebook", resource_id=body.notebook_id)
@@ -340,6 +365,7 @@ def analytic_challenge(
     user: CurrentUser,
     request: Request,
     background_tasks: BackgroundTasks,
+    ai_cfg: AIConfig,
     _w: Writer,
 ) -> AISuggestionResponse:
     report = _report_or_404(session, body.report_id)
@@ -354,6 +380,7 @@ def analytic_challenge(
         "challenge",
         payload,
         actor=user,
+        settings=ai_cfg,
         report=report,
         proxy_settings=proxy_settings_service.get(session),
     )
