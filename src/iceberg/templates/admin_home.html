@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Settings &amp; integrations · {{ app_name }}{% endblock %}
+{% block crumb %}Settings &amp; integrations{% endblock %}
+{% block content %}
+
+<div class="head-row mb-7">
+  <div>
+    <div class="eyebrow eyebrow-accent">Administration</div>
+    <h1 class="page-title mt-2">Settings &amp; integrations</h1>
+    <div class="title-rule"></div>
+    <p class="text-sm mt-3" style="color:var(--muted);max-width:70ch;">Every admin-configurable
+      subsystem, its live status, and a way in. The deep config pages are unchanged — this is the
+      map on top of them. Secrets stay in the environment and are only ever reported as set or
+      not set.</p>
+  </div>
+</div>
+
+{% for group, tiles in groups %}
+  <div class="head-row mb-3{% if not loop.first %} mt-7{% endif %}">
+    <h2 class="section-title">{{ group }}</h2>
+  </div>
+  <div class="grid sm:grid-cols-2 gap-3">
+    {% for tile in tiles %}
+      <a href="{{ tile.href }}" class="tile">
+        <div class="head-row">
+          <span class="tile-title">{{ tile.title }}</span>
+          <span class="tag tag--c {{ tile.tone }}"><span class="dot"></span>{{ tile.status }}</span>
+        </div>
+        <div class="tile-meta">{{ tile.meta }}</div>
+      </a>
+    {% endfor %}
+  </div>
+{% endfor %}
+
+<div class="head-row mb-3 mt-7">
+  <h2 class="section-title">Curation</h2>
+</div>
+<div class="grid sm:grid-cols-2 gap-3">
+  <a href="/admin/tags" class="tile">
+    <div class="head-row"><span class="tile-title">Taxonomy</span></div>
+    <div class="tile-meta">Controlled CTI vocabulary — named threats, techniques, sectors</div>
+  </a>
+  <a href="/admin/audience" class="tile">
+    <div class="head-row"><span class="tile-title">Audience groups</span></div>
+    <div class="tile-meta">Need-to-know scoping for stakeholders and products</div>
+  </a>
+</div>
+{% endblock %}

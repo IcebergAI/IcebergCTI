@@ -30,6 +30,7 @@ from ..models import (
     SourceCredibility,
     SourceReliability,
     TLP,
+    User,
     ioc_type_label,
     utcnow,
 )
@@ -109,6 +110,42 @@ def _workspace_report_counts(session: Session) -> dict[str, int]:
     }
 
 
+# Rows shown in the dashboard's "Needs you now" queue.
+_NEEDS_YOU_LIMIT = 5
+
+
+def _needs_you_now(session: Session, user: User) -> list[dict]:
+    """The writer's own action queue: drafts they own, plus — for anyone who can
+    review — the products waiting on a reviewer.
+
+    Both halves are already-modelled state (``Report.status`` / ``author_id``);
+    this only surfaces them above the fold so the dashboard says what to do next
+    rather than only what the numbers are.
+    """
+    can_review = user.role in (Role.REVIEWER, Role.ADMIN)
+    statuses = [ReportStatus.DRAFT] + ([ReportStatus.IN_REVIEW] if can_review else [])
+    rows = session.exec(
+        select(Report)
+        .where(col(Report.status).in_(statuses))
+        .order_by(col(Report.updated_at).desc())
+    ).all()
+    queue: list[dict] = []
+    for report in rows:
+        status_ = ReportStatus(report.status)
+        if status_ is ReportStatus.DRAFT and report.author_id != user.id:
+            continue  # someone else's draft is not your work
+        queue.append(
+            {
+                "report": report,
+                "kind": "review" if status_ is ReportStatus.IN_REVIEW else "draft",
+            }
+        )
+    # Waiting on *you* (review) outranks work only you can resume (your drafts);
+    # within each half the most recently touched leads.
+    queue.sort(key=lambda item: (item["kind"] != "review", -item["report"].updated_at.timestamp()))
+    return queue[:_NEEDS_YOU_LIMIT]
+
+
 @router.get("/")
 def dashboard(request: Request, session: SessionDep, user: CurrentUser):
     is_stakeholder = user.role == Role.STAKEHOLDER
@@ -151,7 +188,9 @@ def dashboard(request: Request, session: SessionDep, user: CurrentUser):
     # KPI strip counts (writers only) — derived cheaply for the dashboard stats.
     open_tasking = 0
     published_30d = 0
+    needs_you = []
     if not is_stakeholder:
+        needs_you = _needs_you_now(session, user)
         open_tasking = len(
             session.exec(
                 select(Requirement).where(
@@ -182,6 +221,7 @@ def dashboard(request: Request, session: SessionDep, user: CurrentUser):
             "feed_unread": feed_unread,
             "open_tasking": open_tasking,
             "published_30d": published_30d,
+            "needs_you": needs_you,
         },
     )
 

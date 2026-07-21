@@ -355,6 +355,10 @@ a:hover { color: var(--accent-deep); }
 .stat-delta { font-size: 12px; font-weight: 600; color: var(--muted); }
 .stat-delta.is-ok { color: var(--c-ok); }
 .stat-delta.is-crit { color: var(--c-crit); }
+/* A KPI that links to the work behind it (dashboard). */
+a.stat { display: block; text-decoration: none; transition: border-color 0.12s, box-shadow 0.12s, transform 0.12s; }
+a.stat:hover { border-color: var(--accent-line); box-shadow: var(--shadow-lift); transform: translateY(-1px); }
+a.stat .stat-cue { margin-left: auto; color: var(--accent-deep); }
 @media (max-width: 860px) { .stat-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 480px) { .stat-grid { grid-template-columns: 1fr; } }
 
@@ -455,37 +459,16 @@ a:hover { color: var(--accent-deep); }
   font-size: 12.5px; color: var(--muted); line-height: 1.35;
 }
 
-.collection-strip {
-  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 9px;
+/* Notebook phase tab bar — the collection strip re-cut as Collect / Analyze /
+   Produce / Trace, each group labelled with an .eyebrow and holding the
+   sections of that phase (see notebook_detail.html). */
+.nb-phases {
+  display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  padding-bottom: 12px; border-bottom: 1px solid var(--line);
 }
-.collection-step {
-  display: grid; gap: 4px;
-  min-height: 92px;
-  padding: 12px;
-  color: var(--muted);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-}
-.collection-step:hover {
-  color: var(--accent-deep);
-  border-color: var(--accent-line);
-  box-shadow: var(--shadow-lift);
-}
-.collection-step strong {
-  font-family: var(--fs-mono); font-size: 20px; line-height: 1; color: var(--ink);
-}
-.collection-step span:last-child { font-size: 12px; line-height: 1.25; }
-.collection-step.is-done {
-  background: var(--accent-soft);
-  border-color: var(--accent-line);
-}
-.step-kicker {
-  font-family: var(--fs-mono);
-  font-size: 10px; font-weight: 700; letter-spacing: 0.11em; text-transform: uppercase;
-  color: var(--accent-deep);
-}
+.nb-phase-group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.nb-count { font-family: var(--fs-mono); font-size: 11px; color: var(--muted); }
+.help-tab.is-active .nb-count { color: var(--accent-deep); }
 
 .status-note {
   background: var(--accent-soft);
@@ -546,6 +529,10 @@ a:hover { color: var(--accent-deep); }
 a.row:hover, .row-hover:hover { background: var(--surface-2); }
 .row-title { font-weight: 600; color: var(--ink); }
 .row-sub { font-size: 12.5px; color: var(--muted); }
+/* Leading state dot on an action-queue row (dashboard "Needs you now"). */
+.queue-dot { width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--faint); }
+.queue-dot.is-draft { background: var(--c-warn); }
+.queue-dot.is-review { background: var(--accent); }
 
 /* Audit log — one block per security event (admin console) */
 .audit-log { display: flex; flex-direction: column; }
@@ -577,6 +564,12 @@ a.row:hover, .row-hover:hover { background: var(--surface-2); }
   transition: border-color .14s, box-shadow .14s, transform .14s;
 }
 .tile:hover { border-color: var(--accent-line); box-shadow: var(--shadow-lift); transform: translateY(-1px); }
+/* Dashed "start something" affordance at the end of a tile grid. */
+.tile--new {
+  display: flex; align-items: center; justify-content: center;
+  border-style: dashed; box-shadow: none; color: var(--muted);
+}
+.tile--new:hover { color: var(--accent-deep); }
 .tile-title { font-weight: 700; color: var(--ink); letter-spacing: -0.01em; }
 .tile-meta { font-size: 12.5px; color: var(--muted); margin-top: 3px; }
 
@@ -869,6 +862,24 @@ a.tagk:hover { border-color: var(--k-line); box-shadow: var(--shadow); }
 
 .btn-link { font-size: 13px; font-weight: 600; color: var(--accent-ink); }
 .btn-link:hover { color: var(--accent-deep); }
+/* Leading glyph inside a button/summary (the rail sprite at button scale). */
+.btn-ic { width: 14px; height: 14px; opacity: 1; flex: none; }
+
+/* Collapsed "+ Add …" form block. A native <details>/<summary> so creation is
+   demoted without JS and without adding CSP surface; the summary is styled as
+   a ghost button and flips to "close" wording via the open state. */
+.add-block > summary { list-style: none; }
+.add-block > summary::-webkit-details-marker { display: none; }
+.add-toggle {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  font-family: var(--fs-sans); font-size: 12.5px; font-weight: 600;
+  padding: 6px 11px; border-radius: var(--radius-sm); cursor: pointer;
+  border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink);
+  transition: background .13s, border-color .13s, color .13s;
+}
+.add-toggle:hover { border-color: var(--accent-line); color: var(--accent-deep); }
+.add-block[open] > .add-toggle { border-color: var(--accent-line); color: var(--accent-deep); background: var(--accent-soft); }
+.add-block[open] > .add-toggle .btn-ic { transform: rotate(45deg); }
 .link-danger { color: var(--tlp-red); font-size: 13px; font-weight: 600; }
 .link-danger:hover { color: oklch(0.46 0.2 25); }
 .backlink { font-size: 13px; font-weight: 600; color: var(--muted); }
@@ -1142,10 +1153,48 @@ select.field {
   border: 0; background: transparent; padding: 6px 4px; border-radius: 6px;
 }
 .editor-title-input:focus { outline: 0; background: var(--surface-2); box-shadow: var(--ring); }
+.editor-head-markings { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .editor-head-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .save-state { font-size: 12px; color: var(--muted); white-space: nowrap; }
 .save-state.is-dirty { color: var(--c-warn); }
 .save-state.is-saved { color: var(--c-ok); }
+
+/* Marking chips — intel level / TLP / analytic confidence, editable in the
+   editor header (the single source of truth for a product's markings).
+   The real <select> is laid transparently over the chip, so a click opens the
+   native dropdown: no popover code, keyboard + screen-reader navigable, and
+   correct before Alpine hydrates. The current value drives the swatch/dot via
+   data-attributes (attribute bindings replace cleanly; :class would not). */
+.marking-chip {
+  position: relative; flex: none; display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 8px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
+  font-family: var(--fs-mono); font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+  color: var(--ink); background: var(--surface); white-space: nowrap;
+}
+label.marking-chip { cursor: pointer; }
+label.marking-chip:hover { border-color: var(--accent-line); }
+.marking-chip:focus-within { border-color: var(--accent); box-shadow: var(--ring); }
+.marking-chip .caret { color: var(--faint); font-size: 9px; }
+.marking-chip .swatch {
+  width: 9px; height: 9px; flex: none; border-radius: 2px; background: var(--faint);
+  box-shadow: inset 0 0 0 1px oklch(0 0 0 / 0.08);
+}
+.marking-chip .dot { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--faint); }
+.marking-chip--lvl { color: var(--accent-deep); background: var(--accent-soft); border-color: var(--accent-line); }
+.marking-chip[data-tlp="RED"] .swatch { background: var(--tlp-red); }
+.marking-chip[data-tlp="AMBER"] .swatch,
+.marking-chip[data-tlp="AMBER_STRICT"] .swatch { background: var(--tlp-amber); }
+.marking-chip[data-tlp="GREEN"] .swatch { background: var(--tlp-green); }
+.marking-chip[data-tlp="CLEAR"] .swatch { background: var(--tlp-clear); }
+.marking-chip[data-tlp="AMBER_STRICT"] { border-style: dashed; }
+.marking-chip[data-conf="LOW"] .dot { background: var(--muted); }
+.marking-chip[data-conf="MODERATE"] .dot { background: var(--accent); }
+.marking-chip[data-conf="HIGH"] .dot { background: var(--c-ok); }
+.marking-chip-select {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  padding: 0; border: 0; background: transparent; opacity: 0; cursor: pointer;
+  appearance: none;
+}
 
 .editor-subhead {
   flex: none; display: flex; align-items: center; gap: 14px;

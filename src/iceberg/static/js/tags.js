@@ -118,10 +118,36 @@ document.addEventListener('alpine:init', () => {
     generation: 0, savedGeneration: 0, savePromise: null, saveQueued: false,
     aiLoading: '', aiApplying: false, aiStatus: '', aiStatusKind: '',
     aiJudgements: null, aiTagIds: [], aiChallenge: '',
+    intelLevel: '', tlp: '', tlpKey: '', confidence: '', confKey: '',
 
     init() {
       this.tabOrder = [...this.$el.querySelectorAll('[data-editor-tab]')]
         .map(el => el.dataset.editorTab);
+      this.initMarkings();
+    },
+
+    /* ---- header marking chips (intel level / TLP / analytic confidence) ----
+       Each chip shows the selected option's own text, so the server-rendered
+       label and the hydrated one are identical and there is no label map to
+       keep in sync with the enums. */
+    initMarkings() {
+      this.$el.querySelectorAll('.marking-chip-select')
+        .forEach((sel) => { this.readMarking(sel); });
+    },
+    readMarking(sel) {
+      const opt = sel.options[sel.selectedIndex];
+      const label = opt ? opt.textContent.trim() : '';
+      if (sel.name === 'intel_level') {
+        this.intelLevel = label;
+      } else if (sel.name === 'tlp') {
+        this.tlp = label; this.tlpKey = sel.value;
+      } else if (sel.name === 'analytic_confidence') {
+        this.confidence = label; this.confKey = sel.value;
+      }
+    },
+    pickMarking(event) {
+      this.readMarking(event.target);
+      this.markDirty();
     },
     selectTab(id, focus = false) {
       if (this.tabOrder.length && !this.tabOrder.includes(id)) return;
@@ -378,6 +404,17 @@ document.addEventListener('alpine:init', () => {
   }));
 
   /* ---- Citation autosave form (report_edit.html) ------------------------- */
+  /* ---- Notebook phase tabs (notebook_detail.html) ------------------------
+     The notebook is worked in phases (collect → analyze → produce → trace)
+     rather than scrolled end to end, so one phase's sections render at a time.
+     The tabs are real anchors: without Alpine the <noscript> rule cancels
+     x-cloak and every section stays reachable by its #id, exactly as before. */
+  Alpine.data('notebookTabs', () => ({
+    phase: 'collect',
+    section: 'sources',
+    show(phase, section) { this.phase = phase; this.section = section; },
+  }));
+
   Alpine.data('citationForm', () => ({
     error: false,
     async save() {

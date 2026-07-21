@@ -44,6 +44,7 @@
     <symbol id="ic-misp" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2.2"/><circle cx="5" cy="18" r="2.2"/><circle cx="19" cy="18" r="2.2"/><path d="M12 7.2v3.3M11 12.2 6.5 16M13 12.2 17.5 16"/></symbol>
     <symbol id="ic-sso" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M15 7a4 4 0 1 0-4 4"/><path d="M10 14h9M19 14l-2.5-2.5M19 14l-2.5 2.5"/></symbol>
     <symbol id="ic-ai" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 4.7L18.5 9.5 13.8 11.3 12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M18 15l.8 2.2L21 18l-2.2.8L18 21l-.8-2.2L15 18l2.2-.8z"/></symbol>
+    <symbol id="ic-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.6v2.6M12 18.8v2.6M21.4 12h-2.6M5.2 12H2.6M18.6 5.4l-1.8 1.8M7.2 16.8l-1.8 1.8M18.6 18.6l-1.8-1.8M7.2 7.2 5.4 5.4"/></symbol>
     <symbol id="ic-webhook" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 9a3 3 0 1 1 4 2.83L10.5 16"/><path d="M15 13a3 3 0 1 1-2.5 4.66H8"/><path d="M7.5 12.5 5 17a3 3 0 1 0 3 1"/></symbol>
   </defs></svg>
 
@@ -78,6 +79,7 @@
       {'label': 'Entities', 'href': '/tags', 'group': 'Discovery'},
       {'label': 'ATT&CK matrix', 'href': '/matrix', 'group': 'Discovery'},
       {'label': 'Program maturity', 'href': '/maturity', 'group': 'Discovery'},
+      {'label': 'Settings & integrations', 'href': '/admin', 'group': 'Administration'},
       {'label': 'Taxonomy', 'href': '/admin/tags', 'group': 'Administration'},
       {'label': 'Audience groups', 'href': '/admin/audience', 'group': 'Administration'},
       {'label': 'Audit log', 'href': '/admin/audit', 'group': 'Administration'},
@@ -157,6 +159,7 @@
           </div>
           <div class="rail-group">
             <div class="rail-group-label">Administration</div>
+            {{ rail_link('/admin', 'ic-settings', 'Settings & integrations', path == '/admin') }}
             {{ rail_link('/admin/tags', 'ic-taxonomy', 'Taxonomy', path.startswith('/admin/tags')) }}
             {{ rail_link('/admin/audience', 'ic-entity', 'Audience', path.startswith('/admin/audience')) }}
             {{ rail_link('/admin/audit', 'ic-audit', 'Audit log', path.startswith('/admin/audit')) }}

@@ -36,9 +36,55 @@
     {% else %}
       <span class="editor-title-input" style="cursor:default;">{{ report.title }}</span>
     {% endif %}
+    {# Markings live here — always visible, editable in place, single source of
+       truth. The real <select> is laid transparently over each chip so a click
+       opens the native dropdown (keyboard/AT-navigable, correct before Alpine
+       hydrates); `pickMarking` mirrors the chosen option into the chip. #}
+    <div class="editor-head-markings">
+      {% if can_edit %}
+        <label class="marking-chip marking-chip--lvl">
+          <span x-text="intelLevel">{{ report.intel_level.value }}</span>
+          <span class="caret" aria-hidden="true">▾</span>
+          <select form="reportform" name="intel_level" class="marking-chip-select"
+                  aria-label="Intelligence level" @change="pickMarking($event)">
+            {% for lvl in IntelLevel %}<option value="{{ lvl.value }}" {% if lvl == report.intel_level %}selected{% endif %}>{{ lvl.value }}</option>{% endfor %}
+          </select>
+        </label>
+        <label class="marking-chip" data-tlp="{{ report.tlp.value }}" :data-tlp="tlpKey">
+          <span class="swatch"></span>
+          <span x-text="tlp">{{ tlp_label(report.tlp) }}</span>
+          <span class="caret" aria-hidden="true">▾</span>
+          <select form="reportform" name="tlp" class="marking-chip-select"
+                  aria-label="TLP marking" @change="pickMarking($event)">
+            {% for t in TLP %}<option value="{{ t.value }}" {% if t == report.tlp %}selected{% endif %}>{{ tlp_label(t) }}</option>{% endfor %}
+          </select>
+        </label>
+        <label class="marking-chip" data-conf="{{ report.analytic_confidence.value if report.analytic_confidence else '' }}"
+               :data-conf="confKey" title="Analytic confidence in the judgements (ICD 203)">
+          <span class="dot"></span>
+          <span x-text="confidence">{% if report.analytic_confidence %}{{ report.analytic_confidence.value | capitalize }} confidence{% else %}Confidence not stated{% endif %}</span>
+          <span class="caret" aria-hidden="true">▾</span>
+          <select form="reportform" name="analytic_confidence" class="marking-chip-select"
+                  aria-label="Analytic confidence (ICD 203)" @change="pickMarking($event)">
+            <option value="" {% if not report.analytic_confidence %}selected{% endif %}>Confidence not stated</option>
+            {% for c in AnalyticConfidence %}<option value="{{ c.value }}" {% if c == report.analytic_confidence %}selected{% endif %}>{{ c.value | capitalize }} confidence</option>{% endfor %}
+          </select>
+        </label>
+      {% else %}
+        <span class="marking-chip marking-chip--lvl">{{ report.intel_level.value }}</span>
+        <span class="marking-chip" data-tlp="{{ report.tlp.value }}">
+          <span class="swatch"></span>{{ tlp_label(report.tlp) }}
+        </span>
+        {% if report.analytic_confidence %}
+          <span class="marking-chip" data-conf="{{ report.analytic_confidence.value }}"
+                title="Analytic confidence in the judgements (ICD 203)">
+            <span class="dot"></span>{{ report.analytic_confidence.value | capitalize }} confidence
+          </span>
+        {% endif %}
+      {% endif %}
+    </div>
     <div class="editor-head-actions">
       {{ m.status_badge(report.status) }}
-      {{ m.confidence_badge(report.analytic_confidence) }}
       {% if can_edit %}
         <span class="save-state" :class="saving ? '' : (dirty ? 'is-dirty' : 'is-saved')"
               x-text="saving ? 'Saving…' : (dirty ? 'Unsaved changes' : 'Saved')"></span>
@@ -598,38 +644,14 @@
         </div>
       </div>
 
-      <!-- pinned markings footer (submitted with the product form) -->
+      {# Markings moved to the always-visible header chips (single source of
+         truth); the dock footer now only points at the estimative-language
+         guidance that used to sit beside the confidence select. #}
       {% if can_edit %}
       <div class="dock-foot">
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            <label class="field-label">Intel level</label>
-            <select form="reportform" name="intel_level" class="field" @change="markDirty()">
-              {% for lvl in IntelLevel %}<option value="{{ lvl.value }}" {% if lvl == report.intel_level %}selected{% endif %}>{{ lvl.value }}</option>{% endfor %}
-            </select>
-          </div>
-          <div>
-            <label class="field-label">TLP</label>
-            <select form="reportform" name="tlp" class="field" @change="markDirty()">
-              {% for t in TLP %}<option value="{{ t.value }}" {% if t == report.tlp %}selected{% endif %}>{{ tlp_label(t) }}</option>{% endfor %}
-            </select>
-          </div>
-        </div>
-        <div>
-          <label class="field-label">Analytic confidence
-            <a href="/help#estimative-language" class="help-hint" target="_blank">?</a></label>
-          <select form="reportform" name="analytic_confidence" class="field" @change="markDirty()">
-            <option value="" {% if not report.analytic_confidence %}selected{% endif %}>— Not stated —</option>
-            {% for c in AnalyticConfidence %}<option value="{{ c.value }}" {% if c == report.analytic_confidence %}selected{% endif %}>{{ c.value | capitalize }}</option>{% endfor %}
-          </select>
-        </div>
-      </div>
-      {% else %}
-      <div class="dock-foot">
-        <div class="flex gap-1.5 flex-wrap items-center">
-          {{ m.level_badge(report.intel_level) }}
-          {{ m.tlp_badge(report.tlp) }}
-        </div>
+        <a href="/help#estimative-language" class="help-hint" target="_blank">
+          How should I word likelihood and confidence? →
+        </a>
       </div>
       {% endif %}
     </aside>
