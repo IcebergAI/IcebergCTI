@@ -99,8 +99,12 @@ kubectl apply -f configmap.yaml -f service.yaml -f pvc.yaml
 kubectl apply -f secret.yaml          # from secret.example.yaml (sets ICEBERG_DATABASE_URL)
 IMAGE=ghcr.io/icebergai/icebergcti@sha256:<digest> RELEASE=<unique-id> ./release.sh
 kubectl apply -f ingress.yaml         # optional — TLS exposure (edit host + secret first)
-kubectl apply -f prune-cronjob.yaml   # optional — retention CronJobs (see "Retention")
 ```
+
+`release.sh` also applies the retention CronJobs ([`prune-cronjob.yaml`](prune-cronjob.yaml)),
+pinning them to the same `$IMAGE` digest as the Deployment and migration Job — so don't
+`kubectl apply` that manifest directly (its `:latest` placeholder would bypass digest pinning).
+See [Retention](#retention-bounding-table--disk-growth).
 
 ## TLS / Ingress
 
@@ -235,9 +239,11 @@ app plus a CronJob) can safely share the queue.
 ## Retention (bounding table + disk growth)
 
 Three derived stores grow over the life of an instance and have retention
-windows so they don't grow without limit. Schedule the prune commands as
-`CronJob`s — [`prune-cronjob.yaml`](prune-cronjob.yaml) ships both, using the
-same image, ConfigMap and Secret as the app (each is one bounded pass per run):
+windows so they don't grow without limit. The prune commands run as `CronJob`s —
+[`prune-cronjob.yaml`](prune-cronjob.yaml) ships both, using the same ConfigMap
+and Secret as the app (each is one bounded pass per run). `release.sh` applies
+them **pinned to the release's image digest** (the manifest carries a `:latest`
+placeholder for readability only — don't apply it directly):
 
 - **`iceberg-prune-audit`** — deletes `AuditEvent` rows older than
   `ICEBERG_AUDIT_RETENTION_DAYS` (default 365) and un-ingested `FeedItem` rows

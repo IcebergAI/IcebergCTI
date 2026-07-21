@@ -30,3 +30,9 @@ fi
 
 kubectl set image deployment/iceberg "iceberg=$IMAGE"
 kubectl rollout status deployment/iceberg --timeout=10m
+
+# Retention CronJobs — pin to the same immutable digest as the app (the manifest
+# ships :latest for readability; the release owns the digest, like the Deployment
+# and migration Job above). Applied idempotently so re-runs just re-pin them.
+sed -e "s|image: ghcr.io/icebergai/icebergcti:latest|image: $IMAGE|g" \
+    "$(dirname "$0")/prune-cronjob.yaml" | kubectl apply -f -
