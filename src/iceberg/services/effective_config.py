@@ -3,10 +3,12 @@ snapshot (#245).
 
 Answers "what config is this process actually using, where did each value come
 from, and which optional features are available?" for an operator debugging a
-beta instance — without shell access. Introspects the pydantic ``Settings`` **and**
-the six admin-editable DB settings rows, and emits one row per operationally
-meaningful field with a **provenance** (`database` / `environment` /
-`built-in default`).
+beta instance — without shell access. It is **comprehensive**: one row for every
+``Settings`` field AND every field on the six admin-editable DB settings rows
+(Audit/Proxy/MISP/Webhook/AI/OIDC), each with a **provenance** — `database`
+(a settings row is authoritative), `environment` (`settings.model_fields_set`),
+or `built-in default`. A regression test (`test_effective_config.py`) asserts the
+coverage so a future field can't be silently omitted.
 
 Secrets never leave the server: a field flagged ``secret`` is coerced to a plain
 ``set`` / ``not set`` string here — no value or prefix crosses the boundary.
@@ -26,6 +28,84 @@ from . import (
     webhook_settings,
 )
 
+# ``Settings`` field names whose value is a secret — surfaced only as set/not-set.
+SECRET_FIELDS: frozenset[str] = frozenset(
+    {
+        "secret_key",
+        "database_url",
+        "ai_api_key",
+        "misp_api_key",
+        "webhook_token",
+        "audit_http_token",
+        "proxy_username",
+        "proxy_password",
+        "smtp_password",
+        "rate_limit_redis_url",
+        "oidc_client_secret",
+        "oidc_authentik_client_secret",
+        "oidc_auth0_client_secret",
+        "oidc_okta_client_secret",
+    }
+)
+
+# The unprefixed env var (guard + uvicorn read this, NOT ICEBERG_FORWARDED_ALLOW_IPS).
+_FORWARDED_FIELD = "forwarded_allow_ips"
+
+_CATEGORY_PREFIXES: tuple[tuple[str, str], ...] = (
+    ("ai_", "AI provider"),
+    ("oidc_", "SSO / auth"),
+    ("dev_", "SSO / auth"),
+    ("smtp_", "Email"),
+    ("email_", "Email"),
+    ("audit_", "Audit / SIEM"),
+    ("siem_", "Audit / SIEM"),
+    ("proxy_", "Proxy"),
+    ("rate_limit", "Rate limiting"),
+    ("rss_", "RSS ingestion"),
+    ("feed_", "RSS ingestion"),
+    ("misp_", "MISP"),
+    ("webhook_", "Webhook"),
+    ("render_", "Rendering"),
+    ("typst_", "Rendering"),
+    ("attachment", "Uploads"),
+    ("attachments", "Uploads"),
+    ("figure", "Uploads"),
+    ("figures", "Uploads"),
+    ("jobs_", "Durable jobs"),
+    ("dissemination", "Dissemination"),
+)
+# Built from a category → fields mapping (avoids a dict with a password-like key
+# paired with a string literal, which bandit's B105 would false-positive on).
+_EXACT_CATEGORIES: dict[str, tuple[str, ...]] = {
+    "Process / security": (
+        "environment",
+        "secret_key",
+        "database_url",
+        "forwarded_allow_ips",
+        "portal_base_url",
+        "log_level",
+        "log_format",
+        "cors_origins",
+    ),
+    "General runtime": ("stix_namespace",),
+}
+_CATEGORY_EXACT = {
+    field: category
+    for category, fields in _EXACT_CATEGORIES.items()
+    for field in fields
+}
+
+# The DB settings rows, in display order: (category, getter, field-name prefix).
+_DB_ROWS = (
+    ("SSO / auth", oidc_settings.get, "OIDC"),
+    ("AI provider", ai_settings.get, "AI"),
+    ("Audit / SIEM", audit_settings.get, "Audit"),
+    ("Proxy", proxy_settings.get, "Proxy"),
+    ("MISP", misp_settings.get, "MISP"),
+    ("Webhook", webhook_settings.get, "Webhook"),
+)
+_DB_SKIP = {"id", "updated_at"}
+
 
 @dataclass(frozen=True)
 class ConfigRow:
@@ -36,127 +116,84 @@ class ConfigRow:
     provenance: str  # database | environment | built-in default
 
 
-def _env_provenance(field: str) -> str:
-    """Environment if the operator set it, else the built-in default."""
-    return (
-        "environment" if field in get_settings().model_fields_set else "built-in default"
-    )
+def _category(field: str) -> str:
+    if field in _CATEGORY_EXACT:
+        return _CATEGORY_EXACT[field]
+    for prefix, cat in _CATEGORY_PREFIXES:
+        if field.startswith(prefix):
+            return cat
+    return "General runtime"
 
 
-def _secret_display(value: object) -> str:
-    return "set" if value else "not set"
+def _display(value: object) -> str:
+    if isinstance(value, (list, tuple)):
+        return ", ".join(str(v) for v in value) or "(empty)"
+    text = str(value)
+    return text if text != "" else "(empty)"
 
 
 def snapshot(session) -> dict:
     """Build the effective-config view: rows (with provenance), a validation
     block, advisories, and feature-capability tiles."""
     s = get_settings()
-    ai = ai_settings.get(session)
-    misp = misp_settings.get(session)
-    proxy = proxy_settings.get(session)
-    webhook = webhook_settings.get(session)
-    audit = audit_settings.get(session)
-    oidc = oidc_settings.get(session)
-    providers = [p.name for p in oidc_settings.enabled_providers(session)]
-
     rows: list[ConfigRow] = []
 
-    def env(name: str, field: str, category: str, *, secret: bool = False) -> None:
+    # 1. Every Settings field — the environment / built-in-default layer.
+    for field in type(s).model_fields:
+        if field == _FORWARDED_FIELD:
+            continue  # emitted specially below (the guard reads the unprefixed var)
+        secret = field in SECRET_FIELDS
         value = getattr(s, field)
         rows.append(
             ConfigRow(
-                name=name,
-                category=category,
+                name=f"ICEBERG_{field.upper()}",
+                category=_category(field),
                 secret=secret,
-                value=_secret_display(value) if secret else str(value),
-                provenance=_env_provenance(field),
+                value="set" if (secret and value) else ("not set" if secret else _display(value)),
+                provenance="environment" if field in s.model_fields_set else "built-in default",
             )
         )
 
-    def db(name: str, value: object, category: str, *, secret: bool = False) -> None:
-        rows.append(
-            ConfigRow(
-                name=name,
-                category=category,
-                secret=secret,
-                value=_secret_display(value) if secret else str(value),
-                provenance="database",
+    # FORWARDED_ALLOW_IPS: the prod guard + uvicorn consume the UNPREFIXED env var.
+    fwd_env = os.getenv("FORWARDED_ALLOW_IPS")
+    rows.append(
+        ConfigRow(
+            name="FORWARDED_ALLOW_IPS",
+            category="Process / security",
+            secret=False,
+            value=_display(fwd_env if fwd_env is not None else s.forwarded_allow_ips),
+            provenance=(
+                "environment"
+                if fwd_env is not None or _FORWARDED_FIELD in s.model_fields_set
+                else "built-in default"
+            ),
+        )
+    )
+
+    # 2. Every field on the six admin-editable DB rows — the authoritative layer.
+    for category, getter, prefix in _DB_ROWS:
+        row = getter(session)
+        for field, value in row.model_dump().items():
+            if field in _DB_SKIP:
+                continue
+            rows.append(
+                ConfigRow(
+                    name=f"{prefix}.{field}",
+                    category=category,
+                    secret=False,  # DB rows never hold secrets
+                    value=_display(value),
+                    provenance="database",
+                )
             )
-        )
-
-    # Process / security
-    env("ICEBERG_ENVIRONMENT", "environment", "Process / security")
-    env("ICEBERG_SECRET_KEY", "secret_key", "Process / security", secret=True)
-    env("ICEBERG_DATABASE_URL", "database_url", "Process / security", secret=True)
-    env("FORWARDED_ALLOW_IPS", "forwarded_allow_ips", "Process / security")
-    env("ICEBERG_DEV_AUTH", "dev_auth", "Process / security")
-
-    # SSO / auth (OIDC — DB-backed per provider; secrets are env-only)
-    db("OIDC redirect base", oidc.redirect_base_url or "(portal base)", "SSO / auth")
-    for name in oidc_settings.PROVIDERS:
-        db(f"OIDC {name} enabled", getattr(oidc, f"{name}_enabled"), "SSO / auth")
-        db(
-            f"OIDC {name} client secret",
-            s.oidc_client_secret_for(name),
-            "SSO / auth",
-            secret=True,
-        )
-
-    # AI provider (DB-backed; API key env-only)
-    db("ICEBERG_AI_BACKEND", ai.backend, "AI provider")
-    db("ICEBERG_AI_MODEL", ai.model or "(unset)", "AI provider")
-    db("ICEBERG_AI_BASE_URL", ai.base_url or "(unset)", "AI provider")
-    db("ICEBERG_AI_MAX_TLP", ai.max_tlp, "AI provider")
-    env("ICEBERG_AI_API_KEY", "ai_api_key", "AI provider", secret=True)
-    env("ICEBERG_AI_OLLAMA_BASE_URL", "ai_ollama_base_url", "AI provider")
-
-    # Email
-    env("ICEBERG_EMAIL_BACKEND", "email_backend", "Email")
-    env("ICEBERG_SMTP_HOST", "smtp_host", "Email")
-    env("ICEBERG_SMTP_PORT", "smtp_port", "Email")
-    env("ICEBERG_SMTP_USER", "smtp_user", "Email")
-    env("ICEBERG_SMTP_PASSWORD", "smtp_password", "Email", secret=True)
-
-    # Audit / SIEM (DB-backed routing; HEC token env-only)
-    db("Audit enabled", audit.enabled, "Audit / SIEM")
-    db("Audit methods", ", ".join(audit.methods) or "(none)", "Audit / SIEM")
-    db("Audit HTTP endpoint", audit.http_endpoint or "(unset)", "Audit / SIEM")
-    env("ICEBERG_AUDIT_HTTP_TOKEN", "audit_http_token", "Audit / SIEM", secret=True)
-    env("ICEBERG_AUDIT_RETENTION_DAYS", "audit_retention_days", "Audit / SIEM")
-
-    # Proxy (DB-backed routing; credentials env-only)
-    db("Proxy mode", proxy.mode, "Proxy")
-    db("Proxy URL", proxy.proxy_url or "(unset)", "Proxy")
-    env("ICEBERG_PROXY_USERNAME", "proxy_username", "Proxy", secret=True)
-    env("ICEBERG_PROXY_PASSWORD", "proxy_password", "Proxy", secret=True)
-
-    # MISP (DB-backed; API key env-only)
-    db("MISP enabled", misp.enabled, "MISP")
-    db("MISP URL", misp.url or "(unset)", "MISP")
-    env("ICEBERG_MISP_API_KEY", "misp_api_key", "MISP", secret=True)
-
-    # Webhook (DB-backed; token env-only)
-    db("Webhook enabled", webhook.enabled, "Webhook")
-    db("Webhook URL", webhook.url or "(unset)", "Webhook")
-    env("ICEBERG_WEBHOOK_TOKEN", "webhook_token", "Webhook", secret=True)
-
-    # Rate limiting
-    env("ICEBERG_RATE_LIMIT_STORE", "rate_limit_store", "Rate limiting")
-    env("ICEBERG_RATE_LIMIT_REDIS_URL", "rate_limit_redis_url", "Rate limiting", secret=True)
-
-    # RSS ingestion + retention
-    env("ICEBERG_RSS_POLL_ENABLED", "rss_poll_enabled", "RSS ingestion")
-    env("ICEBERG_FEED_ITEM_RETENTION_DAYS", "feed_item_retention_days", "RSS ingestion")
-    env("ICEBERG_MAX_BODY_MB", "max_body_mb", "General runtime")
 
     categories = list(dict.fromkeys(r.category for r in rows))
-
+    providers = [p.name for p in oidc_settings.enabled_providers(session)]
     return {
         "rows": [asdict(r) for r in rows],
         "categories": categories,
         "validation": _validation(s),
         "advisories": _advisories(s, providers),
-        "tiles": _tiles(s, ai, misp, webhook, providers),
+        "tiles": _tiles(session, s, providers),
     }
 
 
@@ -201,10 +238,13 @@ def _advisories(s, providers: list[str]) -> list[str]:
     return out
 
 
-def _tiles(s, ai, misp, webhook, providers: list[str]) -> list[dict]:
+def _tiles(session, s, providers: list[str]) -> list[dict]:
     def onoff(flag: bool) -> str:
         return "on" if flag else "off"
 
+    ai = ai_settings.get(session)
+    misp = misp_settings.get(session)
+    webhook = webhook_settings.get(session)
     typst = shutil.which(s.typst_bin) is not None
     return [
         {"label": "Environment", "value": s.environment, "ok": s.is_prod},
