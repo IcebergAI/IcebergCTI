@@ -11,12 +11,14 @@ secrets, tokens, passwords, JWTs or file bytes.
 """
 
 import socket
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from importlib.metadata import PackageNotFoundError, version
 from typing import TYPE_CHECKING
 
-from sqlmodel import Session
+from sqlalchemy import delete, func
+from sqlmodel import Session, col, select
 
+from ..config import get_settings
 from ..models import (
     AuditAction,
     AuditCategory,
@@ -207,3 +209,25 @@ def record_and_emit(
     event = record(session, **kwargs)
     schedule_emit(session, event, background_tasks)
     return event
+
+
+def prune_audit_events(session: Session) -> int:
+    """Delete audit events older than ``ICEBERG_AUDIT_RETENTION_DAYS``.
+
+    The SIEM is the long-term store; this local trail is a bounded forensic
+    buffer. A retention window ``<= 0`` disables pruning (keep forever). Returns
+    the number of rows deleted. Intended for the ``iceberg-prune-audit`` CLI /
+    a scheduled Job, mirroring ``reports.prune_rendered_products``.
+    """
+    days = max(0, get_settings().audit_retention_days)
+    if not days:
+        return 0
+    cutoff = utcnow() - timedelta(days=days)
+    stale = col(AuditEvent.occurred_at) < cutoff
+    count = session.scalar(
+        select(func.count()).select_from(AuditEvent).where(stale)
+    )
+    if count:
+        session.execute(delete(AuditEvent).where(stale))
+        session.commit()
+    return count or 0

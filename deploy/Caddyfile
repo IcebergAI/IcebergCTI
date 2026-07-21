@@ -5,5 +5,12 @@
 # by default, which the app honours via uvicorn's --proxy-headers (so the real
 # client IP reaches the audit log and the scheme is correct for Secure cookies).
 {$ICEBERG_DOMAIN:localhost} {
+	# Proxy-level request-body cap. Keep this at/above ICEBERG_MAX_BODY_MB (default
+	# 30 MB, itself just above ICEBERG_ATTACHMENT_MAX_MB=25 MB) so real uploads
+	# pass; the app enforces the same ceiling itself (BodySizeLimitMiddleware),
+	# this just rejects oversized bodies at the edge before they reach uvicorn.
+	request_body {
+		max_size 30MB
+	}
 	reverse_proxy iceberg:8000
 }

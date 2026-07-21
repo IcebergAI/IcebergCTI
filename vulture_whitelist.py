@@ -62,6 +62,7 @@ ai_embeddings_enabled  # configuration field reserved for vector backend selecti
 ai_embedding_model  # configuration field reserved for vector backend selection
 _.migrate_main  # console script entry point (pyproject.toml)
 _.prune_renders_main  # console script entry point (pyproject.toml)
+_.prune_audit_main  # console script entry point (pyproject.toml)
 _.rebuild_related_main  # console script entry point (pyproject.toml)
 _.worker_main  # console script entry point (pyproject.toml)
 _.verify_files_main  # console script entry point (pyproject.toml)

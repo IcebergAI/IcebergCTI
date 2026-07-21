@@ -99,6 +99,7 @@ kubectl apply -f configmap.yaml -f service.yaml -f pvc.yaml
 kubectl apply -f secret.yaml          # from secret.example.yaml (sets ICEBERG_DATABASE_URL)
 IMAGE=ghcr.io/icebergai/icebergcti@sha256:<digest> RELEASE=<unique-id> ./release.sh
 kubectl apply -f ingress.yaml         # optional — TLS exposure (edit host + secret first)
+kubectl apply -f prune-cronjob.yaml   # optional — retention CronJobs (see "Retention")
 ```
 
 ## TLS / Ingress
@@ -230,3 +231,21 @@ made for a `CronJob` using the same image, ConfigMap and Secret as the app) to
 sweep anything left behind, and use `iceberg-worker --inspect` to review job
 state. Jobs lease with expiry and retry with backoff, so several workers (or the
 app plus a CronJob) can safely share the queue.
+
+## Retention (bounding table + disk growth)
+
+Three derived stores grow over the life of an instance and have retention
+windows so they don't grow without limit. Schedule the prune commands as
+`CronJob`s — [`prune-cronjob.yaml`](prune-cronjob.yaml) ships both, using the
+same image, ConfigMap and Secret as the app (each is one bounded pass per run):
+
+- **`iceberg-prune-audit`** — deletes `AuditEvent` rows older than
+  `ICEBERG_AUDIT_RETENTION_DAYS` (default 365) and un-ingested `FeedItem` rows
+  older than `ICEBERG_FEED_ITEM_RETENTION_DAYS` (default 90). The SIEM is the
+  long-term audit store; feed items captured into a notebook became durable
+  `Source` rows and are never pruned. On a **public** instance the audit table is
+  the fastest-growing (every scanned 401/403 lands there) — keep this scheduled.
+- **`iceberg-prune-renders`** — applies the rendered-PDF policy
+  (`ICEBERG_RENDER_RETENTION_KEEP` / `ICEBERG_RENDER_RETENTION_DAYS`).
+
+Set any window to `0` to keep that store forever.

@@ -1,0 +1,109 @@
+# Retention CronJobs — bound the append-forever / accumulating derived tables so
+# a long-running instance doesn't grow the database and PDF store without limit.
+#
+#   iceberg-prune-audit   — deletes AuditEvent rows and un-ingested FeedItem rows
+#                           past ICEBERG_AUDIT_RETENTION_DAYS /
+#                           ICEBERG_FEED_ITEM_RETENTION_DAYS (0 = keep forever).
+#   iceberg-prune-renders — deletes rendered PDFs past the render retention policy
+#                           (ICEBERG_RENDER_RETENTION_KEEP / _DAYS).
+#
+# Both are one bounded pass per run (made for a CronJob), reuse the same image,
+# ConfigMap and Secret as the app, and share migrate-job.yaml's hardened pod
+# security context. Adjust the schedules to taste.
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: iceberg-prune-audit
+spec:
+  # 03:30 daily — off-peak; retention windows are in days, so daily is ample.
+  schedule: "30 3 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            fsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: prune-audit
+              # Pin to the same immutable tag/digest as the Deployment.
+              image: ghcr.io/icebergai/icebergcti:latest
+              command: ["iceberg-prune-audit"]
+              envFrom:
+                - configMapRef:
+                    name: iceberg-config
+                - secretRef:
+                    name: iceberg-secrets
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                # /data is needed only for the SQLite default; harmless for
+                # Postgres. /tmp is scratch for a read-only root.
+                - name: data
+                  mountPath: /data
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: iceberg-data
+            - name: tmp
+              emptyDir: {}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: iceberg-prune-renders
+spec:
+  # 03:45 daily — staggered after the audit prune.
+  schedule: "45 3 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            fsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: prune-renders
+              image: ghcr.io/icebergai/icebergcti:latest
+              command: ["iceberg-prune-renders"]
+              envFrom:
+                - configMapRef:
+                    name: iceberg-config
+                - secretRef:
+                    name: iceberg-secrets
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: data
+                  mountPath: /data
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: iceberg-data
+            - name: tmp
+              emptyDir: {}

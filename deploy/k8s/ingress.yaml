@@ -34,9 +34,11 @@ metadata:
     # TLS cert into the Secret named under `tls.secretName` below.
     # cert-manager.io/cluster-issuer: letsencrypt-prod
 
-    # Allow report attachment/figure uploads up to the app's cap (default 25 MB,
-    # ICEBERG_ATTACHMENT_MAX_MB) — ingress-nginx defaults to 1 MB otherwise.
-    nginx.ingress.kubernetes.io/proxy-body-size: "25m"
+    # Cap the request body at the edge. Keep this at/above ICEBERG_MAX_BODY_MB
+    # (default 30 MB, itself just above ICEBERG_ATTACHMENT_MAX_MB=25 MB) so report
+    # attachment/figure uploads pass — ingress-nginx defaults to 1 MB otherwise.
+    # The app enforces the same ceiling itself (BodySizeLimitMiddleware).
+    nginx.ingress.kubernetes.io/proxy-body-size: "30m"
 spec:
   ingressClassName: nginx
   tls:
