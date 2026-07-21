@@ -4,6 +4,9 @@
 {% block crumb %}Feed{% endblock %}
 {% block content %}
 
+{% set new_count = unread_ids | length %}
+
+<div x-data="feedFilter()">
 <div class="head-row mb-4">
   <div>
     <div class="eyebrow eyebrow-accent">Delivered to you</div>
@@ -12,9 +15,18 @@
       <a href="/preferences" class="btn-link">Preferences</a>.</p>
     <a href="/help#dissemination" class="help-hint mt-2">How does dissemination work? →</a>
   </div>
+  {% if items %}
+    {# Filter is client-side over the already-rendered rows: All is active by
+       default, so the server-rendered page is complete without Alpine. #}
+    <div class="filter-pills">
+      <button type="button" class="tax-pill" :class="unreadOnly ? '' : 'is-on'"
+              @click="unreadOnly = false" :aria-pressed="unreadOnly ? 'false' : 'true'">All · {{ items | length }}</button>
+      <button type="button" class="tax-pill" :class="unreadOnly ? 'is-on' : ''"
+              @click="unreadOnly = true" :aria-pressed="unreadOnly ? 'true' : 'false'">Unread · {{ new_count }}</button>
+    </div>
+  {% endif %}
 </div>
 
-{% set new_count = unread_ids | length %}
 {% if new_count %}
   <div class="feed-banner mb-5">
     <span class="dot"></span>
@@ -23,25 +35,66 @@
 {% endif %}
 
 {% if items %}
-  <div class="rows">
-    {% for item in items %}
-      {% set r = item.report %}
-      <a href="/reports/{{ r.id }}" class="row">
-        {% if item.event.id in unread_ids %}
-          <span style="width:8px;height:8px;border-radius:50%;background:var(--accent-ink);flex:none;" title="New"></span>
-        {% else %}
-          <span style="width:8px;height:8px;flex:none;"></span>
-        {% endif %}
-        <span class="flex-1">
-          <span class="row-title {% if item.event.id in unread_ids %}font-bold{% endif %}">{{ r.title }}</span>
-          <span class="mono text-xs block mt-0.5" style="color:var(--faint);">{{ item.event.created_at.strftime('%Y-%m-%d · %H:%M') }}</span>
-        </span>
-        {{ m.level_badge(r.intel_level) }}
-        {{ m.tlp_badge(r.tlp) }}
-      </a>
+    {% for label, rows in buckets %}
+      {# A bucket with nothing unread disappears wholesale under the Unread
+         filter, rather than leaving an empty heading and border behind. #}
+      {% set unread_here = rows | selectattr('event.id', 'in', unread_ids) | list | length %}
+      <div{% if not unread_here %} x-show="!unreadOnly" x-cloak{% endif %}>
+      <div class="eyebrow mt-6 mb-2">{{ label }}</div>
+      <div class="rows">
+        {% for item in rows %}
+          {% set r = item.report %}
+          {% set is_unread = item.event.id in unread_ids %}
+          {% set reason = item.reason %}
+          <div class="row"{% if not is_unread %} x-show="!unreadOnly" x-cloak{% endif %}>
+            {% if is_unread %}
+              <span class="queue-dot is-unread" title="New"></span>
+            {% else %}
+              <span class="queue-dot is-blank"></span>
+            {% endif %}
+            <a href="/reports/{{ r.id }}" class="flex-1">
+              <span class="row-title {% if is_unread %}font-bold{% endif %}">{{ r.title }}</span>
+              <span class="flex items-center gap-2 mt-1 flex-wrap">
+                {# Why this reached you — derived from the same rules that routed it. #}
+                {% if reason.kind == 'requirement' %}
+                  <span class="tag tag--c is-info" title="This product answers a requirement you raised">
+                    <span class="dot"></span>{{ reason.label }}
+                  </span>
+                {% elif reason.kind == 'tag' %}
+                  <span class="tag tag--c is-info" title="You subscribe to this entity">
+                    <span class="dot"></span>{{ reason.label }}
+                  </span>
+                {% elif reason.kind == 'audience' %}
+                  <span class="tag" title="Delivered to your audience group">
+                    <span class="dot"></span>{{ reason.label }}
+                  </span>
+                {% else %}
+                  <span class="tag" title="Matched your intelligence-level preference">
+                    <span class="dot"></span>{{ reason.label }}
+                  </span>
+                {% endif %}
+                {{ m.level_badge(r.intel_level) }}
+                {{ m.tlp_badge(r.tlp) }}
+              </span>
+              <span class="mono text-xs block mt-1" style="color:var(--faint);">{{ item.event.created_at.strftime('%Y-%m-%d · %H:%M') }}</span>
+            </a>
+            {# Close the intelligence cycle from the feed. The feedback endpoint
+               requires a usefulness rating, so this deep-links to the product's
+               feedback card with the requirement preselected rather than
+               posting a verdict the reader never gave. #}
+            {% if reason.kind == 'requirement' %}
+              <a href="/reports/{{ r.id }}?requirement={{ reason.requirement_id }}#feedback"
+                 class="btn btn--primary btn--sm">Mark satisfied →</a>
+            {% else %}
+              <a href="/reports/{{ r.id }}#feedback" class="btn-link">Give feedback</a>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+      </div>
     {% endfor %}
-  </div>
 {% else %}
   <div class="well card-pad-lg text-center"><p class="empty">Nothing disseminated to you yet.</p></div>
 {% endif %}
+</div>
 {% endblock %}

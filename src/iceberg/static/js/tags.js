@@ -436,6 +436,11 @@ document.addEventListener('alpine:init', () => {
     show(phase, section) { this.phase = phase; this.section = section; },
   }));
 
+  /* ---- Stakeholder feed filter (feed.html) --------------------------------
+     All ⇄ Unread over the already-rendered rows. All is the server-rendered
+     default, so the page is complete before (and without) hydration. */
+  Alpine.data('feedFilter', () => ({ unreadOnly: false }));
+
   Alpine.data('citationForm', () => ({
     error: false,
     async save() {

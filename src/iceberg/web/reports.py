@@ -11,6 +11,7 @@ from fastapi import (
     BackgroundTasks,
     Form,
     HTTPException,
+    Query,
     Request,
     Response,
     status,
@@ -105,7 +106,11 @@ def _get_report(session: Session, report_id: int) -> Report:
 
 @router.get("/reports/{report_id}")
 def report_view(
-    report_id: int, request: Request, session: SessionDep, user: CurrentUser
+    report_id: int,
+    request: Request,
+    session: SessionDep,
+    user: CurrentUser,
+    requirement: Annotated[int | None, Query()] = None,
 ):
     report = ensure_visible(_get_report(session, report_id), user)
 
@@ -115,9 +120,17 @@ def report_view(
     received_feedback: list = []
     if user.role == Role.STAKEHOLDER:
         if feedback_service.was_delivered(session, report, user):
+            own = feedback_service.linked_requirements(report, user)
             feedback_form = {
                 "existing": feedback_service.existing_feedback(session, report, user),
-                "requirements": feedback_service.linked_requirements(report, user),
+                "requirements": own,
+                # "Mark satisfied →" in the feed deep-links here with the
+                # requirement it answers. Preselect it (only if it really is the
+                # reader's own, so the param can't surface anything else) — the
+                # verdict is still theirs to submit.
+                "preselect_requirement_id": next(
+                    (r.id for r in own if r.id == requirement), None
+                ),
             }
     elif user.role in (Role.ANALYST, Role.REVIEWER, Role.ADMIN):
         received_feedback = feedback_service.feedback_for_report(session, report)

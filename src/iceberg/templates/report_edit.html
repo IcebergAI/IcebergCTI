@@ -13,11 +13,22 @@
 {% block canvas_class %}canvas--flush{% endblock %}
 {% block content %}
 
-{% macro transition_btn(target, label, cls) %}
-  <form method="post" action="/reports/{{ report.id }}/transition">
+{% macro transition_btn(target, label, cls, block=false) %}
+  <form method="post" action="/reports/{{ report.id }}/transition"{% if block %} class="w-full"{% endif %}>
     <input type="hidden" name="target" value="{{ target }}">
-    <button class="btn {{ cls }} btn--sm">{{ label }}</button>
+    <button class="btn {{ cls }}{{ '' if block else ' btn--sm' }}"{% if block %} style="width:100%;"{% endif %}>{{ label }}</button>
   </form>
+{% endmacro %}
+
+{# One dock tab. Every tab shares the same ARIA wiring and keyboard contract, so
+   it is declared once here rather than copied per tab. #}
+{% macro dock_tab(id, label) %}
+  <button type="button" class="dock-tab" id="editor-tab-{{ id }}" data-editor-tab="{{ id }}"
+          role="tab" aria-controls="editor-panel-{{ id }}"
+          :aria-selected="tab === '{{ id }}' ? 'true' : 'false'" :tabindex="tab === '{{ id }}' ? '0' : '-1'"
+          :class="tab==='{{ id }}' ? 'is-active' : ''" @click="selectTab('{{ id }}')"
+          @keydown.arrow-right.prevent="moveTab(1)" @keydown.arrow-left.prevent="moveTab(-1)"
+          @keydown.home.prevent="firstTab()" @keydown.end.prevent="lastTab()">{{ label }}</button>
 {% endmacro %}
 
 <div class="editor-shell" x-data="reportEditor('report-editor-data')">
@@ -86,44 +97,18 @@
     <div class="editor-head-actions">
       {{ m.status_badge(report.status) }}
       {% if can_edit %}
+        {# One save model: the editor autosaves (1.2s debounce) and this is the
+           only report of that state. The <noscript> submit keeps the form
+           usable if Alpine never loads. #}
         <span class="save-state" :class="saving ? '' : (dirty ? 'is-dirty' : 'is-saved')"
-              x-text="saving ? 'Saving…' : (dirty ? 'Unsaved changes' : 'Saved')"></span>
-        <button form="reportform" class="btn btn--ink btn--sm">Save draft</button>
+              x-text="saving ? 'Saving…' : (dirty ? 'Unsaved changes' : 'All changes saved')">All changes saved</span>
+        <noscript><button form="reportform" class="btn btn--ink btn--sm">Save</button></noscript>
       {% endif %}
       <a href="/reports/{{ report.id }}" class="btn btn--ghost btn--sm">
         {% if report.status.value == 'PUBLISHED' %}View published{% else %}Preview{% endif %} →
       </a>
     </div>
   </header>
-
-  <!-- ===== lifecycle subhead ===== -->
-  <div class="editor-subhead">
-    <div class="flow">
-      {% for step in lifecycle_steps %}
-        <span class="flow-step {{ 'now' if loop.index0 == current_index else ('done' if loop.index0 < current_index) }}">{{ step.replace('_', ' ') }}</span>
-        {% if not loop.last %}<span class="flow-sep"></span>{% endif %}
-      {% endfor %}
-    </div>
-    <div class="flex items-center gap-2 ml-auto">
-      {% if report.status.value == 'DRAFT' and (is_author or user.role == 'ADMIN') %}
-        {{ transition_btn('IN_REVIEW', 'Submit for review', 'btn--primary') }}
-      {% elif report.status.value == 'IN_REVIEW' and can_review %}
-        {{ transition_btn('DRAFT', 'Send back', 'btn--quiet') }}
-        {{ transition_btn('APPROVED', 'Approve', 'btn--primary') }}
-      {% elif report.status.value == 'APPROVED' and can_review %}
-        {{ transition_btn('IN_REVIEW', 'Back to review', 'btn--quiet') }}
-        {{ transition_btn('PUBLISHED', 'Publish & disseminate', 'btn--ink') }}
-      {% elif report.status.value == 'PUBLISHED' %}
-        <span class="eyebrow" style="color:var(--c-ok);">Published {{ report.published_at and report.published_at.strftime('%Y-%m-%d %H:%M') }}</span>
-      {% elif report.status.value == 'DRAFT' %}
-        <span class="eyebrow">Only the author can submit</span>
-      {% elif report.status.value == 'IN_REVIEW' %}
-        <span class="eyebrow">Awaiting reviewer action</span>
-      {% elif report.status.value == 'APPROVED' %}
-        <span class="eyebrow">Awaiting publication</span>
-      {% endif %}
-    </div>
-  </div>
 
   <!-- ===== 3-pane body ===== -->
   <div class="editor-body">
@@ -242,47 +227,16 @@
 
     <!-- docked panel -->
     <aside class="editor-pane dock">
+      {# Verb-labelled and kept to four: Cite / Classify / Link / Publish, plus
+         Assist only when the AI backend is available to an editor. Roving
+         tabindex + arrow/Home/End selection come from `tabOrder`, which the
+         component derives from the rendered [data-editor-tab] set. #}
       <div class="dock-tabs" role="tablist" aria-label="Report editor tools">
-        <button type="button" class="dock-tab" id="editor-tab-cite" data-editor-tab="cite"
-                role="tab" aria-controls="editor-panel-cite"
-                :aria-selected="tab === 'cite' ? 'true' : 'false'" :tabindex="tab === 'cite' ? '0' : '-1'"
-                :class="tab==='cite' ? 'is-active' : ''" @click="selectTab('cite')"
-                @keydown.arrow-right.prevent="moveTab(1)" @keydown.arrow-left.prevent="moveTab(-1)"
-                @keydown.home.prevent="firstTab()" @keydown.end.prevent="lastTab()">Citations</button>
-        <button type="button" class="dock-tab" id="editor-tab-tags" data-editor-tab="tags"
-                role="tab" aria-controls="editor-panel-tags"
-                :aria-selected="tab === 'tags' ? 'true' : 'false'" :tabindex="tab === 'tags' ? '0' : '-1'"
-                :class="tab==='tags' ? 'is-active' : ''" @click="selectTab('tags')"
-                @keydown.arrow-right.prevent="moveTab(1)" @keydown.arrow-left.prevent="moveTab(-1)"
-                @keydown.home.prevent="firstTab()" @keydown.end.prevent="lastTab()">Tags</button>
-        {% if can_edit %}
-          <button type="button" class="dock-tab" id="editor-tab-ai" data-editor-tab="ai"
-                  role="tab" aria-controls="editor-panel-ai"
-                  :aria-selected="tab === 'ai' ? 'true' : 'false'" :tabindex="tab === 'ai' ? '0' : '-1'"
-                  :class="tab==='ai' ? 'is-active' : ''" @click="selectTab('ai')"
-                  @keydown.arrow-right.prevent="moveTab(1)" @keydown.arrow-left.prevent="moveTab(-1)"
-                  @keydown.home.prevent="firstTab()" @keydown.end.prevent="lastTab()">AI review</button>
-        {% endif %}
-        <button type="button" class="dock-tab" id="editor-tab-req" data-editor-tab="req"
-                role="tab" aria-controls="editor-panel-req"
-                :aria-selected="tab === 'req' ? 'true' : 'false'" :tabindex="tab === 'req' ? '0' : '-1'"
-                :class="tab==='req' ? 'is-active' : ''" @click="selectTab('req')"
-                @keydown.arrow-right.prevent="moveTab(1)" @keydown.arrow-left.prevent="moveTab(-1)"
-                @keydown.home.prevent="firstTab()" @keydown.end.prevent="lastTab()">Reqs</button>
-        {% if user.role == 'ADMIN' %}
-          <button type="button" class="dock-tab" id="editor-tab-audience" data-editor-tab="audience"
-                  role="tab" aria-controls="editor-panel-audience"
-                  :aria-selected="tab === 'audience' ? 'true' : 'false'" :tabindex="tab === 'audience' ? '0' : '-1'"
-                  :class="tab==='audience' ? 'is-active' : ''" @click="selectTab('audience')"
-                  @keydown.arrow-right.prevent="moveTab(1)" @keydown.arrow-left.prevent="moveTab(-1)"
-                  @keydown.home.prevent="firstTab()" @keydown.end.prevent="lastTab()">Audience</button>
-        {% endif %}
-        <button type="button" class="dock-tab" id="editor-tab-render" data-editor-tab="render"
-                role="tab" aria-controls="editor-panel-render"
-                :aria-selected="tab === 'render' ? 'true' : 'false'" :tabindex="tab === 'render' ? '0' : '-1'"
-                :class="tab==='render' ? 'is-active' : ''" @click="selectTab('render')"
-                @keydown.arrow-right.prevent="moveTab(1)" @keydown.arrow-left.prevent="moveTab(-1)"
-                @keydown.home.prevent="firstTab()" @keydown.end.prevent="lastTab()">Render</button>
+        {{ dock_tab('cite', 'Cite') }}
+        {{ dock_tab('tags', 'Classify') }}
+        {% if can_edit %}{{ dock_tab('ai', 'Assist') }}{% endif %}
+        {{ dock_tab('link', 'Link') }}
+        {{ dock_tab('publish', 'Publish') }}
       </div>
       <div class="dock-body">
 
@@ -545,9 +499,10 @@
         </div>
         {% endif %}
 
-        <!-- Requirements -->
-        <div id="editor-panel-req" role="tabpanel" aria-labelledby="editor-tab-req" tabindex="0"
-             x-show="tab==='req'" x-cloak>
+        {# Link — what this product is tied to: the requirements it answers and,
+           for an admin, the need-to-know audience it is scoped to. #}
+        <div id="editor-panel-link" role="tabpanel" aria-labelledby="editor-tab-link" tabindex="0"
+             x-show="tab==='link'" x-cloak>
           <h2 class="section-title mb-1">Requirements satisfied</h2>
           <p class="text-xs mb-3" style="color:var(--muted);">Establishes traceability back to stakeholder needs.</p>
           {% if updated == 'requirements' %}<div class="inline-notice mb-3">Requirement links updated.</div>{% endif %}
@@ -571,13 +526,9 @@
           {% else %}
             <p class="empty">No open requirements to link.</p>
           {% endif %}
-        </div>
 
         {% if user.role == 'ADMIN' %}
-        <!-- Audience -->
-        <div id="editor-panel-audience" role="tabpanel" aria-labelledby="editor-tab-audience" tabindex="0"
-             x-show="tab==='audience'" x-cloak>
-          <h2 class="section-title mb-1">Need-to-know audience</h2>
+          <h2 class="section-title mb-1 mt-6">Need-to-know audience</h2>
           <p class="text-xs mb-3" style="color:var(--muted);">Restrict this published product to selected stakeholder groups. No groups means all authenticated stakeholders can browse it.</p>
           {% if updated == 'audience' %}<div class="inline-notice mb-3">Audience updated.</div>{% endif %}
           {% if all_audience_groups %}
@@ -600,12 +551,32 @@
           {% else %}
             <p class="empty">No audience groups yet. Create them from <a href="/admin/audience" class="btn-link">Audience groups</a>.</p>
           {% endif %}
-        </div>
         {% endif %}
+        </div>
 
-        <!-- Render -->
-        <div id="editor-panel-render" role="tabpanel" aria-labelledby="editor-tab-render" tabindex="0"
-             x-show="tab==='render'" x-cloak>
+        {# Publish — everything for moving the product forward in one place: where
+           it is in the lifecycle, the PDF artefacts, and (in the dock footer) the
+           one transition available to this user right now. #}
+        <div id="editor-panel-publish" role="tabpanel" aria-labelledby="editor-tab-publish" tabindex="0"
+             x-show="tab==='publish'" x-cloak>
+          <div class="head-row mb-1">
+            <h2 class="section-title">Publish</h2>
+            {{ m.status_badge(report.status) }}
+          </div>
+          <p class="text-xs mb-3" style="color:var(--muted);">Everything for moving this product forward.</p>
+
+          <div class="well card-pad mb-4">
+            <div class="field-label mb-2">Lifecycle</div>
+            <div class="flow" style="flex-wrap:wrap;gap:6px;">
+              {% for step in lifecycle_steps %}
+                <span class="flow-step {{ 'now' if loop.index0 == current_index else ('done' if loop.index0 < current_index) }}">{{ step.replace('_', ' ') }}</span>
+              {% endfor %}
+            </div>
+            {% if report.status.value == 'PUBLISHED' %}
+              <p class="text-xs mt-2" style="color:var(--c-ok);">Published {{ report.published_at and report.published_at.strftime('%Y-%m-%d %H:%M') }} — the snapshot is frozen.</p>
+            {% endif %}
+          </div>
+
           <h2 class="section-title mb-1">Rendered products</h2>
           <p class="text-xs mb-3" style="color:var(--muted);">Typeset PDF artefacts via Typst.</p>
           {% if can_edit or user.role != 'STAKEHOLDER' %}
@@ -644,16 +615,34 @@
         </div>
       </div>
 
-      {# Markings moved to the always-visible header chips (single source of
-         truth); the dock footer now only points at the estimative-language
-         guidance that used to sit beside the confidence select. #}
-      {% if can_edit %}
+      {# The dock footer carries the one lifecycle action available to this user
+         right now — the standalone subhead stepper + submit row is gone, so
+         there is a single place to move the product forward. It stays pinned
+         under whichever tab is open; the Publish tab holds the context. #}
       <div class="dock-foot">
-        <a href="/help#estimative-language" class="help-hint" target="_blank">
-          How should I word likelihood and confidence? →
-        </a>
+        {% if report.status.value == 'DRAFT' and (is_author or user.role == 'ADMIN') %}
+          {{ transition_btn('IN_REVIEW', 'Submit for review →', 'btn--primary', block=true) }}
+        {% elif report.status.value == 'IN_REVIEW' and can_review %}
+          {{ transition_btn('APPROVED', 'Approve →', 'btn--primary', block=true) }}
+          {{ transition_btn('DRAFT', 'Send back', 'btn--quiet', block=true) }}
+        {% elif report.status.value == 'APPROVED' and can_review %}
+          {{ transition_btn('PUBLISHED', 'Publish & disseminate →', 'btn--ink', block=true) }}
+          {{ transition_btn('IN_REVIEW', 'Back to review', 'btn--quiet', block=true) }}
+        {% elif report.status.value == 'PUBLISHED' %}
+          <span class="eyebrow" style="color:var(--c-ok);">Published {{ report.published_at and report.published_at.strftime('%Y-%m-%d %H:%M') }}</span>
+        {% elif report.status.value == 'DRAFT' %}
+          <span class="eyebrow">Only the author can submit</span>
+        {% elif report.status.value == 'IN_REVIEW' %}
+          <span class="eyebrow">Awaiting reviewer action</span>
+        {% elif report.status.value == 'APPROVED' %}
+          <span class="eyebrow">Awaiting publication</span>
+        {% endif %}
+        {% if can_edit %}
+          <a href="/help#estimative-language" class="help-hint" target="_blank">
+            How should I word likelihood and confidence? →
+          </a>
+        {% endif %}
       </div>
-      {% endif %}
     </aside>
   </div>
 </div>

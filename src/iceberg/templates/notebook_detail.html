@@ -142,8 +142,8 @@
       <p class="empty">No sources collected yet. Add the first source with a URL, citation, or reference note.</p>
     {% endif %}
     {% if can_write %}
-      <details class="source-add-editor mt-5 pt-5 border-t border-line" {% if not sources %}open{% endif %}>
-        <summary class="btn btn--ghost btn--sm">Add source</summary>
+      <details class="add-block mt-5 pt-5 border-t border-line" {% if not sources %}open{% endif %}>
+        <summary class="add-toggle"><svg class="rail-ic btn-ic"><use href="#ic-plus"/></svg>Add source</summary>
         <form method="post" action="/notebooks/{{ notebook.id }}/sources" class="space-y-2.5 mt-3">
           <input name="title" required placeholder="Source title" class="field">
           <input name="reference" placeholder="URL / reference" class="field">
@@ -189,10 +189,13 @@
       <p class="empty">No notes yet. Capture observations before they turn into report prose.</p>
     {% endif %}
     {% if can_write %}
-      <form method="post" action="/notebooks/{{ notebook.id }}/notes" class="space-y-2.5 mt-5 pt-5 border-t border-line">
-        <textarea name="body_md" rows="3" placeholder="Working note (markdown)" class="field field-mono"></textarea>
-        <button class="btn btn--ghost btn--sm">Add note</button>
-      </form>
+      <details class="add-block mt-5 pt-5 border-t border-line"{% if not notes %} open{% endif %}>
+        <summary class="add-toggle"><svg class="rail-ic btn-ic"><use href="#ic-plus"/></svg>Add note</summary>
+        <form method="post" action="/notebooks/{{ notebook.id }}/notes" class="space-y-2.5 mt-3">
+          <textarea name="body_md" rows="3" placeholder="Working note (markdown)" class="field field-mono"></textarea>
+          <button class="btn btn--ghost btn--sm">Save note</button>
+        </form>
+      </details>
     {% endif %}
   </section>
 </div>
@@ -224,13 +227,16 @@
     <p class="empty">No files attached yet. Upload PDFs, images, or office files that should stay with this collection.</p>
   {% endif %}
   {% if can_write %}
-    <form method="post" action="/notebooks/{{ notebook.id }}/attachments" enctype="multipart/form-data"
-          class="space-y-2.5 mt-5 pt-5 border-t border-line">
-      <input type="file" name="file" required class="field">
-      <input name="title" placeholder="Label (optional — defaults to filename)" class="field">
-      <input name="summary" placeholder="Short summary (optional)" class="field">
-      <button class="btn btn--ghost btn--sm">Upload attachment</button>
-    </form>
+    <details class="add-block mt-5 pt-5 border-t border-line"{% if not attachments %} open{% endif %}>
+      <summary class="add-toggle"><svg class="rail-ic btn-ic"><use href="#ic-plus"/></svg>Add file</summary>
+      <form method="post" action="/notebooks/{{ notebook.id }}/attachments" enctype="multipart/form-data"
+            class="space-y-2.5 mt-3">
+        <input type="file" name="file" required class="field">
+        <input name="title" placeholder="Label (optional — defaults to filename)" class="field">
+        <input name="summary" placeholder="Short summary (optional)" class="field">
+        <button class="btn btn--ghost btn--sm">Upload attachment</button>
+      </form>
+    </details>
   {% endif %}
 </section>
 
@@ -268,12 +274,15 @@
     <p class="empty">No figures yet. Upload an image to embed it inline in a report.</p>
   {% endif %}
   {% if can_write %}
-    <form method="post" action="/notebooks/{{ notebook.id }}/figures" enctype="multipart/form-data"
-          class="space-y-2.5 mt-5 pt-5 border-t border-line">
-      <input type="file" name="file" accept="image/png,image/jpeg,image/gif" required class="field">
-      <input name="title" placeholder="Caption (optional — defaults to filename)" class="field">
-      <button class="btn btn--ghost btn--sm">Upload figure</button>
-    </form>
+    <details class="add-block mt-5 pt-5 border-t border-line"{% if not figures %} open{% endif %}>
+      <summary class="add-toggle"><svg class="rail-ic btn-ic"><use href="#ic-plus"/></svg>Add figure</summary>
+      <form method="post" action="/notebooks/{{ notebook.id }}/figures" enctype="multipart/form-data"
+            class="space-y-2.5 mt-3">
+        <input type="file" name="file" accept="image/png,image/jpeg,image/gif" required class="field">
+        <input name="title" placeholder="Caption (optional — defaults to filename)" class="field">
+        <button class="btn btn--ghost btn--sm">Upload figure</button>
+      </form>
+    </details>
   {% endif %}
 </section>
 
@@ -364,8 +373,10 @@
     </div>
   {% endif %}
   {% if can_write %}
+    <details class="add-block mt-5 pt-5 border-t border-line"{% if not iocs %} open{% endif %}>
+      <summary class="add-toggle"><svg class="rail-ic btn-ic"><use href="#ic-plus"/></svg>Add indicator</summary>
     <form method="post" action="/notebooks/{{ notebook.id }}/iocs"
-          class="space-y-2.5 mt-2 pt-5 border-t border-line">
+          class="space-y-2.5 mt-3">
       <div class="flex gap-2 flex-wrap">
         <select name="ioc_type" class="field" style="max-width:200px;">
           {% for t in ioc_types %}
@@ -393,6 +404,7 @@
       </div>
       <button class="btn btn--ghost btn--sm">Add indicator</button>
     </form>
+    </details>
   {% endif %}
 </section>
 
@@ -434,7 +446,9 @@
     <p class="empty">No Diamond Model assessments yet. Capture adversary, capability, infrastructure and victim to model an intrusion.</p>
   {% endif %}
   {% if can_write %}
-    <form method="post" action="/notebooks/{{ notebook.id }}/diamonds" class="well card-pad mt-4 space-y-3">
+    <details class="add-block mt-5 pt-5 border-t border-line"{% if not diamonds %} open{% endif %}>
+      <summary class="add-toggle"><svg class="rail-ic btn-ic"><use href="#ic-plus"/></svg>Add Diamond Model</summary>
+    <form method="post" action="/notebooks/{{ notebook.id }}/diamonds" class="well card-pad mt-3 space-y-3">
       <div class="eyebrow">New Diamond Model</div>
       <div class="grid sm:grid-cols-12 gap-3 items-end">
         <div class="sm:col-span-9">
@@ -457,6 +471,7 @@
       <div><label class="field-label">Notes <span class="opt">optional</span></label><textarea name="notes" rows="2" placeholder="Analytic notes" class="field"></textarea></div>
       <button class="btn btn--ink">Create Diamond Model</button>
     </form>
+    </details>
   {% endif %}
 </section>
 
@@ -496,7 +511,9 @@
     <p class="empty">No ACH matrices yet. List the competing hypotheses, gather your evidence, and rate each cell for consistency.</p>
   {% endif %}
   {% if can_write %}
-    <form method="post" action="/notebooks/{{ notebook.id }}/ach" class="well card-pad mt-4 space-y-3">
+    <details class="add-block mt-5 pt-5 border-t border-line"{% if not ach_models %} open{% endif %}>
+      <summary class="add-toggle"><svg class="rail-ic btn-ic"><use href="#ic-plus"/></svg>Add ACH analysis</summary>
+    <form method="post" action="/notebooks/{{ notebook.id }}/ach" class="well card-pad mt-3 space-y-3">
       <div class="eyebrow">New ACH analysis</div>
       <div>
         <label class="field-label">Title</label>
@@ -504,6 +521,7 @@
       </div>
       <button class="btn btn--ink">Create ACH analysis</button>
     </form>
+    </details>
   {% endif %}
 </section>
 
@@ -536,7 +554,9 @@
   {% endif %}
 
   {% if can_write %}
-    <form method="post" action="/notebooks/{{ notebook.id }}/reports" class="well card-pad mt-4">
+    <details class="add-block mt-5 pt-5 border-t border-line"{% if not reports %} open{% endif %}>
+      <summary class="add-toggle"><svg class="rail-ic btn-ic"><use href="#ic-plus"/></svg>Add product</summary>
+    <form method="post" action="/notebooks/{{ notebook.id }}/reports" class="well card-pad mt-3">
       <div class="eyebrow mb-3">New product</div>
       <div class="grid sm:grid-cols-12 gap-3 items-end">
         <div class="sm:col-span-6">
@@ -558,6 +578,7 @@
       </div>
       <button class="btn btn--ink mt-4">Create product</button>
     </form>
+    </details>
   {% endif %}
 </section>
 
