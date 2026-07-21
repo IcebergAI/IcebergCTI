@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Effective config · {{ app_name }}{% endblock %}
+{% block crumb %}Effective config{% endblock %}
+{% block content %}
+
+<div class="head-row mb-7">
+  <div>
+    <div class="eyebrow eyebrow-accent">Administration</div>
+    <h1 class="page-title mt-2">Effective configuration</h1>
+    <div class="title-rule"></div>
+    <p class="text-sm mt-3" style="color:var(--muted);max-width:70ch;">The values this process is using now, where each came from, and which optional features are available. Read-only. Secrets are shown only as a set / not-set status — never their value.</p>
+  </div>
+</div>
+
+{# Validation block — the prod boot-guards, re-run non-fatally. #}
+<section class="card card-pad-lg mb-5" {% if not validation.ok %}style="border-color:var(--c-crit);"{% endif %}>
+  <div class="flex items-center gap-3 mb-2">
+    <h2 class="section-title" style="margin:0;">Validation</h2>
+    {% if validation.ok %}
+      <span class="tag tag--c"><span class="dot"></span>Valid</span>
+    {% else %}
+      <span class="tag tag--c is-crit"><span class="dot"></span>Needs attention</span>
+    {% endif %}
+  </div>
+  {% if validation.errors %}
+    <ul class="text-sm" style="color:var(--c-crit);margin:6px 0 0;padding-left:18px;">
+      {% for err in validation.errors %}<li>{{ err }}</li>{% endfor %}
+    </ul>
+  {% endif %}
+  {% if advisories %}
+    <ul class="text-sm" style="color:var(--muted);margin:10px 0 0;padding-left:18px;">
+      {% for note in advisories %}<li>{{ note }}</li>{% endfor %}
+    </ul>
+  {% endif %}
+</section>
+
+{# Feature-capability tiles. #}
+<section class="card card-pad-lg mb-5">
+  <h2 class="section-title mb-4">Capabilities</h2>
+  <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;">
+    {% for tile in tiles %}
+      <div class="field-wrap" style="margin:0;">
+        <span class="field-label" style="margin-bottom:4px;">{{ tile.label }}</span>
+        <span class="tag tag--c {% if tile.ok %}{% else %}is-warn{% endif %}" style="align-self:flex-start;">
+          <span class="dot"></span>{{ tile.value }}
+        </span>
+      </div>
+    {% endfor %}
+  </div>
+</section>
+
+{# Resolved settings, grouped by category, with a client-side text filter. #}
+<section class="card card-pad-lg" x-data="configFilter()">
+  <div class="flex items-center gap-3 mb-4" style="flex-wrap:wrap;">
+    <h2 class="section-title" style="margin:0;">Settings</h2>
+    <input class="field mono" style="max-width:280px;" placeholder="Filter…" x-model="search" aria-label="Filter settings">
+    <span class="text-sm" style="color:var(--muted);">
+      Provenance: <strong>database</strong> · <strong>environment</strong> · <strong>built-in default</strong>
+    </span>
+  </div>
+
+  {% for category in categories %}
+    <div class="eyebrow eyebrow-accent" style="margin:16px 0 6px;">{{ category }}</div>
+    <table class="w-full text-sm" style="border-collapse:collapse;">
+      <tbody>
+        {% for row in rows if row.category == category %}
+          <tr x-show="matches($el)"
+              data-search="{{ (row.name ~ ' ' ~ row.category ~ ' ' ~ row.value ~ ' ' ~ row.provenance) | lower }}"
+              style="border-top:1px solid var(--line);">
+            <td class="mono" style="padding:6px 12px 6px 0;white-space:nowrap;">{{ row.name }}</td>
+            <td style="padding:6px 12px 6px 0;width:100%;">
+              {% if row.secret %}
+                {% if row.value == 'set' %}
+                  <span class="tag tag--c"><span class="dot"></span>set</span>
+                {% else %}
+                  <span class="tag tag--c is-crit"><span class="dot"></span>not set</span>
+                {% endif %}
+              {% else %}
+                <span class="mono" style="color:var(--muted);">{{ row.value }}</span>
+              {% endif %}
+            </td>
+            <td style="padding:6px 0;text-align:right;white-space:nowrap;">
+              <span class="eyebrow" style="opacity:0.75;">{{ row.provenance }}</span>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endfor %}
+</section>
+
+{% endblock %}

@@ -722,4 +722,14 @@ document.addEventListener('alpine:init', () => {
              (!q || hay.includes(q));
     },
   }));
+
+  // Read-only effective-config page (/admin/config): a text filter over the
+  // resolved settings rows. Each row carries its searchable text in data-search.
+  Alpine.data('configFilter', () => ({
+    search: '',
+    matches(el) {
+      const q = this.search.trim().toLowerCase();
+      return !q || (el.dataset.search || '').toLowerCase().includes(q);
+    },
+  }));
 });
