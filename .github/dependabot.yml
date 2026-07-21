@@ -3,16 +3,17 @@ updates:
   # Python dependencies (pyproject floors + dev tools). The `uv` ecosystem is
   # lockfile-aware — bump PRs refresh uv.lock alongside pyproject, which the
   # `uv sync --locked` CI gate requires. Keeps the tested baselines current and
-  # surfaces security bumps; pairs with pip-audit in CI.
+  # surfaces security bumps; pairs with pip-audit in CI. Grouped by `patterns`
+  # (not `dependency-type`, which Dependabot doesn't support for the uv ecosystem)
+  # into one weekly PR, matching the sibling repos.
   - package-ecosystem: uv
     directory: "/"
     schedule:
       interval: weekly
     groups:
-      python-dev:
-        dependency-type: development
-      python-prod:
-        dependency-type: production
+      python-dependencies:
+        patterns:
+          - "*"
     open-pull-requests-limit: 5
 
   # The SHA-pinned GitHub Actions in .github/workflows. Dependabot rewrites the
