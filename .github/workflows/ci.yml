@@ -153,6 +153,18 @@ jobs:
       # Build via the runner's built-in Docker/BuildKit (no extra pinned action).
       - name: Build image
         run: DOCKER_BUILDKIT=1 docker build -t iceberg:ci .
+      # Scan the built image for OS/library CVEs (#166) — the base layer's Debian
+      # packages and the vendored Typst binary are out of pip-audit's scope.
+      # ignore-unfixed keeps the gate actionable: only vulnerabilities with a fix
+      # available fail, which a Dependabot base-image digest bump then resolves.
+      - name: Trivy image vulnerability scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: iceberg:ci
+          format: table
+          exit-code: "1"
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
       # Mirror the production flow on PostgreSQL: migrate as a deploy step
       # (iceberg-migrate, ICEBERG_AUTO_MIGRATE stays false), then boot the default
       # CMD and assert the probes + that the portal templates/static are packaged

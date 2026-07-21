@@ -15,7 +15,7 @@ spec:
       containers:
         - name: migrate
           # Pin to the same immutable tag/digest as the Deployment.
-          image: ghcr.io/theslopbucket/iceberg:latest
+          image: ghcr.io/icebergai/icebergcti:latest
           # Uses the app's in-code Alembic config (no packaged alembic.ini needed);
           # reads ICEBERG_DATABASE_URL from the env above. Schema only.
           command: ["iceberg-migrate"]

@@ -28,8 +28,8 @@ spec:
       containers:
         - name: iceberg
           # Pin to an immutable tag/digest in production (not :latest), e.g.
-          # ghcr.io/theslopbucket/iceberg:0.1.0@sha256:<digest>.
-          image: ghcr.io/theslopbucket/iceberg:latest
+          # ghcr.io/icebergai/icebergcti:0.1.0@sha256:<digest>.
+          image: ghcr.io/icebergai/icebergcti:latest
           ports:
             - containerPort: 8000
           envFrom:
