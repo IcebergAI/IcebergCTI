@@ -5,10 +5,12 @@ role mapping + least-privilege default, and provider resolution from the row.
 from sqlmodel import Session
 
 from iceberg.auth import oidc
+from iceberg.auth import routes as auth_routes
 from iceberg.auth.oidc import OIDCProviderConfig, get_adapter, parse_role_map
 from iceberg.config import get_settings
-from iceberg.models import OIDCSettings, Role
+from iceberg.models import OIDCSettings, Role, User
 from iceberg.services import oidc_settings
+from iceberg.services.users import upsert_user
 
 
 # --------------------------------------------------------------------------- #
@@ -125,3 +127,52 @@ def test_entra_env_seeds_the_provider(engine, monkeypatch):
         assert row.entra_enabled is True
         assert row.entra_tenant_id == "tid"
         assert [p.name for p in oidc_settings.enabled_providers(session)] == ["entra"]
+
+
+# --------------------------------------------------------------------------- #
+# Back-compat: existing Entra users must not be locked out (#244 review)
+# --------------------------------------------------------------------------- #
+def test_existing_entra_user_is_adopted_not_locked_out(engine):
+    """A pre-multi-provider row (issuer/sub set, auth_provider NULL) is adopted
+    on the user's next Entra login rather than rejected as a collision."""
+    with Session(engine) as session:
+        legacy = User(
+            issuer="https://login.microsoftonline.com/t/v2.0",
+            sub="s-1",
+            email="user@example.test",
+            display_name="Legacy",
+            role=Role.ANALYST,
+        )
+        session.add(legacy)
+        session.commit()
+        session.refresh(legacy)
+        legacy_id = legacy.id
+
+        user = upsert_user(
+            session,
+            auth_provider="entra",
+            issuer="https://login.microsoftonline.com/t/v2.0",
+            sub="s-1",
+            email="user@example.test",
+            display_name="Legacy",
+            role=Role.ANALYST,
+        )
+        assert user.id == legacy_id  # adopted the existing row
+        assert user.auth_provider == "entra"
+
+
+# --------------------------------------------------------------------------- #
+# Cross-worker config staleness: cache is versioned on updated_at (#244 review)
+# --------------------------------------------------------------------------- #
+def test_oauth_registry_rebuilds_when_config_changes(engine):
+    auth_routes.reset_oauth()
+    try:
+        with Session(engine) as session:
+            first = auth_routes._get_oauth(session)
+            # A config change bumps OIDCSettings.updated_at, so the next call in
+            # ANY worker rebuilds — not only the one that saved.
+            oidc_settings.update(session, entra_client_id="changed")
+            second = auth_routes._get_oauth(session)
+            assert first is not second
+    finally:
+        auth_routes.reset_oauth()

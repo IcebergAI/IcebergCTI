@@ -129,29 +129,54 @@ def upsert_user(
             )
         ).first()
         if user is None:
-            # Spoof guard: the same (issuer, sub) must not already belong to a
-            # different provider.
-            clash = session.exec(
-                select(User).where(User.issuer == issuer, User.sub == sub)
+            # Adopt a pre-multi-provider Entra identity: before multi-provider,
+            # OIDC rows carried (issuer, sub) with no auth_provider. The migration
+            # backfills these to "entra"; this covers any that predate/escape the
+            # backfill so an existing Entra user is never locked out.
+            legacy = session.exec(
+                select(User).where(
+                    User.auth_provider == None,  # noqa: E711 — SQL NULL, not `is`
+                    User.issuer == issuer,
+                    User.sub == sub,
+                )
             ).first()
-            if clash is not None:
-                raise OIDCIdentityCollisionError("identity bound to another provider")
-            # An unbound legacy/dev row owning this email must be linked
-            # explicitly by an administrator, not silently forked.
-            if any(not _is_bound(owner) for owner in _email_owners(session, email)):
-                raise OIDCIdentityCollisionError("email is bound to a local account")
-            user = User(
-                auth_provider=auth_provider,
-                issuer=issuer,
-                sub=sub,
-                email=email,
-                display_name=display_name,
-                role=role,
-                department=department,
-                job_title=job_title,
-                company_name=company_name,
-                office_location=office_location,
-            )
+            if legacy is not None and auth_provider == "entra":
+                legacy.auth_provider = auth_provider
+                user = legacy
+                _refresh_profile(
+                    user,
+                    email=email,
+                    display_name=display_name,
+                    role=role,
+                    department=department,
+                    job_title=job_title,
+                    company_name=company_name,
+                    office_location=office_location,
+                )
+            else:
+                # Spoof guard: the same (issuer, sub) must not already belong to a
+                # different provider.
+                clash = session.exec(
+                    select(User).where(User.issuer == issuer, User.sub == sub)
+                ).first()
+                if clash is not None:
+                    raise OIDCIdentityCollisionError("identity bound to another provider")
+                # An unbound legacy/dev row owning this email must be linked
+                # explicitly by an administrator, not silently forked.
+                if any(not _is_bound(owner) for owner in _email_owners(session, email)):
+                    raise OIDCIdentityCollisionError("email is bound to a local account")
+                user = User(
+                    auth_provider=auth_provider,
+                    issuer=issuer,
+                    sub=sub,
+                    email=email,
+                    display_name=display_name,
+                    role=role,
+                    department=department,
+                    job_title=job_title,
+                    company_name=company_name,
+                    office_location=office_location,
+                )
         else:
             _refresh_profile(
                 user,

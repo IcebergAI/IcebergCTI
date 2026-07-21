@@ -10,6 +10,7 @@ working). Identity extraction is delegated to the per-provider adapter.
 """
 
 import logging
+from datetime import datetime
 from typing import Annotated
 
 from authlib.integrations.starlette_client import OAuth, OAuthError
@@ -40,9 +41,12 @@ _PROVIDER_LABELS = {
     "okta": "Okta",
 }
 
-# Authlib OAuth registry, built lazily from the enabled providers and rebuilt
-# when the admin config changes (``reset_oauth``).
+# Authlib OAuth registry, built lazily from the enabled providers. The cache is
+# **versioned on ``OIDCSettings.updated_at``** so every uvicorn worker rebuilds
+# when the admin config changes — not just the worker that handled the POST (a
+# process-global reset only clears one worker; the DB timestamp is shared).
 _oauth: OAuth | None = None
+_oauth_version: datetime | None = None
 
 
 def _build_oauth(session: Session) -> OAuth:
@@ -62,16 +66,20 @@ def _build_oauth(session: Session) -> OAuth:
 
 
 def _get_oauth(session: Session) -> OAuth:
-    global _oauth
-    if _oauth is None:
+    global _oauth, _oauth_version
+    version = oidc_settings_service.get(session).updated_at
+    if _oauth is None or _oauth_version != version:
         _oauth = _build_oauth(session)
+        _oauth_version = version
     return _oauth
 
 
 def reset_oauth() -> None:
-    """Drop the cached OAuth registry so the next login rebuilds from config."""
-    global _oauth
+    """Drop this worker's cached OAuth registry (immediate local effect; other
+    workers self-heal via the ``updated_at`` version check in ``_get_oauth``)."""
+    global _oauth, _oauth_version
     _oauth = None
+    _oauth_version = None
 
 
 def _client(session: Session, provider: str):

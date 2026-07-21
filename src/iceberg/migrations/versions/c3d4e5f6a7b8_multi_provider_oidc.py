@@ -36,6 +36,15 @@ def upgrade() -> None:
         batch.drop_index("ix_user_email")
         batch.create_index("ix_user_email", ["email"], unique=False)
 
+    # Backfill: every pre-existing OIDC identity was Entra (the only provider
+    # before multi-provider), so bind them to "entra" — otherwise their next
+    # login would miss the new (entra, issuer, sub) key and be rejected as a
+    # cross-provider collision. ("user" is quoted — reserved word on Postgres.)
+    op.execute(
+        "UPDATE \"user\" SET auth_provider = 'entra' "
+        "WHERE issuer IS NOT NULL AND auth_provider IS NULL"
+    )
+
     op.create_table(
         "oidcsettings",
         sa.Column("id", sa.Integer(), nullable=False),
