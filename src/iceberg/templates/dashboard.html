@@ -28,35 +28,68 @@
 
 {% if user.role != 'STAKEHOLDER' %}
   {% set in_flight = report_counts.draft + report_counts.in_review + report_counts.approved %}
+  {# Every KPI links to the work behind it — a number you can act on. #}
   <section class="stat-grid mb-7" aria-label="Workspace metrics">
-    <div class="stat">
+    <a href="/notebooks" class="stat">
       <div class="stat-label">Active notebooks</div>
-      <div class="stat-row"><span class="stat-num">{{ notebooks | length }}</span></div>
-    </div>
-    <div class="stat">
+      <div class="stat-row">
+        <span class="stat-num">{{ notebooks | length }}</span>
+        <span class="stat-delta stat-cue">Open →</span>
+      </div>
+    </a>
+    <a href="/reports" class="stat">
       <div class="stat-label">Reports in flight</div>
       <div class="stat-row">
         <span class="stat-num">{{ in_flight }}</span>
         <span class="stat-delta">{{ report_counts.in_review }} in review · {{ report_counts.approved }} approved</span>
+        <span class="stat-delta stat-cue">→</span>
       </div>
-    </div>
-    <div class="stat">
+    </a>
+    <a href="/requirements" class="stat">
       <div class="stat-label">Open tasking</div>
       <div class="stat-row">
         <span class="stat-num">{{ open_tasking }}</span>
-        {% if open_tasking %}<a href="/requirements" class="stat-delta">View board →</a>{% endif %}
+        <span class="stat-delta stat-cue">Board →</span>
       </div>
-    </div>
-    <div class="stat">
+    </a>
+    <a href="/reports" class="stat">
       <div class="stat-label">Published (30d)</div>
-      <div class="stat-row"><span class="stat-num">{{ published_30d }}</span></div>
-    </div>
+      <div class="stat-row">
+        <span class="stat-num">{{ published_30d }}</span>
+        <span class="stat-delta stat-cue">All →</span>
+      </div>
+    </a>
   </section>
 {% endif %}
 
 <div class="grid lg:grid-cols-3 gap-7">
   {% if user.role != 'STAKEHOLDER' %}
   <section class="lg:col-span-2">
+    {# What is waiting on you, above the fold: the review queue first, then your
+       own drafts. Both are existing lifecycle state, surfaced as actions. #}
+    {% if needs_you %}
+      <div class="head-row mb-4">
+        <h2 class="section-title">Needs you now</h2>
+        <span class="eyebrow">{{ needs_you | length }} item{{ '' if needs_you | length == 1 else 's' }}</span>
+      </div>
+      <div class="rows mb-6">
+        {% for item in needs_you %}
+          {% set r = item.report %}
+          <a href="/reports/{{ r.id }}/edit" class="row">
+            <span class="queue-dot {{ 'is-review' if item.kind == 'review' else 'is-draft' }}"
+                  aria-hidden="true"></span>
+            <span class="flex-1">
+              <span class="row-title">{{ r.title }}</span>
+              <span class="row-sub block">
+                {% if item.kind == 'review' %}In review · waiting on a reviewer{% else %}Draft · last edited {{ r.updated_at.strftime('%Y-%m-%d %H:%M') }}{% endif %}
+              </span>
+            </span>
+            <span class="btn btn--ghost btn--sm">{{ 'Review' if item.kind == 'review' else 'Resume' }} →</span>
+          </a>
+        {% endfor %}
+      </div>
+    {% endif %}
+
     <div class="head-row mb-4">
       <h2 class="section-title">Notebooks</h2>
       <span class="eyebrow">{{ notebooks | length }} active</span>
@@ -73,16 +106,24 @@
             <div class="tile-meta">{{ nb.topic or "No topic set" }}</div>
           </a>
         {% endfor %}
+        <a href="#new-notebook" class="tile tile--new">
+          <span class="eyebrow">+ Start a notebook</span>
+        </a>
       </div>
     {% else %}
       <div class="well card-pad text-center">
-        <p class="empty">No notebooks yet. {% if user.role != 'STAKEHOLDER' %}Create one below to start collecting sources, notes and products.{% endif %}</p>
+        <p class="empty">No notebooks yet. Start one below to begin collecting sources, notes and products.</p>
       </div>
     {% endif %}
 
-    {% if user.role != 'STAKEHOLDER' %}
-      <form method="post" action="/notebooks" class="card card-pad mt-4">
-        <div class="eyebrow mb-3">New notebook</div>
+    {# Collapsed by default so content leads; opens server-side when there is no
+       notebook to lead with. A native <details> keeps it working without JS and
+       adds no CSP surface (the same pattern as the notebook add-forms). #}
+    <details id="new-notebook" class="add-block mt-4"{% if not notebooks %} open{% endif %}>
+      <summary class="add-toggle">
+        <svg class="rail-ic btn-ic"><use href="#ic-plus"/></svg>New notebook
+      </summary>
+      <form method="post" action="/notebooks" class="card card-pad mt-3">
         <div class="grid sm:grid-cols-2 gap-3">
           <div>
             <label class="field-label">Title</label>
@@ -95,7 +136,7 @@
         </div>
         <button class="btn btn--ink mt-4">Create notebook</button>
       </form>
-    {% endif %}
+    </details>
   </section>
   {% endif %}
 
