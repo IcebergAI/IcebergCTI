@@ -1,5 +1,6 @@
 """Dissemination feed, preferences & help portal routes."""
 
+from datetime import timedelta
 from typing import Annotated
 
 from fastapi import (
@@ -14,6 +15,7 @@ from ..models import (
     IntelLevel,
     Role,
     TagKind,
+    utcnow,
 )
 from ..services import feed as feed_service
 from ..services import tags as tag_service
@@ -24,6 +26,23 @@ from .common import (
     router,
 )
 
+def _buckets(items: list, now) -> list[tuple[str, list]]:
+    """Group feed items into Today / This week / Earlier, dropping empty
+    buckets. Computed server-side so the grouping survives without Alpine."""
+    today = now.date()
+    week_ago = today - timedelta(days=7)
+    grouped: dict[str, list] = {"Today": [], "This week": [], "Earlier": []}
+    for item in items:
+        created = item["event"].created_at.date()
+        if created >= today:
+            grouped["Today"].append(item)
+        elif created > week_ago:
+            grouped["This week"].append(item)
+        else:
+            grouped["Earlier"].append(item)
+    return [(label, rows) for label, rows in grouped.items() if rows]
+
+
 @router.get("/feed")
 def feed_view(request: Request, session: SessionDep, user: CurrentUser):
     items = feed_service.visible_items(session, user)
@@ -33,7 +52,12 @@ def feed_view(request: Request, session: SessionDep, user: CurrentUser):
     return templates.TemplateResponse(
         request,
         "feed.html",
-        {"user": user, "items": items, "unread_ids": unread_ids},
+        {
+            "user": user,
+            "items": items,
+            "unread_ids": unread_ids,
+            "buckets": _buckets(items, utcnow()),
+        },
     )
 
 

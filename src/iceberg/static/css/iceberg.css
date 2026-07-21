@@ -533,6 +533,8 @@ a.row:hover, .row-hover:hover { background: var(--surface-2); }
 .queue-dot { width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--faint); }
 .queue-dot.is-draft { background: var(--c-warn); }
 .queue-dot.is-review { background: var(--accent); }
+.queue-dot.is-unread { background: var(--accent-ink); }
+.queue-dot.is-blank { background: transparent; }
 
 /* Audit log — one block per security event (admin console) */
 .audit-log { display: flex; flex-direction: column; }
@@ -1194,11 +1196,6 @@ label.marking-chip:hover { border-color: var(--accent-line); }
   position: absolute; inset: 0; width: 100%; height: 100%;
   padding: 0; border: 0; background: transparent; opacity: 0; cursor: pointer;
   appearance: none;
-}
-
-.editor-subhead {
-  flex: none; display: flex; align-items: center; gap: 14px;
-  padding: 8px 20px; border-bottom: 1px solid var(--line); background: var(--surface-2);
 }
 
 .editor-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr 340px; }

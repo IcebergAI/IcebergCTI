@@ -136,7 +136,10 @@
     {% endif %}
 
     {% if feedback_form %}
-    <div class="side-card" x-data="{ req: '{{ feedback_form.existing.requirement_id or '' }}' }">
+    {# #feedback is the anchor the stakeholder feed's "Mark satisfied →" and
+       "Give feedback" links land on. #}
+    <div class="side-card" id="feedback"
+         x-data="{ req: '{{ feedback_form.existing.requirement_id or feedback_form.preselect_requirement_id or '' }}' }">
       <div class="side-card-label">Your feedback</div>
       {% if feedback_form.existing %}
         <p class="eyebrow mb-3">You rated this product — update it below.</p>
@@ -158,7 +161,7 @@
             <select name="requirement_id" x-model="req" class="field">
               <option value="">— None</option>
               {% for r in feedback_form.requirements %}
-                <option value="{{ r.id }}">{{ r.title }} ({{ r.kind.value }})</option>
+                <option value="{{ r.id }}" {% if r.id == (feedback_form.existing.requirement_id if feedback_form.existing else feedback_form.preselect_requirement_id) %}selected{% endif %}>{{ r.title }} ({{ r.kind.value }})</option>
               {% endfor %}
             </select>
           </div>
