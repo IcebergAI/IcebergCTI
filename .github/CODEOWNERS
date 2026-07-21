@@ -1,16 +1,14 @@
 # Code owners for Iceberg. These owners are requested for review automatically
 # when a matching path changes. See:
 # https://docs.github.com/en/repositories/managing-your-repos-settings-and-features/customizing-your-repository/about-code-owners
-#
-# Replace @richardmhope with an @IcebergAI/<team> once a maintainers team exists.
 
 # Default owner for everything in the repo.
-*       @richardmhope
+*       @IcebergAI/maintainers
 
 # Security-sensitive areas get explicit ownership.
-/src/iceberg/auth/               @richardmhope
-/src/iceberg/services/audit.py   @richardmhope
-/src/iceberg/services/siem.py    @richardmhope
-/.github/                        @richardmhope
-/SECURITY.md                     @richardmhope
-/Dockerfile                      @richardmhope
+/src/iceberg/auth/               @IcebergAI/maintainers
+/src/iceberg/services/audit.py   @IcebergAI/maintainers
+/src/iceberg/services/siem.py    @IcebergAI/maintainers
+/.github/                        @IcebergAI/maintainers
+/SECURITY.md                     @IcebergAI/maintainers
+/Dockerfile                      @IcebergAI/maintainers

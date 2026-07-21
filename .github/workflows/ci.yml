@@ -28,17 +28,17 @@ jobs:
   test:
     name: Tests + coverage + static + assets
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          python-version: "3.14"
-          cache: pip
-          cache-dependency-path: uv.lock
-      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v6.9.0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
         with:
           version: "0.11.23"
+          python-version: "3.14"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
       # Lets tests/test_render.py exercise the real Typst PDF path instead of
       # skipping (it fetches the pinned cmarker package over the network once).
       - uses: typst-community/setup-typst@63ac138db421d586de61f7f5ac3bcef6a2e6c78c # v5.1.0
@@ -51,6 +51,10 @@ jobs:
         run: uv run bandit -r src/iceberg
       - name: Vulture (dead code)
         run: uv run vulture
+      # Static type check of the pure-logic / interface modules. ORM-query-heavy
+      # modules are staged out in [tool.mypy] until annotated (config in pyproject).
+      - name: mypy (types)
+        run: uv run mypy src/iceberg
       - name: djLint (templates)
         run: uv run djlint src/iceberg/templates --lint
       # Biome installs as a standalone binary (no Node toolchain) and lints the
@@ -104,15 +108,15 @@ jobs:
       # exercised). Shared schema ⇒ run serially (-n0).
       ICEBERG_DATABASE_URL: "postgresql+psycopg://iceberg:iceberg@localhost:5432/iceberg"
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          python-version: "3.14"
-          cache: pip
-          cache-dependency-path: uv.lock
-      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v6.9.0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
         with:
           version: "0.11.23"
+          python-version: "3.14"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
       - run: uv sync --locked --extra dev --extra postgres
       # A focused subset against Postgres: search (FTS tsvector relevance/facets/
       # access scoping), dissemination, related-product visibility, and serial
@@ -143,10 +147,24 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # Build via the runner's built-in Docker/BuildKit (no extra pinned action).
       - name: Build image
         run: DOCKER_BUILDKIT=1 docker build -t iceberg:ci .
+      # Scan the built image for OS/library CVEs (#166) — the base layer's Debian
+      # packages and the vendored Typst binary are out of pip-audit's scope.
+      # ignore-unfixed keeps the gate actionable: only vulnerabilities with a fix
+      # available fail, which a Dependabot base-image digest bump then resolves.
+      - name: Trivy image vulnerability scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: iceberg:ci
+          format: table
+          exit-code: "1"
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
       # Mirror the production flow on PostgreSQL: migrate as a deploy step
       # (iceberg-migrate, ICEBERG_AUTO_MIGRATE stays false), then boot the default
       # CMD and assert the probes + that the portal templates/static are packaged
@@ -182,3 +200,34 @@ jobs:
       - name: Container logs
         if: always()
         run: docker logs iceberg-ci || true
+
+  # Lints the workflow files themselves so the SHA-pinning / least-privilege
+  # posture cannot silently regress. Both tools are blocking.
+  lint-workflows:
+    name: lint-workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: "0.11.23"
+          python-version: "3.14"
+      # zizmor: CI/CD security audit (unpinned actions, artipacked, template
+      # injection, excessive permissions). Version-pinned; GH_TOKEN enables its
+      # online audits (impostor commits, known-vulnerable actions).
+      - name: zizmor
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: uvx zizmor@1.27.0 .github/workflows/
+      # actionlint: syntax + shellcheck over every run: block. Installed from the
+      # Go module proxy at a pinned version and verified by Go's checksum database
+      # (sum.golang.org) rather than trusting a third-party action.
+      - name: actionlint
+        run: |
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          "$(go env GOPATH)/bin/actionlint" -color
