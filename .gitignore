@@ -22,3 +22,7 @@ htmlcov/
 settings.json
 # Cached standalone Tailwind binary (downloaded by scripts/vendor_assets.py)
 frontend/.bin/
+
+# Zensical docs site build output + incremental cache (website/, #243)
+website/site/
+website/.cache/
