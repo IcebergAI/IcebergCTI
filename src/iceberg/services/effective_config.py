@@ -284,9 +284,20 @@ def admin_hub_tiles(session) -> list[dict]:
     webhook = webhook_settings.get(session)
     audit = audit_settings.get(session)
     proxy = proxy_settings.get(session)
-    providers = [p.name for p in oidc_settings.enabled_providers(session)]
+    # A provider with a client id but no env client secret cannot complete the
+    # authorization-code flow — it looks enabled and fails at login, so it must
+    # not read green here either.
+    configs = oidc_settings.enabled_providers(session)
+    providers = [c.name for c in configs]
+    unusable_sso = [c.name for c in configs if not c.client_secret]
     active_feeds = len(
         list(session.exec(select(Feed).where(col(Feed.enabled).is_(True))).all())
+    )
+    # An HTTP sink with no endpoint claims off-box forwarding it cannot perform.
+    audit_broken = (
+        "HTTP sink selected but no endpoint is set — nothing is forwarded"
+        if "http" in audit.methods and not audit.http_endpoint.strip()
+        else ""
     )
     issues = len(_validation(s)["errors"])
 
@@ -369,10 +380,16 @@ def admin_hub_tiles(session) -> list[dict]:
             group="Outbound integrations",
             title="Single sign-on",
             href="/admin/oidc",
-            status=", ".join(p.upper() for p in providers) or "NOT CONFIGURED",
-            tone="is-ok" if providers else "is-warn",
+            status=(
+                "NOT CONFIGURED"
+                if not providers or unusable_sso
+                else ", ".join(p.upper() for p in providers)
+            ),
+            tone="is-warn" if (not providers or unusable_sso) else "is-ok",
             meta=(
-                f"{len(providers)} provider{'' if len(providers) == 1 else 's'} · "
+                f"No client secret set for {', '.join(unusable_sso)} — sign-in will fail"
+                if unusable_sso
+                else f"{len(providers)} provider{'' if len(providers) == 1 else 's'} · "
                 f"dev-login {'on' if s.dev_login_enabled else 'off'}"
             ),
         ),
@@ -385,13 +402,15 @@ def admin_hub_tiles(session) -> list[dict]:
                 if not audit.enabled
                 else "LOCAL ONLY"
                 if set(audit.methods) <= {"stdout"}
+                else "NOT CONFIGURED"
+                if audit_broken
                 else ", ".join(m.upper() for m in audit.methods)
             ),
             tone=(
                 "is-neutral"
                 if not audit.enabled
                 else "is-warn"
-                if set(audit.methods) <= {"stdout"}
+                if set(audit.methods) <= {"stdout"} or audit_broken
                 else "is-ok"
             ),
             meta=(
@@ -399,6 +418,8 @@ def admin_hub_tiles(session) -> list[dict]:
                 if not audit.enabled
                 else "No SIEM sink enabled"
                 if set(audit.methods) <= {"stdout"}
+                else audit_broken
+                if audit_broken
                 else "Forensic trail forwarded off-box"
             ),
         ),

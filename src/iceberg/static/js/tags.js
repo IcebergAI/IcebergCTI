@@ -409,9 +409,30 @@ document.addEventListener('alpine:init', () => {
      rather than scrolled end to end, so one phase's sections render at a time.
      The tabs are real anchors: without Alpine the <noscript> rule cancels
      x-cloak and every section stays reachable by its #id, exactly as before. */
-  Alpine.data('notebookTabs', () => ({
+  Alpine.data('notebookTabs', (dataId) => ({
     phase: 'collect',
     section: 'sources',
+    // {section: phase}, rendered by the template from the same list that builds
+    // the tab bar — so the two can never disagree about which phase owns a
+    // section.
+    sectionPhase: readJSON(dataId),
+
+    init() {
+      // Every post-action redirect lands on #<section> (e.g. creating a Diamond
+      // model returns to /notebooks/{id}#diamonds). Without this the target sits
+      // in a cloaked phase and the page looks like the work vanished.
+      this.applyHash();
+      window.addEventListener('hashchange', () => this.applyHash());
+    },
+    applyHash() {
+      const section = window.location.hash.slice(1);
+      const phase = this.sectionPhase[section];
+      if (!phase) return;
+      this.show(phase, section);
+      // The browser already tried to scroll here while the section was hidden,
+      // so re-run it once the phase is visible.
+      this.$nextTick(() => document.getElementById(section)?.scrollIntoView());
+    },
     show(phase, section) { this.phase = phase; this.section = section; },
   }));
 

@@ -15,37 +15,47 @@
 {# The notebook is worked in phases, not scrolled end to end: the collection
    strip becomes a phase tab bar and only one phase's sections render at a time.
    Tabs stay real anchors, so without Alpine every section is still reachable
-   (the <noscript> below cancels the x-cloak that hides the other phases). #}
-{%- macro phase_tab(phase, section, label, count) -%}
-  <a href="#{{ section }}" class="help-tab" :class="section === '{{ section }}' ? 'is-active' : ''"
-     @click="show('{{ phase }}', '{{ section }}')">{{ label }} <span class="nb-count">{{ count }}</span></a>
-{%- endmacro -%}
+   (the <noscript> below cancels the x-cloak that hides the other phases).
 
-<div x-data="notebookTabs()">
+   `phases` is the single source of the section → phase mapping: it drives the
+   tab bar AND is handed to the Alpine component as JSON, so a deep link or a
+   post-action redirect to #diamonds / #ach opens the phase that owns it instead
+   of landing on a cloaked section. Adding a section in one place cannot leave
+   the two out of step. #}
+{% set phases = [
+  ('collect', 'Collect', [
+    ('sources', 'Sources', sources | length),
+    ('notes', 'Notes', notes | length),
+    ('attachments', 'Files', attachments | length),
+    ('figures', 'Figures', figures | length),
+    ('indicators', 'Indicators', iocs | length),
+  ]),
+  ('analyze', 'Analyze', [
+    ('diamonds', 'Diamond', diamonds | length),
+    ('ach', 'ACH', ach_models | length),
+  ]),
+  ('produce', 'Produce', [('products', 'Products', reports | length)]),
+  ('trace', 'Trace', [('requirements', 'Requirements', linked_req_ids | length)]),
+] %}
+{% set section_phase = {} %}
+{% for phase, _label, sections in phases %}
+  {% for section, _l, _c in sections %}{% set _ = section_phase.update({section: phase}) %}{% endfor %}
+{% endfor %}
+
+<div x-data="notebookTabs('notebook-phase-data')">
+  <script type="application/json" id="notebook-phase-data">{{ section_phase | tojson }}</script>
   <noscript><style>[x-cloak] { display: revert; }</style></noscript>
 
   <nav class="nb-phases mb-6" aria-label="Notebook phases">
-    <div class="nb-phase-group">
-      <span class="eyebrow">Collect</span>
-      {{ phase_tab('collect', 'sources', 'Sources', sources | length) }}
-      {{ phase_tab('collect', 'notes', 'Notes', notes | length) }}
-      {{ phase_tab('collect', 'attachments', 'Files', attachments | length) }}
-      {{ phase_tab('collect', 'figures', 'Figures', figures | length) }}
-      {{ phase_tab('collect', 'indicators', 'Indicators', iocs | length) }}
-    </div>
-    <div class="nb-phase-group">
-      <span class="eyebrow">Analyze</span>
-      {{ phase_tab('analyze', 'diamonds', 'Diamond', diamonds | length) }}
-      {{ phase_tab('analyze', 'ach', 'ACH', ach_models | length) }}
-    </div>
-    <div class="nb-phase-group">
-      <span class="eyebrow">Produce</span>
-      {{ phase_tab('produce', 'products', 'Products', reports | length) }}
-    </div>
-    <div class="nb-phase-group">
-      <span class="eyebrow">Trace</span>
-      {{ phase_tab('trace', 'requirements', 'Requirements', linked_req_ids | length) }}
-    </div>
+    {% for phase, label, sections in phases %}
+      <div class="nb-phase-group">
+        <span class="eyebrow">{{ label }}</span>
+        {% for section, section_label, count in sections %}
+          <a href="#{{ section }}" class="help-tab" :class="section === '{{ section }}' ? 'is-active' : ''"
+             @click="show('{{ phase }}', '{{ section }}')">{{ section_label }} <span class="nb-count">{{ count }}</span></a>
+        {% endfor %}
+      </div>
+    {% endfor %}
   </nav>
 
 <div x-show="phase === 'collect'">

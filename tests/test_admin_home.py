@@ -131,3 +131,41 @@ def test_ai_hub_tile_reflects_the_resolved_backend(engine, monkeypatch):
     with Session(engine) as session:
         tile = _tile(session, "AI provider")
         assert (tile["status"], tile["tone"]) == ("OPENAI", "is-ok")
+
+
+def test_sso_tile_warns_when_a_provider_has_no_client_secret(engine, monkeypatch):
+    """A provider with a client id but no env secret cannot complete the
+    authorization-code flow. It looks enabled and fails at login, so a green
+    pill would point an operator away from the actual cause."""
+    from iceberg.services import oidc_settings
+
+    monkeypatch.setattr(get_settings(), "oidc_client_secret", "")
+    with Session(engine) as session:
+        oidc_settings.update(session, entra_enabled=True, entra_client_id="abc123")
+        assert [c.name for c in oidc_settings.enabled_providers(session)] == ["entra"]
+
+        tile = _tile(session, "Single sign-on")
+        assert (tile["status"], tile["tone"]) == ("NOT CONFIGURED", "is-warn")
+        assert "entra" in tile["meta"]
+
+    monkeypatch.setattr(get_settings(), "oidc_client_secret", "s" * 24)
+    with Session(engine) as session:
+        tile = _tile(session, "Single sign-on")
+        assert (tile["status"], tile["tone"]) == ("ENTRA", "is-ok")
+
+
+def test_audit_tile_warns_when_the_http_sink_has_no_endpoint(engine):
+    """Selecting the HTTP sink without an endpoint claims off-box forwarding
+    that cannot happen — worse than 'local only', because it looks solved."""
+    from iceberg.services import audit_settings
+
+    with Session(engine) as session:
+        audit_settings.update(session, enabled=True, methods=["stdout", "http"])
+        tile = _tile(session, "Audit log & SIEM")
+        assert (tile["status"], tile["tone"]) == ("NOT CONFIGURED", "is-warn")
+        assert "no endpoint" in tile["meta"]
+
+        audit_settings.update(session, http_endpoint="https://siem.example.org/hec")
+        tile = _tile(session, "Audit log & SIEM")
+        assert tile["tone"] == "is-ok"
+        assert "HTTP" in tile["status"]
