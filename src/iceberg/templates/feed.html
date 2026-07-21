@@ -39,14 +39,18 @@
       {# A bucket with nothing unread disappears wholesale under the Unread
          filter, rather than leaving an empty heading and border behind. #}
       {% set unread_here = rows | selectattr('event.id', 'in', unread_ids) | list | length %}
-      <div{% if not unread_here %} x-show="!unreadOnly" x-cloak{% endif %}>
+      {# No x-cloak: these must be visible before (and without) hydration —
+         [x-cloak] is display:none !important, so cloaking content whose default
+         state is *shown* would make a fully-read feed look empty whenever
+         Alpine fails to load. #}
+      <div{% if not unread_here %} x-show="!unreadOnly"{% endif %}>
       <div class="eyebrow mt-6 mb-2">{{ label }}</div>
       <div class="rows">
         {% for item in rows %}
           {% set r = item.report %}
           {% set is_unread = item.event.id in unread_ids %}
-          {% set reason = item.reason %}
-          <div class="row"{% if not is_unread %} x-show="!unreadOnly" x-cloak{% endif %}>
+          {% set ctx = item.context %}
+          <div class="row"{% if not is_unread %} x-show="!unreadOnly"{% endif %}>
             {% if is_unread %}
               <span class="queue-dot is-unread" title="New"></span>
             {% else %}
@@ -55,24 +59,20 @@
             <a href="/reports/{{ r.id }}" class="flex-1">
               <span class="row-title {% if is_unread %}font-bold{% endif %}">{{ r.title }}</span>
               <span class="flex items-center gap-2 mt-1 flex-wrap">
-                {# Why this reached you — derived from the same rules that routed it. #}
-                {% if reason.kind == 'requirement' %}
-                  <span class="tag tag--c is-info" title="This product answers a requirement you raised">
-                    <span class="dot"></span>{{ reason.label }}
-                  </span>
-                {% elif reason.kind == 'tag' %}
-                  <span class="tag tag--c is-info" title="You subscribe to this entity">
-                    <span class="dot"></span>{{ reason.label }}
-                  </span>
-                {% elif reason.kind == 'audience' %}
-                  <span class="tag" title="Delivered to your audience group">
-                    <span class="dot"></span>{{ reason.label }}
-                  </span>
-                {% else %}
-                  <span class="tag" title="Matched your intelligence-level preference">
-                    <span class="dot"></span>{{ reason.label }}
+                {# Two independent statements, both true in the present tense:
+                   whether this answers a requirement you raised (a fact about
+                   the product), and how it matches your routing preferences
+                   (a fact about your settings as they stand). Neither claims to
+                   be the publish-time routing decision — the event does not
+                   record one. #}
+                {% if ctx.answers_requirement_id %}
+                  <span class="tag tag--c is-info" title="This product addresses a requirement you raised">
+                    <span class="dot"></span>Answers your RFI
                   </span>
                 {% endif %}
+                <span class="tag" title="Why this is in your feed, based on your current preferences">
+                  <span class="dot"></span>{{ ctx.match.label }}
+                </span>
                 {{ m.level_badge(r.intel_level) }}
                 {{ m.tlp_badge(r.tlp) }}
               </span>
@@ -82,8 +82,8 @@
                requires a usefulness rating, so this deep-links to the product's
                feedback card with the requirement preselected rather than
                posting a verdict the reader never gave. #}
-            {% if reason.kind == 'requirement' %}
-              <a href="/reports/{{ r.id }}?requirement={{ reason.requirement_id }}#feedback"
+            {% if ctx.answers_requirement_id %}
+              <a href="/reports/{{ r.id }}?requirement={{ ctx.answers_requirement_id }}#feedback"
                  class="btn btn--primary btn--sm">Mark satisfied →</a>
             {% else %}
               <a href="/reports/{{ r.id }}#feedback" class="btn-link">Give feedback</a>

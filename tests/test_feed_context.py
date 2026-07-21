@@ -1,9 +1,11 @@
-"""Why a product reached a reader — the stakeholder feed's delivery reason.
+"""What the stakeholder feed can honestly say about a delivered product.
 
-The reason is *derived* from the same rules that routed the product
-(``dissemination.matched_stakeholders``) rather than stored on the event, so
-these tests pin the derivation to those rules. A stored copy could drift; this
-cannot.
+Two independent statements, both present-tense: whether it answers a requirement
+the reader raised (a fact about the product) and how it matches their routing
+preferences (a fact about their settings *now*). ``DisseminationEvent`` records
+no routing metadata, so neither claims to reconstruct the publish-time decision —
+these tests pin that separation, because conflating them is what makes a feed
+lie after a subscription changes.
 """
 
 import pytest
@@ -50,9 +52,10 @@ def _report(session, **fields) -> Report:
     return report
 
 
-def test_own_requirement_outranks_every_other_reason(engine, reader):
-    """A product that answers your own RFI is the strongest thing the feed can
-    say about it, even when a tag subscription also matched."""
+def test_requirement_and_match_are_reported_independently(engine, reader):
+    """An RFI link is *not* why a product was routed — requirements are not a
+    predicate in ``dissemination.matched_stakeholders``. So the RFI badge and
+    the preference match must both appear, not compete."""
     with Session(engine) as session:
         user = session.get(User, reader)
         tag = Tag(kind=TagKind.ACTOR, label="Volt Typhoon", slug="volt-typhoon")
@@ -71,12 +74,14 @@ def test_own_requirement_outranks_every_other_reason(engine, reader):
         report.requirements.append(req)
         session.commit()
 
-        reason = feed_service.delivery_reason(user, report)
-        assert reason["kind"] == "requirement"
-        assert reason["requirement_id"] == req.id
+        ctx = feed_service.delivery_context(user, report)
+        assert ctx["answers_requirement_id"] == req.id
+        # The tag subscription is still reported as the routing match.
+        assert ctx["match"]["kind"] == "tag"
+        assert "Volt Typhoon" in ctx["match"]["label"]
 
 
-def test_someone_elses_requirement_is_not_your_reason(engine, reader):
+def test_someone_elses_requirement_is_not_your_rfi(engine, reader):
     with Session(engine) as session:
         user = session.get(User, reader)
         other = User(email="other@example.com", display_name="Other")
@@ -93,7 +98,10 @@ def test_someone_elses_requirement_is_not_your_reason(engine, reader):
         report.requirements.append(req)
         session.commit()
 
-        assert feed_service.delivery_reason(user, report)["kind"] != "requirement"
+        assert (
+            feed_service.delivery_context(user, report)["answers_requirement_id"]
+            is None
+        )
 
 
 def test_tag_subscription_names_the_matching_entity(engine, reader):
@@ -108,8 +116,9 @@ def test_tag_subscription_names_the_matching_entity(engine, reader):
         report.tags.extend([ignored, subscribed])
         session.commit()
 
-        reason = feed_service.delivery_reason(user, report)
-        assert (reason["kind"], reason["label"]) == ("tag", "Sandworm")
+        match = feed_service.delivery_context(user, report)["match"]
+        assert match["kind"] == "tag"
+        assert "Sandworm" in match["label"]
 
 
 def test_audience_group_membership_is_a_reason(engine, reader):
@@ -123,8 +132,9 @@ def test_audience_group_membership_is_a_reason(engine, reader):
         report.audience_groups.append(group)
         session.commit()
 
-        reason = feed_service.delivery_reason(user, report)
-        assert (reason["kind"], reason["label"]) == ("audience", "CNI leads")
+        match = feed_service.delivery_context(user, report)["match"]
+        assert match["kind"] == "audience"
+        assert "CNI leads" in match["label"]
 
 
 def test_level_preference_and_the_no_preference_default(engine, reader):
@@ -133,14 +143,14 @@ def test_level_preference_and_the_no_preference_default(engine, reader):
         report = _report(session, intel_level=IntelLevel.TACTICAL)
 
         # No preference set = "send me everything".
-        assert feed_service.delivery_reason(user, report)["kind"] == "all"
+        assert feed_service.delivery_context(user, report)["match"]["kind"] == "all"
 
         user.preferred_intel_level = IntelLevel.TACTICAL
         session.add(user)
         session.commit()
-        reason = feed_service.delivery_reason(user, report)
-        assert reason["kind"] == "level"
-        assert "TACTICAL" in reason["label"]
+        match = feed_service.delivery_context(user, report)["match"]
+        assert match["kind"] == "level"
+        assert "TACTICAL" in match["label"]
 
 
 def test_feed_page_shows_the_reason_and_a_way_to_close_the_loop(client, login, engine):
@@ -196,3 +206,34 @@ def test_preselected_requirement_must_be_the_readers_own(client, login, engine):
     page = client.get(f"/reports/{report_id}?requirement={foreign_req_id}")
     assert page.status_code == 200
     assert "Someone else's secret question" not in page.text
+
+
+def test_read_rows_are_never_cloaked(client, login, engine):
+    """`[x-cloak]` is `display:none !important`, so cloaking a row whose default
+    state is *shown* would make a fully-read feed look empty whenever Alpine
+    fails to load. The Unread filter must degrade to "everything visible", not
+    "nothing visible"."""
+    email = login("STAKEHOLDER", email="nojs@example.com")
+    with Session(engine) as session:
+        user = session.exec(select(User).where(User.email == email)).one()
+        report = _report(session, status=ReportStatus.PUBLISHED)
+        report.title = "Already read product"
+        session.add(report)
+        session.add(DisseminationEvent(report_id=report.id, stakeholder_id=user.id))
+        session.commit()
+
+    client.get("/feed")  # first visit marks it read
+    page = client.get("/feed").text
+
+    import re
+
+    assert "Already read product" in page
+    # Scope to the feed rows: base.html's ⌘K overlay legitimately uses x-cloak
+    # (it *should* be hidden until hydration).
+    rows = re.findall(r'<div class="row"[^>]*>', page)
+    assert rows, "no feed rows rendered"
+    assert not [row for row in rows if "x-cloak" in row], (
+        f"a read feed row is cloaked and would vanish without Alpine: {rows}"
+    )
+    # The bucket wrapper around an all-read group must not be cloaked either.
+    assert 'x-show="!unreadOnly" x-cloak' not in page

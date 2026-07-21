@@ -120,6 +120,10 @@ queue_dissemination  # unused function (src/iceberg/services/dissemination.py)
 fetch_all_enabled_once  # unused function (src/iceberg/services/feeds.py)
 _.connect_unix_socket  # unused attribute (httpcore backend protocol method)
 
+# Feed row context fields — read only in templates/feed.html.
+answers_requirement_id  # unused variable (src/iceberg/services/feed.py)
+context  # unused variable (src/iceberg/services/feed.py)
+
 # /admin Settings-hub tile fields — read only in templates/admin_home.html.
 tone  # unused variable (src/iceberg/services/effective_config.py)
 meta  # unused variable (src/iceberg/services/effective_config.py)

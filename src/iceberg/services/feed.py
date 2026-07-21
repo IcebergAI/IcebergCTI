@@ -9,60 +9,67 @@ from ..models import DisseminationEvent, Report, User, utcnow
 from . import reports as report_service
 
 
-class DeliveryReason(TypedDict):
-    """Why this product reached this reader — the answer to "why am I seeing
-    this?", which the feed could previously never give."""
+class FeedMatch(TypedDict):
+    """How this product **currently** matches the reader's routing preferences.
 
-    kind: str  # requirement | tag | audience | level | all
+    Deliberately *present tense*. ``DisseminationEvent`` stores no routing
+    metadata, so the publish-time cause cannot be reconstructed: a subscription
+    added after delivery, or a preference since changed, would make any
+    "this is why it was sent" claim false. What can be stated truthfully is the
+    relationship as it stands now, and that is what the chip says.
+
+    (If historical fidelity is ever needed — "why did this arrive in March?" —
+    the honest fix is to persist the match on the event at publish time, not to
+    infer harder here.)
+    """
+
+    kind: str  # tag | audience | level | all
     label: str
-    requirement_id: int | None
+
+
+class FeedContext(TypedDict):
+    """The two independent things a feed row can say about a product: how it
+    matches the reader's preferences, and whether it answers a requirement the
+    reader raised. They are separate on purpose — requirements are **not** a
+    predicate in ``dissemination.matched_stakeholders``, so an RFI link is never
+    the reason a product was routed, however useful it is to surface."""
+
+    match: FeedMatch
+    answers_requirement_id: int | None
 
 
 class FeedItem(TypedDict):
     event: DisseminationEvent
     report: Report
-    reason: DeliveryReason
+    context: FeedContext
 
 
-def delivery_reason(user: User, report: Report) -> DeliveryReason:
-    """Re-derive why ``report`` matched ``user``, in the order the reader cares
-    about it.
-
-    This mirrors the match rules in ``dissemination.matched_stakeholders`` (the
-    only place delivery is decided) rather than storing a second copy of them on
-    ``DisseminationEvent`` — no schema change, and no way for a stored reason to
-    drift from the rule that actually routed the product.
-    """
-    own = [r for r in report.requirements if r.stakeholder_id == user.id]
-    if own:
-        return {
-            "kind": "requirement",
-            "label": "Answers your RFI",
-            "requirement_id": own[0].id,
-        }
-    subscribed = {t.id: t for t in user.tag_subscriptions}
+def _match(user: User, report: Report) -> FeedMatch:
+    """The strongest current match, in the order ``matched_stakeholders`` gates
+    on: tag subscription → audience group → level preference → no preference."""
+    subscribed = {t.id for t in user.tag_subscriptions}
     matched_tags = [t for t in report.tags if t.id in subscribed]
     if matched_tags:
-        return {
-            "kind": "tag",
-            "label": matched_tags[0].label,
-            "requirement_id": None,
-        }
+        return {"kind": "tag", "label": f"Matches your {matched_tags[0].label} interest"}
     user_groups = {g.id for g in user.audience_groups}
     matched_groups = [g for g in report.audience_groups if g.id in user_groups]
     if matched_groups:
-        return {
-            "kind": "audience",
-            "label": matched_groups[0].name,
-            "requirement_id": None,
-        }
+        return {"kind": "audience", "label": f"For {matched_groups[0].name}"}
     if user.preferred_intel_level is not None:
         return {
             "kind": "level",
-            "label": f"Matched level · {report.intel_level.value}",
-            "requirement_id": None,
+            "label": f"Matches your {report.intel_level.value} preference",
         }
-    return {"kind": "all", "label": "All levels", "requirement_id": None}
+    return {"kind": "all", "label": "You receive all levels"}
+
+
+def delivery_context(user: User, report: Report) -> FeedContext:
+    """What the feed can honestly tell this reader about this product."""
+    own = [r for r in report.requirements if r.stakeholder_id == user.id]
+    return {
+        "match": _match(user, report),
+        "answers_requirement_id": own[0].id if own else None,
+    }
 
 
 def visible_items(session: Session, user: User) -> list[FeedItem]:
@@ -82,7 +89,7 @@ def visible_items(session: Session, user: User) -> list[FeedItem]:
             {
                 "event": event,
                 "report": report,
-                "reason": delivery_reason(user, report),
+                "context": delivery_context(user, report),
             }
         )
     return items
