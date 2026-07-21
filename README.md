@@ -427,7 +427,10 @@ python -m iceberg.seed --file my_tags.json --update
 
 ## Configuration
 All settings use the `ICEBERG_` env prefix and can live in `.env` (see
-[.env.example](.env.example)). Highlights:
+[.env.example](.env.example)). An admin can review the **resolved** runtime config
+at **`/admin/config`** — every value the process is using, where it came from
+(database / environment / built-in default), prod-guard validation, and feature
+tiles; secrets show only a set/not-set status, never their value. Highlights:
 
 | Variable | Purpose |
 | --- | --- |

@@ -8,6 +8,7 @@ router via their ``@router`` decorators; ``web_router`` is the assembled result.
 from . import (  # noqa: F401 — imported for their @router route registrations
     admin_ai,
     admin_audit,
+    admin_config,
     admin_feeds,
     admin_misp,
     admin_oidc,
