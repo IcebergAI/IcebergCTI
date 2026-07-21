@@ -19,6 +19,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from .api import api_router
 from .auth.audit_middleware import AuditMiddleware
+from .auth.body_limit import BodySizeLimitMiddleware
 from .auth.csrf import SameOriginCSRFMiddleware
 from .auth.rate_limit import RateLimitMiddleware
 from .auth.security_headers import SecurityHeadersMiddleware
@@ -151,9 +152,14 @@ def create_app() -> FastAPI:
     # observes the final response — including the 403 produced by the CSRF
     # middleware and role-guard denials raised deep in the app.
     app.add_middleware(AuditMiddleware)
+    # Request-body size ceiling. Added after AuditMiddleware so it is OUTSIDE the
+    # rest of the stack (it rejects an oversized body before any inner middleware
+    # or route buffers it), but before SecurityHeadersMiddleware so its 413 still
+    # gets the security headers.
+    app.add_middleware(BodySizeLimitMiddleware, settings=settings)
     # Security response headers (CSP, HSTS, etc.). Added last so it is the
     # OUTERMOST middleware and stamps every response, including middleware-level
-    # error responses (CSRF 403, auth 401) that never reach a route.
+    # error responses (CSRF 403, auth 401, body-limit 413) that never reach a route.
     app.add_middleware(SecurityHeadersMiddleware)
 
     # Unauthenticated liveness/readiness probes (root-level, no /api prefix).
