@@ -7,10 +7,13 @@ icon: material/connection
 
 Iceberg is API-first and designed to sit inside an existing security stack.
 Every outbound HTTP call honours the **global outbound proxy** configured at
-`/admin/proxy` (system / direct / explicit with no-proxy exclusions), and all
-external work rides a durable **outbox job queue** drained by the
-`iceberg-worker` process — enqueued in the same transaction as its cause,
-with lease, retry and backoff.
+`/admin/proxy` (system / direct / explicit with no-proxy exclusions).
+Publication-driven delivery — email notifications, publication webhooks — and
+RSS polling ride a durable **outbox job queue** drained by the
+`iceberg-worker` process, enqueued in the same transaction as their cause,
+with lease, retry and backoff; interactive calls (the MISP push, AI assist,
+writer-triggered TAXII/MISP pulls) run synchronously and report their result
+directly.
 
 ## MISP (outbound push)
 

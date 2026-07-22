@@ -8,6 +8,9 @@ on:
       - main
     paths:
       - "website/**"
+      # changelog.md snippet-includes the repo-root CHANGELOG.md, so a
+      # changelog-only commit must also rebuild the site.
+      - "CHANGELOG.md"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
 
