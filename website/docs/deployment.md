@@ -95,6 +95,13 @@ directories before extracting the archive, applies migrations, and runs
 `iceberg-verify-files` before restart. PDFs regenerate; attachments and
 figures are original material.
 
+**Major PostgreSQL upgrades** (e.g. 17 → 18) use this same dump/restore path:
+a data directory initialised by one major version cannot be opened by the
+next. Dump on the old image, point the stack at a fresh volume (or empty the
+old one), start the new image, restore. Note that `postgres:18` also moved
+its data volume mount from `/var/lib/postgresql/data` to `/var/lib/postgresql`
+(the Compose file and Kubernetes manifests already reflect this).
+
 ## Configuration
 
 All settings are environment variables with the `ICEBERG_` prefix (see

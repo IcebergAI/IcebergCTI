@@ -702,14 +702,14 @@ flowchart TB
   subgraph net["docker compose — iceberg-internal network"]
     Caddy["caddy service<br/>TLS termination (Let's Encrypt / local CA)<br/>:80 · :443 · non-root, read-only"]
     App["iceberg service<br/>FastAPI + uvicorn --proxy-headers · :8000<br/>prod → Secure cookies + HSTS"]
-    PG["postgres service<br/>postgres:17 · :5432 (network-internal)"]
+    PG["postgres service<br/>postgres:18 · :5432 (network-internal)"]
     Caddy -->|"reverse proxy + X-Forwarded-*"| App
     App -->|"postgresql+psycopg://iceberg@postgres:5432"| PG
   end
 
   Caddy --- CV[("caddy-data · caddy-config<br/>certificates")]
   App --- V1[("iceberg-data volume<br/>/data: attachments · figures · rendered")]
-  PG --- V2[("iceberg-pg-data volume<br/>/var/lib/postgresql/data")]
+  PG --- V2[("iceberg-pg-data volume<br/>/var/lib/postgresql")]
 ```
 
 **3. Kubernetes** — an Ingress terminates TLS to a ClusterIP Service and the single-replica

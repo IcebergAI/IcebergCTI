@@ -46,6 +46,15 @@ tagged release will snapshot it under a dated heading.
   **CodeQL** SAST, **zizmor + actionlint** workflow SAST, and a tag-driven **release workflow**
   publishing a signed, SBOM- and provenance-attested GHCR image (this section).
 
+### Changed
+
+- **PostgreSQL 17 → 18** across the Compose stack, Kubernetes StatefulSet, and CI service
+  containers. The `postgres:18` image relocated its data volume from `/var/lib/postgresql/data`
+  to `/var/lib/postgresql` (PGDATA now lives in a versioned subdir to enable future in-place
+  `pg_upgrade`), so the volume mounts moved with it — a bare image bump would have stranded the
+  cluster on an anonymous volume. Existing 17 volumes/PVCs require a dump/restore; procedure
+  documented in the deployment docs and `deploy/k8s/README.md`.
+
 ### Security
 
 - **OIDC role mapping no longer escalates on an uncurated group name** (#269). A claim value that

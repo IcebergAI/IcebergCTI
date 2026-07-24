@@ -168,6 +168,13 @@ at; run the migrate Job afterwards (`kubectl apply -f migrate-job.yaml`) if you
 are restoring into a newer image. The SQLite FTS index has no Postgres analogue —
 the `tsvector` column is generated, so search works immediately after restore.
 
+**Major Postgres upgrades** (e.g. 17 → 18) ride the same dump/restore path — a
+data directory initialised by one major version cannot be opened by the next.
+Dump on the old image, restore into a fresh PVC on the new one. `postgres:18`
+also relocated its data mount from `/var/lib/postgresql/data` to
+`/var/lib/postgresql` (already reflected in `postgres.yaml`); a PVC carrying
+17-era data is not reusable directly.
+
 ### `iceberg-data` PVC (uploads + renders)
 
 If your storage class supports `VolumeSnapshot`, that's the simplest route.

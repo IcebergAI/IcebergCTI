@@ -61,14 +61,20 @@ services:
     networks: [iceberg-internal]
 
   postgres:
-    image: postgres:17
+    image: postgres:18
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-iceberg}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-iceberg}
       POSTGRES_DB: ${POSTGRES_DB:-iceberg}
     volumes:
-      - iceberg-pg-data:/var/lib/postgresql/data
+      # postgres:18 moved the image volume from /var/lib/postgresql/data to its
+      # parent /var/lib/postgresql — PGDATA now defaults to a versioned subdir
+      # (/var/lib/postgresql/18/docker) so a future in-place pg_upgrade can hold
+      # two versions. Mounting at the old …/data path would strand the cluster
+      # on an anonymous volume. A volume carrying 17-era data is NOT reusable
+      # directly: dump on 17, restore on 18 (see website/docs/deployment.md).
+      - iceberg-pg-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U iceberg -d iceberg"]
       interval: 5s
