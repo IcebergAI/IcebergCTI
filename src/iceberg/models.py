@@ -1396,7 +1396,9 @@ class OIDCSettings(SQLModel, table=True):
     and never stored here (same discipline as the MISP/webhook/proxy/SIEM secrets).
     Env seeds the row on first read; see ``services/oidc_settings.py`` +
     ``auth/oidc/``. A ``role_map`` is ``"group=ROLE,other=ROLE"``; an unmapped
-    group falls back to least-privilege ``STAKEHOLDER``."""
+    group falls back to least-privilege ``STAKEHOLDER`` (a claim value that merely
+    *spells* a role escalates only on an app-roles claim with no role map — see
+    ``auth/oidc/base.py``)."""
 
     id: int | None = Field(default=None, primary_key=True)
     # Base URL the IdP redirects back to (per-provider callback path appended).

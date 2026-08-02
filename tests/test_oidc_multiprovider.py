@@ -81,6 +81,41 @@ def test_unmapped_group_falls_back_to_least_privilege():
     assert ident.role == Role.STAKEHOLDER
 
 
+def test_directory_group_named_after_a_role_does_not_escalate():
+    """A pre-existing org group called "Admin" (VPN, Jira, anything) must not
+    provision an Iceberg ADMIN. Directory group names are an uncurated,
+    externally-controlled namespace, so a name-is-role match there is privilege
+    escalation, not configuration (#269)."""
+    adapter = get_adapter("okta")
+    ident = adapter.identity(
+        _cfg(role_claim="groups"),
+        {"iss": "i", "sub": "s", "email": "a@b.c", "groups": ["Admin"]},
+    )
+    assert ident.role == Role.STAKEHOLDER
+
+
+def test_role_map_disables_the_name_is_role_fallback():
+    """An operator who wrote a role map expressed intent to map explicitly, so a
+    miss falls through to least-privilege — not to an unmapped group's name."""
+    adapter = get_adapter("auth0")
+    ident = adapter.identity(
+        _cfg(role_claim="roles", role_map={"Iceberg Admins": Role.ADMIN}),
+        {"iss": "i", "sub": "s", "email": "a@b.c", "roles": ["ADMIN"]},
+    )
+    assert ident.role == Role.STAKEHOLDER
+
+
+def test_app_roles_claim_without_a_role_map_still_maps_by_name():
+    """Back-compat for the legacy single-Entra flow: app roles are defined and
+    assigned by the operator for this app, so their names are curated."""
+    adapter = get_adapter("entra")
+    ident = adapter.identity(
+        _cfg(role_claim="roles"),
+        {"iss": "i", "sub": "s", "email": "a@b.c", "roles": ["Analyst"]},
+    )
+    assert ident.role == Role.ANALYST
+
+
 def test_entra_groups_overage_fails_closed():
     adapter = get_adapter("entra")
     # Overage: the token omits the groups claim and sends a _claim_names pointer.

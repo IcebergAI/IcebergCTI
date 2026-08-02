@@ -76,6 +76,7 @@ def _enable_ai(monkeypatch, candidates):
     enabled = Settings(
         ai_backend="openai-compatible",
         ai_base_url="https://ai.example.com/v1",
+        ai_openai_compatible_base_url="https://ai.example.com/v1",
         ai_model="m",
     )
     monkeypatch.setattr(ai_service, "get_settings", lambda: enabled)
@@ -182,7 +183,10 @@ def test_notebook_panel_hidden_when_ai_disabled(client, login):
 
 def test_notebook_panel_shown_when_ai_enabled(client, login, monkeypatch):
     enabled = Settings(
-        ai_backend="openai-compatible", ai_base_url="https://x", ai_model="m"
+        ai_backend="openai-compatible",
+        ai_base_url="https://x",
+        ai_openai_compatible_base_url="https://x",
+        ai_model="m",
     )
     monkeypatch.setattr(ai_service, "get_settings", lambda: enabled)
     monkeypatch.setattr("iceberg.services.ai_settings.resolve", lambda session: enabled)

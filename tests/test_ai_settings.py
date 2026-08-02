@@ -70,6 +70,67 @@ def test_validate_bedrock_requires_region(monkeypatch):
     assert any("region" in e.lower() for e in ai_settings.validate_selection(row))
 
 
+def test_validate_openai_compatible_pins_base_url(monkeypatch):
+    """The generic escape hatch used to accept ANY non-empty URL, which handed a
+    DB writer the operator's API key plus TLP-gated content (#270). It is now
+    pinned to an operator env value exactly like ollama."""
+    monkeypatch.setattr(get_settings(), "ai_api_key", "env-key")
+    monkeypatch.setattr(
+        get_settings(), "ai_openai_compatible_base_url", "https://gateway.internal/v1"
+    )
+    bad = AISettings(
+        backend="openai-compatible", model="m", base_url="https://attacker.example/v1"
+    )
+    assert any("must match" in e for e in ai_settings.validate_selection(bad))
+    good = AISettings(
+        backend="openai-compatible", model="m", base_url="https://gateway.internal/v1"
+    )
+    assert ai_settings.validate_selection(good) == []
+
+
+def test_validate_openai_compatible_refused_without_the_env_pin(monkeypatch):
+    """With no operator-approved URL there is no trust anchor, so the backend is
+    refused outright rather than trusting whatever the row says."""
+    monkeypatch.setattr(get_settings(), "ai_api_key", "env-key")
+    monkeypatch.setattr(get_settings(), "ai_openai_compatible_base_url", "")
+    row = AISettings(
+        backend="openai-compatible", model="m", base_url="https://anything.example/v1"
+    )
+    errors = ai_settings.validate_selection(row)
+    assert any("ICEBERG_AI_OPENAI_COMPATIBLE_BASE_URL" in e for e in errors)
+
+
+def test_env_pinned_backends_match_the_runtime_backend_fields():
+    """``ai_settings`` and ``services/ai.py`` each name the approving env field;
+    a drift between them would silently disable one half of the pin."""
+    for backend, (_, field_name, _env) in ai_settings._ENV_PINNED_BACKENDS.items():
+        assert ai_service._BACKENDS[backend].approved_base_url_field == field_name
+        assert ai_service._BACKENDS[backend].pinned_base_url is None
+        assert hasattr(Settings(), field_name)
+
+
+@pytest.mark.parametrize(
+    "base_url", ["http://169.254.169.254/latest/meta-data", "https://attacker.example/v1"]
+)
+def test_openai_compatible_refuses_an_unapproved_host_at_runtime(base_url, monkeypatch):
+    """Runtime enforcement, not just admin-form validation: nothing may leave the
+    process for a host the operator never approved — including a link-local
+    address that would turn every assist into an authenticated SSRF (#270)."""
+    monkeypatch.setattr(
+        ai_service.httpx, "post", lambda *a, **k: pytest.fail("AI content egressed")
+    )
+    backend = ai_service._BACKENDS["openai-compatible"]
+    settings = Settings(
+        ai_backend="openai-compatible",
+        ai_base_url=base_url,
+        ai_openai_compatible_base_url="https://gateway.internal/v1",
+        ai_model="m",
+        ai_api_key="env-key",
+    )
+    with pytest.raises(ai_service.BackendUnavailable):
+        backend._complete({"task": "t"}, settings=settings, proxy_settings=None)
+
+
 def test_openai_backend_base_url_is_pinned():
     # The DB base_url is ignored for the pinned providers — the target host can't
     # be redirected by a config edit.

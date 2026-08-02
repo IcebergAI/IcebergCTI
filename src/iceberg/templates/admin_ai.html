@@ -39,7 +39,7 @@
     </label>
 
     <label class="field-wrap">
-      <span class="field-label">Base URL <span class="opt">openai-compatible: your gateway · ollama: must equal <span class="mono">{{ ollama_base_url }}</span> · openai/gemini: pinned (ignored) · claude/bedrock: n/a</span></span>
+      <span class="field-label">Base URL <span class="opt">openai-compatible: must equal <span class="mono">{{ openai_compatible_base_url or 'ICEBERG_AI_OPENAI_COMPATIBLE_BASE_URL (unset — backend refused)' }}</span> · ollama: must equal <span class="mono">{{ ollama_base_url }}</span> · openai/gemini: pinned (ignored) · claude/bedrock: n/a</span></span>
       <input name="base_url" class="field mono" value="{{ settings.base_url }}" placeholder="https://…/v1">
     </label>
 

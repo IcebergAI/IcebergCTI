@@ -320,6 +320,16 @@ def report_save(
     )
     if not result.rowcount:
         session.rollback()
+        if request.headers.get("X-Requested-With") == "fetch":
+            # The editor's only save path is the debounced autosave, so a stale
+            # version has to come back as a recoverable state rather than a bare
+            # error: the current version lets the analyst deliberately overwrite
+            # instead of losing every later keystroke to a silent retry (#271).
+            session.refresh(report)
+            return JSONResponse(
+                {"detail": "Report revision is stale", "version": report.version},
+                status_code=status.HTTP_409_CONFLICT,
+            )
         raise HTTPException(status.HTTP_409_CONFLICT, "Report revision is stale")
     session.commit()
     if request.headers.get("X-Requested-With") == "fetch":

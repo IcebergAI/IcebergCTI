@@ -44,6 +44,7 @@ def admin_ai_view(request: Request, session: SessionDep, user: CurrentUser):
             "settings": row,
             "key_configured": bool(get_settings().ai_api_key),
             "ollama_base_url": get_settings().ai_ollama_base_url,
+            "openai_compatible_base_url": get_settings().ai_openai_compatible_base_url,
             "backend_choices": _BACKEND_CHOICES,
             "tlp_choices": _TLP_CHOICES,
             "validation_errors": ai_settings.validate_selection(row),

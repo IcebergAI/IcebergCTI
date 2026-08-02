@@ -60,6 +60,36 @@ def _email_owners(session: Session, email: str) -> list[User]:
     )
 
 
+def _email_changed(user: User, email: str) -> bool:
+    """Whether ``email`` is a different address from the one the row holds.
+
+    The collision guard runs only on an actual change: an unchanged address takes
+    nothing from anyone, and checking it unconditionally would lock a legitimate
+    user out of a pre-existing (externally created) duplicate-email state.
+    """
+    return (user.email or "").casefold() != email.casefold()
+
+
+def _reject_unbound_email_owner(
+    session: Session, email: str, *, exclude: User | None = None
+) -> None:
+    """Refuse an email an unbound legacy/dev row already owns.
+
+    Cross-provider co-ownership is the designed case ("the same person under two
+    IdPs"), so a *bound* co-owner is fine. An **unbound** owner is not: that row
+    can only gain an OIDC binding through the explicit administrator helper, so
+    letting a login take its address would silently shadow it. Enforced on both
+    the creation and the update path — an IdP-side email change is self-service
+    at most providers, which otherwise makes it a two-step bypass (#276).
+    """
+
+    for owner in _email_owners(session, email):
+        if exclude is not None and owner.id == exclude.id:
+            continue
+        if not _is_bound(owner):
+            raise OIDCIdentityCollisionError("email is bound to a local account")
+
+
 def _refresh_profile(
     user: User,
     *,
@@ -99,10 +129,11 @@ def upsert_user(
     """Create or update a user keyed on ``(auth_provider, issuer, sub)``.
 
     OIDC callers must supply all three identity components together. A matching
-    triple may update its profile (including a new email). A new triple is
-    refused if its ``(issuer, sub)`` already belongs to a *different* provider
-    (spoof guard) or if the email is owned by an unbound legacy/dev row (which an
-    administrator must explicitly link first).
+    triple may update its profile, including a new email — but never to an address
+    an unbound legacy/dev row owns. A new triple is refused if its
+    ``(issuer, sub)`` already belongs to a *different* provider (spoof guard) or
+    if the email is owned by an unbound legacy/dev row (which an administrator
+    must explicitly link first).
 
     The local dev-login bypass (no identity components) may only create/update an
     unbound row; it can never overwrite an externally-bound account.
@@ -141,6 +172,8 @@ def upsert_user(
                 )
             ).first()
             if legacy is not None and auth_provider == "entra":
+                if _email_changed(legacy, email):
+                    _reject_unbound_email_owner(session, email, exclude=legacy)
                 legacy.auth_provider = auth_provider
                 user = legacy
                 _refresh_profile(
@@ -161,10 +194,7 @@ def upsert_user(
                 ).first()
                 if clash is not None:
                     raise OIDCIdentityCollisionError("identity bound to another provider")
-                # An unbound legacy/dev row owning this email must be linked
-                # explicitly by an administrator, not silently forked.
-                if any(not _is_bound(owner) for owner in _email_owners(session, email)):
-                    raise OIDCIdentityCollisionError("email is bound to a local account")
+                _reject_unbound_email_owner(session, email)
                 user = User(
                     auth_provider=auth_provider,
                     issuer=issuer,
@@ -178,6 +208,10 @@ def upsert_user(
                     office_location=office_location,
                 )
         else:
+            # The triple is already ours, but the email may be new — an address
+            # an unbound row owns is still off-limits (#276).
+            if _email_changed(user, email):
+                _reject_unbound_email_owner(session, email, exclude=user)
             _refresh_profile(
                 user,
                 email=email,

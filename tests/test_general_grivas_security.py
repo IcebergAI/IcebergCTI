@@ -121,6 +121,82 @@ def test_oidc_login_never_shadows_an_unbound_local_account(engine):
             )
 
 
+def test_oidc_email_change_cannot_shadow_an_unbound_local_account(engine):
+    """The two-step bypass (#276): sign in once with a throwaway email, then
+    change it at the IdP to a legacy account's address. The creation path refuses
+    that address, so the *update* path must refuse it too — otherwise self-service
+    email change at the IdP walks straight around the admin-must-link policy."""
+    with Session(engine) as session:
+        legacy = upsert_user(
+            session,
+            sub=None,
+            email="legacy@example.test",
+            display_name="Legacy",
+            role=Role.ANALYST,
+        )
+        legacy_id = legacy.id
+        attacker = upsert_user(
+            session,
+            auth_provider="auth0",
+            issuer="https://issuer.example.test",
+            sub="attacker-subject",
+            email="fresh@example.test",
+            display_name="Attacker",
+            role=Role.STAKEHOLDER,
+        )
+
+        with pytest.raises(OIDCIdentityCollisionError):
+            upsert_user(
+                session,
+                auth_provider="auth0",
+                issuer="https://issuer.example.test",
+                sub="attacker-subject",
+                email="LEGACY@example.test",  # casing must not defeat the guard
+                display_name="Attacker",
+                role=Role.STAKEHOLDER,
+            )
+
+        session.rollback()
+        session.refresh(legacy)
+        session.refresh(attacker)
+        assert legacy.id == legacy_id and legacy.display_name == "Legacy"
+        assert attacker.email == "fresh@example.test"
+
+
+def test_oidc_email_change_to_a_bound_co_owners_address_is_allowed(engine):
+    """The relaxation the multi-provider rewrite needed is only about *bound*
+    co-owners — the same person under two IdPs. That case must keep working."""
+    with Session(engine) as session:
+        upsert_user(
+            session,
+            auth_provider="entra",
+            issuer="https://entra.example.test",
+            sub="subject-1",
+            email="person@example.test",
+            display_name="Person (Entra)",
+            role=Role.ANALYST,
+        )
+        okta = upsert_user(
+            session,
+            auth_provider="okta",
+            issuer="https://okta.example.test",
+            sub="subject-1",
+            email="other@example.test",
+            display_name="Person (Okta)",
+            role=Role.ANALYST,
+        )
+        moved = upsert_user(
+            session,
+            auth_provider="okta",
+            issuer="https://okta.example.test",
+            sub="subject-1",
+            email="person@example.test",
+            display_name="Person (Okta)",
+            role=Role.ANALYST,
+        )
+        assert moved.id == okta.id and moved.email == "person@example.test"
+
+
 class _FakeOIDCClient:
     def __init__(self, claims: dict):
         self._claims = claims
