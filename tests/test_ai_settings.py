@@ -218,3 +218,60 @@ def test_invalid_ollama_base_url_cannot_egress_at_runtime(engine, monkeypatch):
             settings=resolved,
         )
     assert result.available is False
+
+
+# --------------------------------------------------------------------------- #
+# The overlay fields resolve() copies without validation (#275)
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize("bad_tlp", ["PURPLE", "", "amber"])
+def test_bogus_max_tlp_disables_the_backend_instead_of_500ing(
+    bad_tlp, engine, monkeypatch
+):
+    """``resolve`` overlays the row with ``model_copy(update=...)``, which skips
+    pydantic validation — so the TLP field validator never runs. Unchecked, the
+    bad value reaches ``TLP(settings.ai_max_tlp)`` in ``should_send_report``,
+    which sits OUTSIDE every fail-soft try: every AI endpoint 500s. The resolver
+    promises the guard holds however the row was written (#275)."""
+    monkeypatch.setattr(get_settings(), "ai_api_key", "k" * 20)
+    with Session(engine) as session:
+        ai_settings.update(session, backend="openai", model="m", max_tlp=bad_tlp)
+        assert ai_settings.validate_selection(ai_settings.get(session))
+
+        resolved = ai_settings.resolve(session)
+        assert resolved.ai_backend == "none"
+        # The whole point: the assist path answers, fail-soft, rather than raising.
+        result = ai_service.assist(
+            "judgements",
+            {"x": 1},
+            actor=User(id=1, email="a@x.com", display_name="A"),
+            settings=resolved,
+            report=Report(title="t", body_md="b", tlp=TLP.AMBER),
+        )
+        assert result.available is False
+
+
+@pytest.mark.parametrize("bad_timeout", [0.0, -5.0])
+def test_non_positive_timeout_disables_the_backend(bad_timeout, engine, monkeypatch):
+    monkeypatch.setattr(get_settings(), "ai_api_key", "k" * 20)
+    with Session(engine) as session:
+        ai_settings.update(session, backend="openai", model="m", timeout=bad_timeout)
+        assert any(
+            "timeout" in e.lower()
+            for e in ai_settings.validate_selection(ai_settings.get(session))
+        )
+        assert ai_settings.resolve(session).ai_backend == "none"
+
+
+def test_a_valid_row_still_resolves_with_its_ceiling_and_timeout(engine, monkeypatch):
+    """The guard must not be so eager that it disables a legitimate row."""
+    monkeypatch.setattr(get_settings(), "ai_api_key", "k" * 20)
+    with Session(engine) as session:
+        ai_settings.update(
+            session, backend="openai", model="m", max_tlp="RED", timeout=45.0
+        )
+        resolved = ai_settings.resolve(session)
+    assert (resolved.ai_backend, resolved.ai_max_tlp, resolved.ai_timeout) == (
+        "openai",
+        "RED",
+        45.0,
+    )

@@ -66,8 +66,30 @@ tagged release will snapshot it under a dated heading.
   collision guard, previously enforced only when creating a new identity, now also covers the update
   path; bound co-owners remain allowed for the designed cross-provider case.
 
+- **`/admin/config` no longer prints credentials carried inside a URL** (#273). Inline proxy
+  userinfo (`http://user:pass@proxy:3128`) is scrubbed from every value, and a bearer-equivalent
+  webhook URL is reduced to its origin. Redaction is now deny-by-default: a URL/DSN-shaped field
+  renders in full only once it is acknowledged as plaintext, and a guard test fails on any that is
+  in none of the classification sets — on the DB settings rows as well as `Settings`.
+
 ### Fixed
 
+- **OIDC outbound HTTP honours the global proxy** (#277). Discovery, JWKS and the token exchange
+  went direct, so SSO simply timed out in the egress-restricted deployment the proxy feature exists
+  for. The OAuth registry cache is versioned on the proxy row too, so a `/admin/proxy` change takes
+  effect without an SSO edit.
+- **A bad AI settings row disables the backend instead of 500ing every endpoint** (#275).
+  `validate_selection` now covers `max_tlp` and `timeout` — the two fields `resolve` overlays past
+  pydantic's validators — so a row written outside the admin form fails closed as the resolver
+  promises, rather than raising outside the fail-soft path.
+- **`/admin/config` capability tiles report resolved state, not stored flags** (#274). An enabled
+  MISP push with no URL or no env API key, and an SSO provider missing its client secret or its
+  locator (tenant id / domain / base URL), now read amber instead of green — the `/admin` hub was
+  already correct, so the page an operator opens *to debug* was the one disagreeing.
+- **A lifecycle transition can no longer race the autosave debounce** (#278). Clicking "Publish &
+  disseminate" within ~1.2 s of typing dropped the pending save and froze the pre-edit text into the
+  immutable snapshot, unrecoverably. Transitions now flush the autosave first and refuse to move the
+  report forward if that flush fails.
 - **Report editor: a stale-write conflict is reported and recoverable** (#271). With autosave as the
   only save path, an optimistic-lock 409 was indistinguishable from a network blip: the editor
   re-posted the same stale version forever, so a second writer's work was silently discarded. The

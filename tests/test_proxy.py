@@ -384,3 +384,119 @@ def test_admin_proxy_round_trip(client, login, engine):
         assert row.mode == ProxyMode.EXPLICIT
         assert row.proxy_url == "http://proxy.corp:3128"
         assert "internal.corp" in row.no_proxy
+
+
+# --------------------------------------------------------------------------- #
+# OIDC discovery / JWKS / token exchange (#277)
+# --------------------------------------------------------------------------- #
+def _entra_client(session, **proxy_fields):
+    """Register an Entra client against the given proxy configuration."""
+    from iceberg.auth import routes as auth_routes
+    from iceberg.services import oidc_settings
+
+    proxy_settings.update(session, **proxy_fields)
+    oidc_settings.update(
+        session, entra_enabled=True, entra_client_id="cid", entra_tenant_id="tid"
+    )
+    auth_routes.reset_oauth()
+    return auth_routes._client(session, "entra")
+
+
+def _httpx_kwargs(client) -> dict:
+    """Exactly what Authlib will hand to ``httpx.AsyncClient.__init__``.
+
+    Asserting on this rather than on httpx internals proves the value actually
+    reaches the transport: ``extract_client_kwargs`` IS the function Authlib uses
+    to split OAuth params from httpx client params.
+    """
+    from authlib.integrations.httpx_client.utils import extract_client_kwargs
+
+    return extract_client_kwargs(dict(client.client_kwargs))
+
+
+def test_oidc_client_routes_through_the_explicit_proxy(engine):
+    """Discovery, JWKS and the token exchange are ordinary outbound HTTP. In the
+    egress-restricted deployment the proxy exists for, going direct means SSO
+    simply times out — every other subsystem already routes through the proxy."""
+    from iceberg.auth import routes as auth_routes
+
+    try:
+        with Session(engine) as session:
+            client = _entra_client(
+                session, mode=ProxyMode.EXPLICIT, proxy_url="http://proxy.internal:3128"
+            )
+            kwargs = _httpx_kwargs(client)
+        assert kwargs["proxy"] == "http://proxy.internal:3128"
+        assert kwargs["trust_env"] is False
+    finally:
+        auth_routes.reset_oauth()
+
+
+def test_oidc_client_honours_the_no_proxy_bypass(engine):
+    """An IdP listed in NO_PROXY (a self-hosted Authentik on the LAN) must go
+    direct, exactly as the RSS/MISP/AI paths do."""
+    from iceberg.auth import routes as auth_routes
+
+    try:
+        with Session(engine) as session:
+            client = _entra_client(
+                session,
+                mode=ProxyMode.EXPLICIT,
+                proxy_url="http://proxy.internal:3128",
+                no_proxy="login.microsoftonline.com",
+            )
+            kwargs = _httpx_kwargs(client)
+        assert kwargs["proxy"] is None
+        assert kwargs["trust_env"] is False
+    finally:
+        auth_routes.reset_oauth()
+
+
+def test_oidc_client_defaults_to_the_system_proxy(engine):
+    """SYSTEM mode is trust_env — httpx honours HTTP(S)_PROXY/NO_PROXY."""
+    from iceberg.auth import routes as auth_routes
+
+    try:
+        with Session(engine) as session:
+            client = _entra_client(session, mode=ProxyMode.SYSTEM)
+            kwargs = _httpx_kwargs(client)
+        assert kwargs == {"trust_env": True}
+    finally:
+        auth_routes.reset_oauth()
+
+
+def test_changing_the_proxy_rebuilds_the_oidc_registry(engine):
+    """The clients bake the resolved proxy in at registration, so the cache key
+    has to include the proxy row — otherwise a change at /admin/proxy would not
+    reach OIDC until someone happened to edit the SSO config."""
+    from iceberg.auth import routes as auth_routes
+
+    try:
+        with Session(engine) as session:
+            first = _entra_client(
+                session, mode=ProxyMode.EXPLICIT, proxy_url="http://old.internal:3128"
+            )
+            assert _httpx_kwargs(first)["proxy"] == "http://old.internal:3128"
+
+            # No reset_oauth() here — the version check must notice on its own.
+            proxy_settings.update(session, proxy_url="http://new.internal:3128")
+            second = auth_routes._client(session, "entra")
+            assert _httpx_kwargs(second)["proxy"] == "http://new.internal:3128"
+    finally:
+        auth_routes.reset_oauth()
+
+
+def test_oidc_proxy_kwargs_are_accepted_by_the_real_client(engine):
+    """End of the contract: the kwargs must construct a real Authlib/httpx client
+    (httpx raises on an unknown keyword), not just look right in a dict."""
+    from iceberg.auth import routes as auth_routes
+
+    try:
+        with Session(engine) as session:
+            client = _entra_client(
+                session, mode=ProxyMode.EXPLICIT, proxy_url="http://proxy.internal:3128"
+            )
+            built = client.client_cls(**client.client_kwargs)
+        assert built.trust_env is False
+    finally:
+        auth_routes.reset_oauth()

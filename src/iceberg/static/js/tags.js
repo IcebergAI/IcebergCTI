@@ -116,7 +116,7 @@ document.addEventListener('alpine:init', () => {
     tab: 'cite', insertOpen: false, justSaved: false,
     tabOrder: [], dirty: false, saving: false, timer: null, saveTimer: null,
     generation: 0, savedGeneration: 0, savePromise: null, saveQueued: false,
-    conflict: false, conflictVersion: null,
+    conflict: false, conflictVersion: null, transitioning: false, transitionError: '',
     aiLoading: '', aiApplying: false, aiStatus: '', aiStatusKind: '',
     aiJudgements: null, aiTagIds: [], aiChallenge: '',
     intelLevel: '', tlp: '', tlpKey: '', confidence: '', confKey: '',
@@ -243,6 +243,32 @@ document.addEventListener('alpine:init', () => {
       // input pick up the new value before posting it.
       await this.$nextTick();
       await this.saveNow();
+    },
+    /* ---- lifecycle transitions (#278) -------------------------------------
+       A transition POST navigates away, so a pending 1.2s debounce — or a save
+       still in flight — is simply dropped. Publishing then freezes the PRE-EDIT
+       text into the immutable snapshot and `report_save`'s not-published guard
+       makes the loss permanent. Flush before handing over, and refuse to move
+       the report forward if that flush fails. */
+    async submitTransition(event) {
+      const form = event.target;
+      if (this.transitioning) return;
+      this.transitionError = '';
+      // Reviewers acting on someone else's report cannot save it (author-only),
+      // so there is nothing of theirs to flush.
+      if (this.canEdit && (this.dirty || this.saving || this.savePromise)) {
+        this.transitioning = true;
+        clearTimeout(this.saveTimer);
+        const saved = await this.saveNow();
+        this.transitioning = false;
+        if (!saved) {
+          this.transitionError = this.conflict
+            ? 'Resolve the save conflict above before moving this report forward.'
+            : 'Your latest edits could not be saved, so the report was not moved forward. Check your connection and try again.';
+          return;
+        }
+      }
+      form.submit();
     },
     async refresh() {
       try {

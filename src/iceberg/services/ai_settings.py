@@ -102,12 +102,18 @@ def validate_selection(row: AISettings) -> list[str]:
     """Return human-readable problems with a provider selection (empty = valid).
 
     Enforces: known provider, a model when enabled, the required env key present,
-    Bedrock region set, and **base-URL pinning** — the ollama and generic
+    Bedrock region set, **base-URL pinning** — the ollama and generic
     openai-compatible base URLs must each match their operator-approved env value
-    so a DB edit can't repoint a key. openai/gemini are hard-pinned in
-    ``services/ai.py`` and need no base URL.
+    so a DB edit can't repoint a key (openai/gemini are hard-pinned in
+    ``services/ai.py`` and need no base URL) — and the two fields ``resolve``
+    overlays without pydantic validation, ``max_tlp`` and ``timeout``.
+
+    This is the whole fail-closed surface: any field a bad row could carry into
+    ``Settings`` has to be checked here, because ``resolve`` disables the backend
+    on a non-empty result and nothing downstream re-validates.
     """
-    from ..config import _AI_BACKENDS  # local import avoids a load-time cycle
+    # Local import avoids a load-time cycle.
+    from ..config import _AI_BACKENDS, _TLP_VALUES
 
     cfg = get_settings()
     errors: list[str] = []
@@ -126,6 +132,19 @@ def validate_selection(row: AISettings) -> list[str]:
         )
     if backend == "bedrock" and not row.aws_region.strip():
         errors.append("An AWS region is required for the Bedrock backend.")
+    # ``resolve`` overlays these onto Settings with ``model_copy(update=...)``,
+    # which SKIPS pydantic validation — so the field validators that would
+    # normally reject them never run. Unchecked, a row written outside the admin
+    # form turns ``TLP(settings.ai_max_tlp)`` into a ValueError raised OUTSIDE
+    # every fail-soft try, 500ing every AI endpoint. Validate here so a bad row
+    # disables the backend instead, which is what the resolver promises (#275).
+    if row.max_tlp not in _TLP_VALUES:
+        errors.append(
+            f"The TLP egress ceiling must be one of {', '.join(sorted(_TLP_VALUES))}; "
+            f"got {row.max_tlp!r}."
+        )
+    if not row.timeout > 0:
+        errors.append("The provider timeout must be greater than zero seconds.")
     if backend in _ENV_PINNED_BACKENDS:
         errors.extend(_base_url_pin_errors(row, backend, cfg))
     return errors

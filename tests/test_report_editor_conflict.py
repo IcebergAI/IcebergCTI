@@ -153,3 +153,64 @@ def test_conflict_banner_is_not_offered_on_a_read_only_editor(client, login, eng
     assert page.status_code == 200
     assert "Read-only" in page.text
     assert 'class="editor-conflict"' not in page.text
+
+
+# --------------------------------------------------------------------------- #
+# A lifecycle transition must not race the autosave debounce (#278)
+# --------------------------------------------------------------------------- #
+def test_transition_forms_flush_the_autosave_before_navigating():
+    """A transition POST navigates away, dropping a pending 1.2s debounce. For
+    publish that is unrecoverable: the snapshot freezes the PRE-EDIT text and
+    `report_save`'s not-published guard means it can never be corrected. So the
+    transition must await the flush first — the pattern the AI panel already
+    uses — and must NOT navigate if the flush fails."""
+    script = EDITOR_JS.read_text()
+    handler = script[
+        script.index("async submitTransition(event)") : script.index("async refresh()")
+    ]
+
+    assert "await this.saveNow()" in handler
+    # The flush is awaited before the form is handed over, not after.
+    assert handler.index("await this.saveNow()") < handler.index("form.submit()")
+    # A failed flush aborts the transition rather than publishing stale content.
+    assert "if (!saved)" in handler
+    assert handler.index("if (!saved)") < handler.index("form.submit()")
+    # The pending debounce is cancelled so it cannot fire mid-navigation.
+    assert "clearTimeout(this.saveTimer)" in handler
+    # A conflict is called out specifically — "try again" would be a dead end.
+    assert "this.conflict" in handler
+
+
+def test_transition_forms_are_wired_to_the_flush_in_the_editor(client, login):
+    report = _report(client, login)
+    page = client.get(f"/reports/{report['id']}/edit").text
+
+    assert page.count('@submit.prevent="submitTransition($event)"') >= 1
+    # Every transition form goes through it — none may post directly.
+    transition_forms = page.count(f'action="/reports/{report["id"]}/transition"')
+    assert transition_forms >= 1
+    assert page.count("submitTransition($event)") == transition_forms
+    # The refusal reason has somewhere to render.
+    assert 'class="dock-foot-error"' in page
+
+
+def test_a_reviewer_transition_does_not_attempt_an_author_only_save(client, login):
+    """`canEdit` gates the flush: a reviewer approving someone else's report
+    cannot save it (author-only), so attempting one would 403 and block a
+    perfectly legal transition."""
+    script = EDITOR_JS.read_text()
+    handler = script[
+        script.index("async submitTransition(event)") : script.index("async refresh()")
+    ]
+    assert "this.canEdit" in handler
+    assert handler.index("this.canEdit") < handler.index("await this.saveNow()")
+
+    # And the server still enforces the roles regardless of what the client does.
+    report = _report(client, login)
+    login("REVIEWER", email="reviewer@example.com")
+    blocked = client.post(
+        f"/reports/{report['id']}/transition",
+        data={"target": "PUBLISHED"},
+        follow_redirects=False,
+    )
+    assert blocked.status_code in (400, 403, 409)
