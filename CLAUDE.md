@@ -44,7 +44,7 @@ _Compact index — full per-model bullets in ARCHITECTURE.md._
 - **Figure** — uploaded image (PNG/JPEG/GIF); embedded inline via `[[figure:ID]]` as a `data:` URI.
 - **IOC** — light-touch indicator staging entity; MISP-typed; TLP inherited from provenance source.
 - **ReportMispEvent** — records a report's idempotent MISP push (event uuid + last outcome).
-- **AISettings** — single-row governed-AI provider config (`/admin/ai`); provider/model/base-URL/timeout/TLP-ceiling/embeddings; API key env-only. Env seeds the row; `services/ai_settings.resolve` overlays it onto `Settings` so `services/ai.py` (TLP egress gate, fail-soft envelope) is unchanged. openai/gemini base-URLs are pinned, ollama's is validated against `ICEBERG_AI_OLLAMA_BASE_URL` (anti-SSRF).
+- **AISettings** — single-row governed-AI provider config (`/admin/ai`); provider/model/base-URL/timeout/TLP-ceiling/embeddings; API key env-only. Env seeds the row; `services/ai_settings.resolve` overlays it onto `Settings` so `services/ai.py` (TLP egress gate, fail-soft envelope) is unchanged. openai/gemini base-URLs are hard-pinned; ollama's and openai-compatible's are validated (at save **and** at call time) against `ICEBERG_AI_OLLAMA_BASE_URL` / `ICEBERG_AI_OPENAI_COMPATIBLE_BASE_URL`, and an unset env pin refuses the backend outright (anti-SSRF, anti key-exfil).
 - **MISPSettings** — single-row outbound MISP config (`/admin/misp`); API key env-only.
 - **WebhookSettings** — single-row publication-webhook config (`/admin/webhook`); bearer token env-only.
 - **OIDCSettings** — single-row multi-provider OIDC config (`/admin/oidc`; Entra/Authentik/Auth0/Okta); per-provider client secret env-only.

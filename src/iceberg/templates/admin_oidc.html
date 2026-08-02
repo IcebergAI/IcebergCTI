@@ -8,7 +8,7 @@
     <div class="eyebrow eyebrow-accent">Administration</div>
     <h1 class="page-title mt-2">Single sign-on (OIDC)</h1>
     <div class="title-rule"></div>
-    <p class="text-sm mt-3" style="color:var(--muted);max-width:70ch;">Configure one or more OpenID Connect providers. Each provider's client secret is read from the environment (<span class="mono">ICEBERG_OIDC_&lt;PROVIDER&gt;_CLIENT_SECRET</span>) and never stored here. A user's role is mapped from their IdP group/role claim via the role map, defaulting to read-only STAKEHOLDER. Enabled: {% if enabled_providers %}<strong>{{ enabled_providers | join(', ') }}</strong>{% else %}<strong style="color:var(--c-crit);">none</strong>{% endif %}.</p>
+    <p class="text-sm mt-3" style="color:var(--muted);max-width:70ch;">Configure one or more OpenID Connect providers. Each provider's client secret is read from the environment (<span class="mono">ICEBERG_OIDC_&lt;PROVIDER&gt;_CLIENT_SECRET</span>) and never stored here. A user's role is mapped from their IdP group/role claim via the role map, defaulting to read-only STAKEHOLDER. A group whose name happens to spell a role is honoured only on an app-roles claim (<span class="mono">roles</span>) with no role map set — a directory <span class="mono">groups</span> claim always requires an explicit role-map entry. Enabled: {% if enabled_providers %}<strong>{{ enabled_providers | join(', ') }}</strong>{% else %}<strong style="color:var(--c-crit);">none</strong>{% endif %}.</p>
   </div>
 </div>
 

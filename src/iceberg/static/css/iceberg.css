@@ -1160,6 +1160,19 @@ select.field {
 .save-state { font-size: 12px; color: var(--muted); white-space: nowrap; }
 .save-state.is-dirty { color: var(--c-warn); }
 .save-state.is-saved { color: var(--c-ok); }
+.save-state.is-conflict { color: var(--c-crit); font-weight: 600; }
+
+/* Save-conflict banner — a stale-version 409 stops autosave, so this is the
+   only route back to a saved state and must read as a blocker, not a hint. */
+.editor-conflict {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  margin: 0 0 12px; padding: 12px 16px; border-radius: 10px;
+  font-size: 13px; line-height: 1.5;
+  background: color-mix(in oklch, var(--c-crit) 10%, var(--surface));
+  border: 1px solid color-mix(in oklch, var(--c-crit) 38%, var(--line-strong));
+}
+.editor-conflict > div:first-child { flex: 1 1 340px; }
+.editor-conflict-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
 /* Marking chips — intel level / TLP / analytic confidence, editable in the
    editor header (the single source of truth for a product's markings).

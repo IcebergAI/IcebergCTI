@@ -185,3 +185,50 @@ def test_search_get_policy_is_throttled(engine, monkeypatch):
     assert first.status_code == 401
     assert second.status_code == 429
     assert second.json() == {"detail": "Rate limit exceeded"}
+
+
+# --------------------------------------------------------------------------- #
+# OIDC login/callback throttling (#268)
+# --------------------------------------------------------------------------- #
+def test_parametrised_oidc_routes_are_throttled(engine, monkeypatch):
+    """Every provider logs in through /auth/oidc/{provider}/*, so the policy has
+    to cover them — an unthrottled callback flood writes an audit row plus a SIEM
+    emit per request on an unauthenticated endpoint (#268)."""
+    with _limited_client(
+        engine, monkeypatch, rate_limit_auth_oidc_per_minute=1
+    ) as client:
+        first = client.get("/auth/oidc/entra/callback", follow_redirects=False)
+        second = client.get("/auth/oidc/entra/callback", follow_redirects=False)
+
+    assert first.status_code != 429
+    assert second.status_code == 429
+    events = _events(engine, AuditAction.RATE_LIMITED)
+    assert [e.detail["policy"] for e in events] == ["auth-oidc"]
+    assert events[0].detail["path"] == "/auth/oidc/entra/callback"
+
+
+def test_oidc_login_and_legacy_aliases_share_the_policy(engine, monkeypatch):
+    """The provider login route and the legacy Entra aliases all bill the same
+    per-IP bucket, so the throttle can't be sidestepped by rotating paths."""
+    with _limited_client(
+        engine, monkeypatch, rate_limit_auth_oidc_per_minute=2
+    ) as client:
+        allowed = [
+            client.get("/auth/oidc/okta/login", follow_redirects=False).status_code,
+            client.get("/auth/entra/login", follow_redirects=False).status_code,
+        ]
+        blocked = client.get("/auth/callback", follow_redirects=False)
+
+    assert 429 not in allowed
+    assert blocked.status_code == 429
+
+
+def test_unrelated_auth_paths_are_not_caught_by_the_oidc_pattern(engine, monkeypatch):
+    """The pattern is anchored to the two OIDC endpoints — the login *page* must
+    stay reachable however often it is refreshed."""
+    with _limited_client(
+        engine, monkeypatch, rate_limit_auth_oidc_per_minute=1
+    ) as client:
+        assert client.get("/auth/login").status_code == 200
+        assert client.get("/auth/login").status_code == 200
+        assert client.get("/auth/oidc/okta/logout", follow_redirects=False).status_code != 429

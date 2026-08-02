@@ -19,6 +19,14 @@ from ...models import Role
 # Least-privilege default when no recognised role/group claim is present.
 _DEFAULT_ROLE = Role.STAKEHOLDER
 
+# Claim names that carry *application* roles the operator defined for this app
+# (Entra app roles, Auth0 app roles). Only there is a claim value that happens to
+# spell a ``Role`` a deliberate operator statement, so only there may it be
+# honoured without a ``role_map`` entry. A directory-group claim (``groups``,
+# the Authentik/Okta default) is an uncurated, org-wide namespace — a pre-existing
+# "Admin" group used for VPN or Jira must never provision an Iceberg ADMIN (#269).
+_APP_ROLE_CLAIMS = frozenset({"roles"})
+
 
 @dataclass(frozen=True)
 class OIDCProviderConfig:
@@ -83,19 +91,34 @@ class StandardOIDCAdapter:
             raw = [raw]
         return [str(entry) for entry in raw]
 
+    def _allows_role_name_fallback(self, config: OIDCProviderConfig) -> bool:
+        """Whether a claim value that spells a ``Role`` may be honoured as-is.
+
+        Only for an app-roles claim with **no** ``role_map`` configured — i.e. the
+        legacy single-Entra ``roles`` flow, where the operator defines and assigns
+        the app roles themselves. Writing a ``role_map`` is an expression of intent
+        to map explicitly, so a miss there must fall through to least-privilege
+        rather than to an unmapped group's name (#269).
+        """
+        if config.role_map:
+            return False
+        return config.role_claim.strip().lower() in _APP_ROLE_CLAIMS
+
     def _role(self, config: OIDCProviderConfig, claims: dict) -> Role:
         groups = self._groups(config, claims)
-        # Explicit role_map wins; then a group whose name *is* a Role; else the
-        # least-privilege default (fail-closed — a misconfigured claim locks the
-        # user to read-only rather than escalating).
+        # Explicit role_map wins; then — only for an unmapped app-roles claim — a
+        # value whose name *is* a Role; else the least-privilege default
+        # (fail-closed: a misconfigured, overage-truncated or merely uncurated
+        # claim locks the user to read-only rather than escalating).
         for group in groups:
             if group in config.role_map:
                 return config.role_map[group]
-        for group in groups:
-            try:
-                return Role(group.upper())
-            except ValueError:
-                continue
+        if self._allows_role_name_fallback(config):
+            for group in groups:
+                try:
+                    return Role(group.upper())
+                except ValueError:
+                    continue
         return _DEFAULT_ROLE
 
     def _email(self, claims: dict) -> str:

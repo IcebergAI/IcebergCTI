@@ -210,6 +210,13 @@ class Settings(BaseSettings):
     # the ``ollama`` provider must match this exact value — so a DB edit can't
     # redirect a real key to an attacker host (anti-SSRF; base-URL pinning).
     ai_ollama_base_url: str = "http://localhost:11434/v1"
+    # Operator-approved base URL for the generic ``openai-compatible`` escape
+    # hatch (self-hosted vLLM/LiteLLM/…). Same trust anchor as the Ollama pin:
+    # the DB value must match this exactly, and while this is unset the backend
+    # is refused outright. Without it a DB edit could ship ICEBERG_AI_API_KEY
+    # plus report content up to the TLP ceiling to any host — or turn every
+    # assist into an authenticated request to a link-local address (#270).
+    ai_openai_compatible_base_url: str = ""
 
     # Inbound collection — RSS feed ingestion (FR #50). The poller is opt-in
     # (off by default, so tests/dev never reach out to the network); fetches are

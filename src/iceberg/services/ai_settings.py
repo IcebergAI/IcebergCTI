@@ -9,8 +9,10 @@ injected by ``services/ai.py`` at call time, never persisted here. Mirrors
 ``resolve`` overlays the row onto the process ``Settings`` so the rest of
 ``services/ai.py`` keeps operating on a ``Settings`` object (the TLP egress gate,
 the fail-soft envelope and the backend registry are unchanged). ``validate_selection``
-is the guard for the admin form — including **base-URL pinning** for the
-openai/gemini/ollama providers so a DB edit can't redirect a real key.
+is the guard for the admin form — including **base-URL pinning** for every
+provider so a DB edit can't redirect a real key: openai/gemini are hard-coded in
+``services/ai.py``, and ollama/openai-compatible are pinned to an operator env
+value (see ``_ENV_PINNED_BACKENDS``).
 """
 
 from sqlmodel import Session
@@ -21,6 +23,19 @@ from .singleton import get_or_create
 
 # Providers that require ``ai_api_key`` in the environment to function.
 _KEY_REQUIRED = {"openai", "gemini", "openai-compatible", "claude"}
+
+# Backends whose target host is not hard-coded in ``services/ai.py`` and so is
+# pinned to an operator env value instead: ``backend -> (label, Settings field,
+# env var)``. ``services/ai.py`` re-checks the same pin at call time via each
+# backend's ``approved_base_url_field`` (kept in step by a guard test).
+_ENV_PINNED_BACKENDS: dict[str, tuple[str, str, str]] = {
+    "ollama": ("Ollama", "ai_ollama_base_url", "ICEBERG_AI_OLLAMA_BASE_URL"),
+    "openai-compatible": (
+        "openai-compatible",
+        "ai_openai_compatible_base_url",
+        "ICEBERG_AI_OPENAI_COMPATIBLE_BASE_URL",
+    ),
+}
 
 
 def get(session: Session) -> AISettings:
@@ -87,9 +102,10 @@ def validate_selection(row: AISettings) -> list[str]:
     """Return human-readable problems with a provider selection (empty = valid).
 
     Enforces: known provider, a model when enabled, the required env key present,
-    Bedrock region set, and **base-URL pinning** — the ollama base URL must match
-    the operator-approved ``ai_ollama_base_url`` so a DB edit can't repoint a key.
-    openai/gemini are hard-pinned in ``services/ai.py`` and need no base URL.
+    Bedrock region set, and **base-URL pinning** — the ollama and generic
+    openai-compatible base URLs must each match their operator-approved env value
+    so a DB edit can't repoint a key. openai/gemini are hard-pinned in
+    ``services/ai.py`` and need no base URL.
     """
     from ..config import _AI_BACKENDS  # local import avoids a load-time cycle
 
@@ -110,11 +126,32 @@ def validate_selection(row: AISettings) -> list[str]:
         )
     if backend == "bedrock" and not row.aws_region.strip():
         errors.append("An AWS region is required for the Bedrock backend.")
-    if backend == "openai-compatible" and not row.base_url.strip():
-        errors.append("A base URL is required for the openai-compatible backend.")
-    if backend == "ollama" and row.base_url.strip() != cfg.ai_ollama_base_url:
-        errors.append(
-            "The Ollama base URL must match the operator-approved "
-            "ICEBERG_AI_OLLAMA_BASE_URL value."
-        )
+    if backend in _ENV_PINNED_BACKENDS:
+        errors.extend(_base_url_pin_errors(row, backend, cfg))
     return errors
+
+
+def _base_url_pin_errors(row: AISettings, backend: str, cfg: Settings) -> list[str]:
+    """Check a DB base URL against its operator-approved env value.
+
+    The env value is the trust anchor: the row may only *match* it. With the env
+    value unset the backend is refused outright rather than falling back to the
+    DB value — the generic ``openai-compatible`` hatch used to accept any
+    non-empty URL, which handed a DB writer the API key and an authenticated
+    SSRF primitive (#270).
+    """
+    label, field_name, env_var = _ENV_PINNED_BACKENDS[backend]
+    approved = (getattr(cfg, field_name, "") or "").strip()
+    if not approved:
+        return [
+            f"{env_var} is not set, so the {label} backend is refused "
+            "(the operator-approved base URL is the trust anchor for the API key)."
+        ]
+    if not approved.lower().startswith(("http://", "https://")):
+        return [f"{env_var} must be an http(s) URL."]
+    if row.base_url.strip() != approved:
+        return [
+            f"The {label} base URL must match the operator-approved "
+            f"{env_var} value."
+        ]
+    return []

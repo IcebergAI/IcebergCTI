@@ -116,6 +116,7 @@ document.addEventListener('alpine:init', () => {
     tab: 'cite', insertOpen: false, justSaved: false,
     tabOrder: [], dirty: false, saving: false, timer: null, saveTimer: null,
     generation: 0, savedGeneration: 0, savePromise: null, saveQueued: false,
+    conflict: false, conflictVersion: null,
     aiLoading: '', aiApplying: false, aiStatus: '', aiStatusKind: '',
     aiJudgements: null, aiTagIds: [], aiChallenge: '',
     intelLevel: '', tlp: '', tlpKey: '', confidence: '', confKey: '',
@@ -165,7 +166,13 @@ document.addEventListener('alpine:init', () => {
 
     markDirty() { this.generation += 1; this.dirty = true; this.scheduleSave(); },
     schedule() { this.generation += 1; this.dirty = true; clearTimeout(this.timer); this.timer = setTimeout(() => this.refresh(), 350); this.scheduleSave(); },
-    scheduleSave() { clearTimeout(this.saveTimer); this.saveTimer = setTimeout(() => this.autosave(), 1200); },
+    // While a conflict is unresolved the stored version is stale, so re-posting
+    // it would only 409 again — the analyst has to choose reload or overwrite.
+    scheduleSave() {
+      clearTimeout(this.saveTimer);
+      if (this.conflict) return;
+      this.saveTimer = setTimeout(() => this.autosave(), 1200);
+    },
     async saveNow() {
       const form = document.getElementById('reportform');
       if (!form) return false;
@@ -181,9 +188,24 @@ document.addEventListener('alpine:init', () => {
             method: 'POST', body: new FormData(form), redirect: 'manual',
             headers: { 'X-Requested-With': 'fetch' },
           });
+          // An optimistic-lock 409 is NOT a transient blip: another writer (or
+          // this user's other tab) saved first, so every later autosave would
+          // re-post the same stale version forever and silently drop the work.
+          // Surface it as its own state with an explicit way out (#271).
+          if (res.status === 409) {
+            let conflict = {};
+            try { conflict = await res.json(); } catch { /* Fall back to reload-only recovery. */ }
+            this.conflictVersion = typeof conflict.version === 'number' ? conflict.version : null;
+            this.conflict = true;
+            this.dirty = true;
+            clearTimeout(this.saveTimer);
+            return false;
+          }
           if (!res.ok) return false;
           const data = await res.json();
           this.version = data.version;
+          this.conflict = false;
+          this.conflictVersion = null;
           this.savedGeneration = generation;
           this.dirty = this.generation !== generation;
           return true;
@@ -193,7 +215,7 @@ document.addEventListener('alpine:init', () => {
         } finally {
           this.saving = false;
           this.savePromise = null;
-          if (this.saveQueued || this.generation !== generation) {
+          if (!this.conflict && (this.saveQueued || this.generation !== generation)) {
             this.saveQueued = false;
             this.saveTimer = setTimeout(() => this.autosave(), 0);
           }
@@ -202,6 +224,26 @@ document.addEventListener('alpine:init', () => {
       return this.savePromise;
     },
     async autosave() { await this.saveNow(); },
+
+    /* ---- save-conflict recovery (#271) ------------------------------------
+       Notebook access is role-wide, so two writers in one report is a supported
+       case. Both ways out are explicit and destructive in opposite directions,
+       so neither is taken automatically. */
+    reloadForConflict() { window.location.reload(); },
+    async overwriteConflict() {
+      // No version came back (e.g. the report was published under us): there is
+      // nothing to overwrite, so reloading is the only honest move.
+      if (this.conflictVersion === null) { this.reloadForConflict(); return; }
+      this.version = this.conflictVersion;
+      this.conflict = false;
+      this.conflictVersion = null;
+      this.dirty = true;
+      this.generation += 1;
+      // saveNow() reads the form synchronously, so let the bound hidden version
+      // input pick up the new value before posting it.
+      await this.$nextTick();
+      await this.saveNow();
+    },
     async refresh() {
       try {
         const res = await fetch('/api/preview/product', {

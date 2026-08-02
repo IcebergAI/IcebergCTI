@@ -46,4 +46,32 @@ tagged release will snapshot it under a dated heading.
   **CodeQL** SAST, **zizmor + actionlint** workflow SAST, and a tag-driven **release workflow**
   publishing a signed, SBOM- and provenance-attested GHCR image (this section).
 
+### Security
+
+- **OIDC role mapping no longer escalates on an uncurated group name** (#269). A claim value that
+  spells a role is honoured only on an app-roles claim (`roles`) with no `role_map` configured — the
+  legacy single-Entra flow. A directory `groups` claim (the Authentik/Okta default) now always
+  requires an explicit `role_map` entry, so a pre-existing org group called `Admin` provisions a
+  read-only `STAKEHOLDER` rather than an Iceberg administrator.
+- **OIDC login and callback routes are rate-limited** (#268). The `auth-oidc` policy now matches the
+  parametrised `/auth/oidc/{provider}/{login,callback}` routes as well as the legacy Entra aliases,
+  closing an unauthenticated audit/SIEM-write flood on the callback endpoint.
+- **The generic `openai-compatible` AI backend is base-URL pinned** (#270). Its target is pinned to
+  the new `ICEBERG_AI_OPENAI_COMPATIBLE_BASE_URL` operator env value exactly as `ollama` already
+  was — enforced at save *and* at call time, with an unset pin refusing the backend. Previously any
+  non-empty DB value was accepted, so a config edit could ship `ICEBERG_AI_API_KEY` plus TLP-gated
+  report content to an arbitrary host, or turn every assist into an authenticated request to an
+  internal address.
+- **An OIDC email change can no longer shadow an unbound local account** (#276). The unbound-owner
+  collision guard, previously enforced only when creating a new identity, now also covers the update
+  path; bound co-owners remain allowed for the designed cross-provider case.
+
+### Fixed
+
+- **Report editor: a stale-write conflict is reported and recoverable** (#271). With autosave as the
+  only save path, an optimistic-lock 409 was indistinguishable from a network blip: the editor
+  re-posted the same stale version forever, so a second writer's work was silently discarded. The
+  conflict now stops the autosave loop and surfaces a distinct state with two explicit ways out —
+  reload the saved version, or overwrite with yours.
+
 [Unreleased]: https://github.com/IcebergAI/IcebergCTI/commits/main

@@ -100,8 +100,9 @@
         {# One save model: the editor autosaves (1.2s debounce) and this is the
            only report of that state. The <noscript> submit keeps the form
            usable if Alpine never loads. #}
-        <span class="save-state" :class="saving ? '' : (dirty ? 'is-dirty' : 'is-saved')"
-              x-text="saving ? 'Saving…' : (dirty ? 'Unsaved changes' : 'All changes saved')">All changes saved</span>
+        <span class="save-state"
+              :class="conflict ? 'is-conflict' : (saving ? '' : (dirty ? 'is-dirty' : 'is-saved'))"
+              x-text="conflict ? 'Not saved — conflict' : (saving ? 'Saving…' : (dirty ? 'Unsaved changes' : 'All changes saved'))">All changes saved</span>
         <noscript><button form="reportform" class="btn btn--ink btn--sm">Save</button></noscript>
       {% endif %}
       <a href="/reports/{{ report.id }}" class="btn btn--ghost btn--sm">
@@ -109,6 +110,29 @@
       </a>
     </div>
   </header>
+
+  {% if can_edit %}
+    {# Save conflict (#271). Autosave is the only save path, so a stale-version
+       409 has to stop the loop and be resolved deliberately — otherwise every
+       later keystroke is dropped in silence. #}
+    <div class="editor-conflict" x-show="conflict" x-cloak role="alert" aria-live="assertive">
+      <div>
+        <strong>Your changes are not saved.</strong>
+        This report was saved elsewhere — another writer, or your own second tab —
+        after this editor loaded, so saving would overwrite that newer revision.
+        <a href="/reports/{{ report.id }}" target="_blank" rel="noopener">Open the saved version</a>
+        to compare before you choose.
+      </div>
+      <div class="editor-conflict-actions">
+        <button type="button" class="btn btn--ghost btn--sm" @click="reloadForConflict()">
+          Discard mine &amp; reload
+        </button>
+        <button type="button" class="btn btn--ink btn--sm" @click="overwriteConflict()">
+          Overwrite with my version
+        </button>
+      </div>
+    </div>
+  {% endif %}
 
   <!-- ===== 3-pane body ===== -->
   <div class="editor-body">

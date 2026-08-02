@@ -34,7 +34,9 @@ _DEFAULT_BEDROCK_MODEL = "anthropic.claude-opus-4-8"
 # Pinned base URLs for the first-class OpenAI-compatible providers. Because the
 # base URL is now DB-editable, these are hard-coded (not read from the DB row) so
 # a config edit can't redirect a real API key to an attacker-controlled host.
-# Ollama's approved base URL is operator env (``ai_ollama_base_url``).
+# The ollama / generic openai-compatible backends have no fixed host, so their
+# approved base URL is operator env instead (``ai_ollama_base_url`` /
+# ``ai_openai_compatible_base_url``) — never the DB value on its own.
 _OPENAI_BASE_URL = "https://api.openai.com/v1"
 _GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
 
@@ -233,15 +235,26 @@ class OpenAICompatibleBackend(AIBackend):
     """A generic OpenAI-style ``/chat/completions`` endpoint.
 
     ``pinned_base_url`` locks the target host for a named provider (OpenAI,
-    Gemini) so the DB-editable base URL can't redirect the API key; a ``None``
-    pin (the generic ``openai-compatible`` escape hatch, and ``ollama`` whose base
-    URL is validated against the operator env value) uses ``settings.ai_base_url``."""
+    Gemini) so the DB-editable base URL can't redirect the API key. The backends
+    with no hard pin (the generic ``openai-compatible`` escape hatch and
+    ``ollama``) are pinned to an operator env value named by
+    ``approved_base_url_field`` — the DB base URL is only ever honoured when it
+    matches that value exactly, and an unset env value refuses the backend."""
 
     name = "openai-compatible"
     pinned_base_url: str | None = None
+    approved_base_url_field: str = "ai_openai_compatible_base_url"
 
     def _resolved_base_url(self, settings) -> str:
-        return self.pinned_base_url or settings.ai_base_url
+        if self.pinned_base_url:
+            return self.pinned_base_url
+        # Runtime enforcement of the env pin (#270). ``resolve()`` already fails a
+        # mismatched row closed, but the guard has to hold here too: this is the
+        # last point before an API key and TLP-gated content leave the process.
+        approved = (getattr(settings, self.approved_base_url_field, "") or "").strip()
+        if not approved or (settings.ai_base_url or "").strip() != approved:
+            raise BackendUnavailable("AI base URL is not operator-approved")
+        return approved
 
     def _complete(self, prompt, *, settings, proxy_settings):
         resolved = self._resolved_base_url(settings)
@@ -284,9 +297,11 @@ class GeminiBackend(OpenAICompatibleBackend):
 class OllamaBackend(OpenAICompatibleBackend):
     """A local/self-hosted Ollama server (OpenAI-compatible). The base URL is
     free-form on the row but validated against ``ai_ollama_base_url`` before use
-    (``ai_settings.validate_selection``), so it can't be repointed arbitrarily."""
+    (``ai_settings.validate_selection`` and again at call time), so it can't be
+    repointed arbitrarily."""
 
     name = "ollama"
+    approved_base_url_field = "ai_ollama_base_url"
 
 
 class _AnthropicBackend(AIBackend):

@@ -54,6 +54,7 @@ def _enable_judgements(monkeypatch):
     enabled = Settings(
         ai_backend="openai-compatible",
         ai_base_url="https://ai.example.test/v1",
+        ai_openai_compatible_base_url="https://ai.example.test/v1",
         ai_model="test-model",
     )
     monkeypatch.setattr(ai_service, "get_settings", lambda: enabled)

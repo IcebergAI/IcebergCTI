@@ -208,7 +208,12 @@ def build_policies(settings: Settings) -> tuple[RateLimitPolicy, ...]:
         RateLimitPolicy(
             name="auth-oidc",
             methods=frozenset({"GET"}),
+            # The legacy Entra aliases are exact paths; every provider now logs in
+            # through the parametrised routes, which must be throttled too (#268) —
+            # an unauthenticated callback flood writes an audit row + a SIEM emit
+            # per request.
             paths=("/auth/entra/login", "/auth/callback"),
+            patterns=(re.compile(r"/auth/oidc/[^/]+/(?:login|callback)"),),
             limit=settings.rate_limit_auth_oidc_per_minute,
             period_seconds=60,
             key_strategy="ip",
