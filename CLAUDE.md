@@ -130,7 +130,10 @@ on 8 cores. Tests are process-isolated and parallel-safe (in-memory DB per test,
 files, ASGI transport so no port binding; the `siem`/`email` `OUTBOX` globals are cleared by
 autouse fixtures per test). Use `pytest -n0` when you need `pdb` or live `-s` output.
 
-**Static gates** (CI + pre-commit, mirrored): `ruff` (lint), `bandit` (security), `vulture`
+**Static gates** (CI + pre-commit, mirrored): `ruff` (lint — the rule set is pinned **explicitly**
+to `["E4","E7","E9","F"]` in `[tool.ruff.lint]` rather than inherited from ruff's implicit default,
+so a version bump can't silently widen the gate; ruff 0.16 broadened its default and produced 313
+findings on unchanged code), `bandit` (security), `vulture`
 (dead code), `mypy` (types), `pip-audit` (dependency CVEs), and **frontend lint** — `djlint
 src/iceberg/templates --lint` (Jinja/HTML structure; lint-only, config + ignore rationale in
 `[tool.djlint]`) and `biome lint src/iceberg/static` (hand-authored CSS + Alpine component JS; config

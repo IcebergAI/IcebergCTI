@@ -90,6 +90,11 @@ tagged release will snapshot it under a dated heading.
   disseminate" within ~1.2 s of typing dropped the pending save and froze the pre-edit text into the
   immutable snapshot, unrecoverably. Transitions now flush the autosave first and refuse to move the
   report forward if that flush fails.
+- **The `ruff` gate pins its rule set explicitly** (`[tool.ruff.lint] select`). It previously
+  inherited ruff's implicit default; ruff 0.16 widened that default to include
+  isort/pyupgrade/bugbear and more, so a routine dependency bump reported 313 findings on
+  unchanged code. The gate now means the same thing across ruff releases, and broadening it is a
+  deliberate, reviewable change rather than an upgrade side effect.
 - **Review follow-ups to the #268–#278 backlog batches.** The transition flush now repeats while a
   save is in flight — a single `await saveNow()` returned the in-flight promise, whose form snapshot
   predated keystrokes typed after it started, so the #278 publish race was narrowed but not closed.
