@@ -198,6 +198,9 @@ document.addEventListener('alpine:init', () => {
             this.conflictVersion = typeof conflict.version === 'number' ? conflict.version : null;
             this.conflict = true;
             this.dirty = true;
+            // A save queued behind this one would re-post the same stale
+            // version; drop it so recovery starts from a clean slate.
+            this.saveQueued = false;
             clearTimeout(this.saveTimer);
             return false;
           }
@@ -256,12 +259,24 @@ document.addEventListener('alpine:init', () => {
       this.transitionError = '';
       // Reviewers acting on someone else's report cannot save it (author-only),
       // so there is nothing of theirs to flush.
-      if (this.canEdit && (this.dirty || this.saving || this.savePromise)) {
+      if (this.canEdit) {
         this.transitioning = true;
+        // One await is NOT a flush: with a save already in flight, saveNow()
+        // returns that promise, whose FormData snapshot predates any keystrokes
+        // typed since it started. Repeat until nothing is dirty or in flight —
+        // bounded, so a persistent failure surfaces instead of spinning.
+        let flushed = true;
+        for (let attempt = 0; (this.dirty || this.savePromise) && attempt < 5; attempt += 1) {
+          clearTimeout(this.saveTimer);
+          const saved = await this.saveNow();
+          if (!saved) { flushed = false; break; }
+        }
+        // The save's finally block re-arms a follow-up timer when a save was
+        // queued mid-flight; it must not fire a fetch into the navigation.
         clearTimeout(this.saveTimer);
-        const saved = await this.saveNow();
+        this.saveQueued = false;
         this.transitioning = false;
-        if (!saved) {
+        if (!flushed || this.dirty || this.savePromise) {
           this.transitionError = this.conflict
             ? 'Resolve the save conflict above before moving this report forward.'
             : 'Your latest edits could not be saved, so the report was not moved forward. Check your connection and try again.';
