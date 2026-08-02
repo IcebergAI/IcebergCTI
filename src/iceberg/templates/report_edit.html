@@ -13,8 +13,13 @@
 {% block canvas_class %}canvas--flush{% endblock %}
 {% block content %}
 
+{# A transition navigates away, which would drop a pending autosave debounce —
+   and publishing freezes the snapshot, so those edits would be lost for good.
+   submitTransition() flushes first and only then submits (#278). Without Alpine
+   the attribute is inert and the form posts directly, as before. #}
 {% macro transition_btn(target, label, cls, block=false) %}
-  <form method="post" action="/reports/{{ report.id }}/transition"{% if block %} class="w-full"{% endif %}>
+  <form method="post" action="/reports/{{ report.id }}/transition"{% if block %} class="w-full"{% endif %}
+        @submit.prevent="submitTransition($event)">
     <input type="hidden" name="target" value="{{ target }}">
     <button class="btn {{ cls }}{{ '' if block else ' btn--sm' }}"{% if block %} style="width:100%;"{% endif %}>{{ label }}</button>
   </form>
@@ -644,6 +649,8 @@
          there is a single place to move the product forward. It stays pinned
          under whichever tab is open; the Publish tab holds the context. #}
       <div class="dock-foot">
+        <p class="dock-foot-error" x-show="transitionError" x-cloak role="alert"
+           x-text="transitionError"></p>
         {% if report.status.value == 'DRAFT' and (is_author or user.role == 'ADMIN') %}
           {{ transition_btn('IN_REVIEW', 'Submit for review →', 'btn--primary', block=true) }}
         {% elif report.status.value == 'IN_REVIEW' and can_review %}

@@ -141,7 +141,12 @@ def test_sso_tile_warns_when_a_provider_has_no_client_secret(engine, monkeypatch
 
     monkeypatch.setattr(get_settings(), "oidc_client_secret", "")
     with Session(engine) as session:
-        oidc_settings.update(session, entra_enabled=True, entra_client_id="abc123")
+        oidc_settings.update(
+            session,
+            entra_enabled=True,
+            entra_client_id="abc123",
+            entra_tenant_id="tid",
+        )
         assert [c.name for c in oidc_settings.enabled_providers(session)] == ["entra"]
 
         tile = _tile(session, "Single sign-on")
@@ -152,6 +157,26 @@ def test_sso_tile_warns_when_a_provider_has_no_client_secret(engine, monkeypatch
     with Session(engine) as session:
         tile = _tile(session, "Single sign-on")
         assert (tile["status"], tile["tone"]) == ("ENTRA", "is-ok")
+
+
+def test_sso_tile_warns_when_a_provider_has_no_locator(engine, monkeypatch):
+    """A client id + secret with no locator (tenant id / domain / base URL) is
+    just as unusable: the discovery URL resolves to nowhere and login fails on
+    the first redirect, but nothing in the row looks wrong (#274)."""
+    from iceberg.services import oidc_settings
+
+    monkeypatch.setattr(get_settings(), "oidc_auth0_client_secret", "s" * 24)
+    with Session(engine) as session:
+        oidc_settings.update(
+            session, auth0_enabled=True, auth0_client_id="cid", auth0_domain=""
+        )
+        tile = _tile(session, "Single sign-on")
+        assert (tile["status"], tile["tone"]) == ("NOT CONFIGURED", "is-warn")
+        assert "domain" in tile["meta"]
+
+        oidc_settings.update(session, auth0_domain="acme.eu.auth0.com")
+        tile = _tile(session, "Single sign-on")
+        assert (tile["status"], tile["tone"]) == ("AUTH0", "is-ok")
 
 
 def test_audit_tile_warns_when_the_http_sink_has_no_endpoint(engine):

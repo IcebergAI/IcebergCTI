@@ -21,6 +21,26 @@ from .singleton import get_or_create
 # Registration/presentation order.
 PROVIDERS: tuple[str, ...] = ("entra", "authentik", "auth0", "okta")
 
+# Per-provider locator fields the adapter needs to build a discovery URL, and the
+# env var holding that provider's client secret. A blank locator still produces a
+# *syntactically valid* metadata URL (``https:///.well-known/…``), so nothing
+# fails until the first real login — which is exactly why it has to be checked.
+_PROVIDER_REQUIREMENTS: dict[str, tuple[tuple[tuple[str, str], ...], str]] = {
+    "entra": ((("entra_tenant_id", "tenant ID"),), "ICEBERG_OIDC_CLIENT_SECRET"),
+    "authentik": (
+        (
+            ("authentik_base_url", "base URL"),
+            ("authentik_app_slug", "application slug"),
+        ),
+        "ICEBERG_OIDC_AUTHENTIK_CLIENT_SECRET",
+    ),
+    "auth0": ((("auth0_domain", "domain"),), "ICEBERG_OIDC_AUTH0_CLIENT_SECRET"),
+    "okta": (
+        (("okta_domain", "domain"), ("okta_auth_server", "authorization server")),
+        "ICEBERG_OIDC_OKTA_CLIENT_SECRET",
+    ),
+}
+
 
 def get(session: Session) -> OIDCSettings:
     """Return the settings row, seeding Entra from the legacy env on first read."""
@@ -78,6 +98,38 @@ def enabled_providers(session: Session) -> list[OIDCProviderConfig]:
     row = get(session)
     configs = [_provider_config(row, name) for name in PROVIDERS]
     return [c for c in configs if c is not None]
+
+
+def validate_provider(row: OIDCSettings, config: OIDCProviderConfig) -> list[str]:
+    """Human-readable problems with one *enabled* provider (empty = usable).
+
+    The counterpart of ``ai_settings.validate_selection``: everything that must
+    hold, as seen from inside Iceberg, for the authorization-code flow to get off
+    the ground. A client id alone is not enough — without the env client secret
+    the token exchange fails, and without the locator the discovery URL points
+    nowhere. Both look "enabled" and both fail at the first login, so a status
+    pill that reads only the enabled flag is telling an operator the opposite of
+    the truth (#274).
+    """
+    problems: list[str] = []
+    locators, secret_env = _PROVIDER_REQUIREMENTS.get(config.name, ((), ""))
+    if not config.client_secret:
+        problems.append(f"no client secret set ({secret_env})")
+    for field, label in locators:
+        if not str(getattr(row, field, "") or "").strip():
+            problems.append(f"no {label} set")
+    return problems
+
+
+def unusable_providers(session: Session) -> dict[str, list[str]]:
+    """``{provider: problems}`` for every enabled-but-unusable provider."""
+    row = get(session)
+    found = {}
+    for config in enabled_providers(session):
+        problems = validate_provider(row, config)
+        if problems:
+            found[config.name] = problems
+    return found
 
 
 def is_enabled(session: Session) -> bool:

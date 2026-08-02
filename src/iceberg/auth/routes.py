@@ -21,7 +21,7 @@ from sqlmodel import Session
 from ..config import get_settings
 from ..db import get_session
 from ..models import AuditAction, AuditCategory, AuditOutcome, Role
-from ..services import audit
+from ..services import audit, proxy as proxy_service, proxy_settings
 from ..services import oidc_settings as oidc_settings_service
 from ..services.users import OIDCIdentityError, upsert_user
 from ..templating import templates
@@ -42,15 +42,17 @@ _PROVIDER_LABELS = {
 }
 
 # Authlib OAuth registry, built lazily from the enabled providers. The cache is
-# **versioned on ``OIDCSettings.updated_at``** so every uvicorn worker rebuilds
-# when the admin config changes — not just the worker that handled the POST (a
-# process-global reset only clears one worker; the DB timestamp is shared).
+# **versioned on the OIDC + proxy rows' ``updated_at``** so every uvicorn worker
+# rebuilds when the admin config changes — not just the worker that handled the
+# POST (a process-global reset only clears one worker; the DB timestamps are
+# shared).
 _oauth: OAuth | None = None
-_oauth_version: datetime | None = None
+_oauth_version: tuple[datetime, datetime] | None = None
 
 
 def _build_oauth(session: Session) -> OAuth:
     oauth = OAuth()
+    proxy_row = proxy_settings.get(session)
     for provider in oidc_settings_service.enabled_providers(session):
         oauth.register(
             name=provider.name,
@@ -60,14 +62,36 @@ def _build_oauth(session: Session) -> OAuth:
             client_kwargs={
                 "scope": provider.scopes,
                 "code_challenge_method": "S256",
+                # Discovery, JWKS and the token exchange are ordinary outbound
+                # HTTP and must honour the global proxy like RSS/SIEM/MISP/AI/
+                # webhook do (#277) — without this, SSO simply times out in the
+                # egress-restricted deployment the proxy feature exists for.
+                # Authlib funnels all three through ``client_kwargs`` into
+                # ``httpx.AsyncClient``, which takes ``proxy``/``trust_env``
+                # directly. All three talk to the IdP's own host, so the
+                # discovery URL is the right target for the NO_PROXY decision.
+                **proxy_service.resolve(proxy_row, provider.metadata_url),
             },
         )
     return oauth
 
 
+def _config_version(session: Session) -> tuple[datetime, datetime]:
+    """The cache key for the built registry — every input that shapes a client.
+
+    The proxy row is in here because the clients bake the resolved proxy in at
+    registration: without it, changing the proxy at ``/admin/proxy`` would not
+    reach OIDC until someone happened to edit the SSO config.
+    """
+    return (
+        oidc_settings_service.get(session).updated_at,
+        proxy_settings.get(session).updated_at,
+    )
+
+
 def _get_oauth(session: Session) -> OAuth:
     global _oauth, _oauth_version
-    version = oidc_settings_service.get(session).updated_at
+    version = _config_version(session)
     if _oauth is None or _oauth_version != version:
         _oauth = _build_oauth(session)
         _oauth_version = version

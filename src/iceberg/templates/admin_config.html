@@ -8,7 +8,7 @@
     <div class="eyebrow eyebrow-accent">Administration</div>
     <h1 class="page-title mt-2">Effective configuration</h1>
     <div class="title-rule"></div>
-    <p class="text-sm mt-3" style="color:var(--muted);max-width:70ch;">The values this process is using now, where each came from, and which optional features are available. Read-only. Secrets are shown only as a set / not-set status — never their value.</p>
+    <p class="text-sm mt-3" style="color:var(--muted);max-width:70ch;">The values this process is using now, where each came from, and which optional features are available. Read-only. Secrets are shown only as a set / not-set status — never their value. Credentials embedded in a URL are stripped too: inline <span class="mono">user:pass@</span> proxy userinfo, and the path of a bearer-equivalent webhook URL.</p>
   </div>
 </div>
 
@@ -41,7 +41,9 @@
     {% for tile in tiles %}
       <div class="field-wrap" style="margin:0;">
         <span class="field-label" style="margin-bottom:4px;">{{ tile.label }}</span>
-        <span class="tag tag--c {% if tile.ok %}{% else %}is-warn{% endif %}" style="align-self:flex-start;">
+        {# tone is tri-state: is-ok / is-warn / is-neutral. A subsystem switched
+           off is a choice, not a fault — only "enabled but unusable" is amber. #}
+        <span class="tag tag--c {{ '' if tile.tone == 'is-ok' else tile.tone }}" style="align-self:flex-start;">
           <span class="dot"></span>{{ tile.value }}
         </span>
       </div>
