@@ -83,6 +83,13 @@ tagged release will snapshot it under a dated heading.
 
 ### Fixed
 
+- **The body-size limit returns the documented 413 on streaming bodies** (#272). On the chunked /
+  no-`Content-Length` path the mid-stream abort was caught by FastAPI's broad `except Exception`
+  around body parsing and reported as `400 "There was an error parsing the body"` — misleading, since
+  the body was oversized rather than malformed. The overflow is now signalled out-of-band and the
+  app's own response rewritten to a 413. Covered by integration tests through the real `create_app()`
+  stack, which the previous bare-Starlette tests never exercised.
+
 - **Retention pruners delete in committed batches** (#280). The audit and feed-item pruners did a
   single unbatched `DELETE ... WHERE cutoff` in one transaction against the fastest-growing tables;
   a first run over a year-long window could match millions of rows, hold locks for the whole
