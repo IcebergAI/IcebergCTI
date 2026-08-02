@@ -26,10 +26,16 @@ permissions:
   contents: read
 
 # Two v* tags pushed close together must not race to publish `:latest` out of
-# order. Serialise per ref, and never cancel — a half-published release (image
-# pushed, signature/attestation missing) is worse than a queued one.
+# order. The group must be a CONSTANT: every tag is its own ref, so a
+# per-ref group (`release-${{ github.ref }}`) puts v0.2.0 and v0.2.1 in
+# different groups and serialises nothing — a no-op for exactly this race.
+# `cancel-in-progress: false` because a half-published release (image pushed,
+# signature/attestation missing) is worse than a queued one. Caveat: GitHub
+# keeps at most ONE pending run per group — with three or more tags in flight
+# the middle pending run is superseded (visible as a cancelled run; re-run it
+# from the Actions tab). The two-tag case this protects against is unaffected.
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
 jobs:
