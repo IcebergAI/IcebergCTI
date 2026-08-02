@@ -97,6 +97,20 @@ tagged release will snapshot it under a dated heading.
 
 ### Fixed
 
+- **Design-debt cleanup across config, AI and OIDC** (#282). The `/admin/config` validation panel
+  hand-duplicated `config._guard_production`, so a future guard would silently not appear there —
+  both now call one `production_guard_errors`. The AI console's embeddings toggle is labelled and
+  disabled (nothing reads it; related reports always use the local fallback), its provider list is
+  derived from the backend vocabulary rather than hand-maintained, its timeout is clamped
+  server-side, and its settings-change audit now records `base_url`/`model` old→new — the field that
+  can redirect the API key previously looked like a no-op save. `probe()` goes through a new
+  `AIBackend.check()` instead of reaching into the private `_complete`. The Entra-specific
+  `preferred_username` email fallback moved out of the generic OIDC base, where it was wrong for
+  Okta. The multi-provider migration's downgrade now refuses up front when duplicate emails exist
+  (the designed multi-provider state) rather than failing part-way through. A least-privilege role
+  fallback logs a warning again. The RSS hub tile says when the poller is off instead of showing a
+  green "N ACTIVE" while nothing is fetched. `/admin/oidc` gained role-gate tests — it had none.
+
 - **The release tag guard rejects unsupported PEP 440 forms** (#253). Dev/post releases, epochs,
   local versions and zero-padded pre-releases passed through the PEP 440 → SemVer normaliser
   untouched; a genuine mismatch still failed closed, but a hand-crafted tag matching the

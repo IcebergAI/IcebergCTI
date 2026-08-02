@@ -78,13 +78,35 @@ def test_fully_configured_integration_reads_enabled(engine, monkeypatch):
         assert _tile(session, "MISP push")["status"] == "ENABLED"
 
 
-def test_rss_tile_counts_only_enabled_feeds(engine):
+def test_rss_tile_counts_only_enabled_feeds(engine, monkeypatch):
+    monkeypatch.setattr(get_settings(), "rss_poll_enabled", True)
     with Session(engine) as session:
         session.add(Feed(url="https://a.example/rss", title="A", enabled=True))
         session.add(Feed(url="https://b.example/rss", title="B", enabled=True))
         session.add(Feed(url="https://c.example/rss", title="C", enabled=False))
         session.commit()
         assert _tile(session, "RSS feeds")["status"] == "2 ACTIVE"
+
+
+def test_rss_tile_says_so_when_the_poller_is_off(engine, monkeypatch):
+    """`rss_poll_enabled` defaults false, so enabled feeds are fetched only on a
+    manual POST. A green "N ACTIVE" implied automatic collection was running
+    when nothing was being fetched at all (#282)."""
+    monkeypatch.setattr(get_settings(), "rss_poll_enabled", False)
+    with Session(engine) as session:
+        session.add(Feed(url="https://a.example/rss", title="A", enabled=True))
+        session.commit()
+        tile = _tile(session, "RSS feeds")
+        assert tile["status"] == "1 · POLLER OFF"
+        assert tile["tone"] == "is-warn"
+        assert "manual fetch" in tile["meta"]
+
+
+def test_rss_tile_is_neutral_with_no_feeds(engine, monkeypatch):
+    monkeypatch.setattr(get_settings(), "rss_poll_enabled", False)
+    with Session(engine) as session:
+        tile = _tile(session, "RSS feeds")
+        assert (tile["status"], tile["tone"]) == ("NONE", "is-neutral")
 
 
 def test_audit_tile_flags_a_local_only_trail(engine):

@@ -81,7 +81,31 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Downgrade schema."""
+    """Downgrade schema.
+
+    Refuses to run when the data this migration enabled actually exists.
+    Multi-provider deliberately makes email NON-unique — the same person under
+    two IdPs is the designed case — so recreating ``ix_user_email`` as UNIQUE
+    fails on any such deployment, and on SQLite the partial batch failure would
+    leave the schema mid-flight. Fail early with an actionable message instead
+    of part-way through (#282).
+    """
+    bind = op.get_bind()
+    duplicate_emails = bind.execute(
+        sa.text(
+            "SELECT COUNT(*) FROM ("
+            "  SELECT email FROM \"user\" GROUP BY email HAVING COUNT(*) > 1"
+            ") AS dupes"
+        )
+    ).scalar()
+    if duplicate_emails:
+        raise RuntimeError(
+            f"Cannot downgrade: {duplicate_emails} email address(es) are shared by "
+            "more than one user row, which multi-provider OIDC allows by design "
+            "(the same person under two IdPs). The pre-multi-provider schema "
+            "requires email to be UNIQUE. Resolve the duplicates before "
+            "downgrading."
+        )
     op.drop_table("oidcsettings")
     with op.batch_alter_table("user") as batch:
         batch.drop_index("ix_user_email")

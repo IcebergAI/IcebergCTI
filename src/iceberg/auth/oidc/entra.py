@@ -22,6 +22,17 @@ class EntraAdapter(StandardOIDCAdapter):
             return []
         return super()._groups(config, claims)
 
+    def _email(self, claims: dict) -> str:
+        # Entra-specific: some tenants emit the address as `preferred_username`
+        # rather than `email`. Kept HERE rather than in the generic base, where
+        # it was wrong for Okta (whose preferred_username is often a bare login
+        # name, which would land in User.email and flow into dissemination and
+        # the JWT) — #282.
+        return (
+            super()._email(claims)
+            or str(claims.get("preferred_username") or "").strip()
+        )
+
     def identity(self, config: OIDCProviderConfig, claims: dict) -> OIDCIdentity:
         # The Entra profile-claim names are operator-configurable (some tenants
         # emit them under custom names).

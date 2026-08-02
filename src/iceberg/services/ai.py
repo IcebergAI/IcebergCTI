@@ -195,6 +195,29 @@ class AIBackend(ABC):
 
     name: str = ""
 
+    def check(
+        self, *, settings: Settings, proxy_settings: ProxySettings | None = None
+    ) -> str:
+        """Best-effort connectivity probe: ``"ok"`` or a short failure message.
+
+        Lives on the backend, beside ``run``, so the ``BackendUnavailable`` →
+        message mapping exists in exactly one place. ``probe()`` used to reach
+        into the private ``_complete`` and re-implement that mapping itself,
+        duplicating logic this class owns (#282).
+        """
+        try:
+            self._complete(
+                _advisory_prompt("connectivity_test", {"ping": "pong"}),
+                settings=settings,
+                proxy_settings=proxy_settings,
+            )
+        except BackendUnavailable as exc:
+            return exc.message
+        except Exception:
+            logger.warning("AI connectivity probe failed", exc_info=True)
+            return "provider error"
+        return "ok"
+
     def run(
         self,
         task: str,
@@ -392,18 +415,7 @@ def probe(settings: Settings, proxy_settings: ProxySettings | None = None) -> st
     backend = _BACKENDS.get(settings.ai_backend)
     if backend is None:
         return f"unknown backend: {settings.ai_backend}"
-    try:
-        backend._complete(
-            _advisory_prompt("connectivity_test", {"ping": "pong"}),
-            settings=settings,
-            proxy_settings=proxy_settings,
-        )
-    except BackendUnavailable as exc:
-        return exc.message
-    except Exception:
-        logger.warning("AI connectivity probe failed", exc_info=True)
-        return "provider error"
-    return "ok"
+    return backend.check(settings=settings, proxy_settings=proxy_settings)
 
 
 def local_embedding(text: str, dimensions: int = 32) -> list[float]:

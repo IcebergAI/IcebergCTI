@@ -36,6 +36,11 @@ def admin_oidc_view(request: Request, session: SessionDep, user: CurrentUser):
             "enabled_providers": [
                 p.name for p in oidc_settings.enabled_providers(session)
             ],
+            # A provider half-enabled (client id but no locator or no env
+            # secret) used to surface only as a 500 at the first real login.
+            # Show it here, at config time, the way /admin/ai shows its own
+            # validation errors (#282).
+            "provider_problems": oidc_settings.unusable_providers(session),
         },
     )
 

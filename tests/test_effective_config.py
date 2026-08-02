@@ -431,3 +431,41 @@ def test_scrub_passes_through_non_url_values_with_an_at_sign():
     assert effective_config._scrub_userinfo("dev@example.com") == "dev@example.com"
     # A bad port with no scheme separator is not URL-ish either.
     assert effective_config._scrub_userinfo("user@host:notaport") == "user@host:notaport"
+
+
+def test_validation_panel_shares_one_source_with_the_boot_guard(monkeypatch, engine):
+    """`_validation` used to hand-copy `config._guard_production`'s conditions and
+    message text. A fourth guard would then silently not appear on /admin/config,
+    and the hub's "Effective config" pill would report "0 issues" for a config
+    that refuses to boot (#282). Both now call `production_guard_errors`."""
+    from iceberg.config import production_guard_errors
+
+    s = get_settings()
+    monkeypatch.setattr(s, "environment", "prod")
+    monkeypatch.setattr(s, "secret_key", "short")
+    monkeypatch.setattr(s, "database_url", "sqlite:///./x.db")
+    with Session(engine) as session:
+        panel = effective_config.snapshot(session)["validation"]
+
+    # Byte-identical to the guard's own output — not merely "both non-empty".
+    assert panel["errors"] == production_guard_errors(s)
+    assert panel["ok"] is False
+    assert len(panel["errors"]) == 2
+
+
+def test_the_boot_guard_actually_refuses_those_settings():
+    """The other half of the contract: what the panel lists is what fails to boot."""
+    import pytest
+
+    from iceberg.config import Settings
+
+    with pytest.raises(ValueError) as exc:
+        Settings(environment="prod", secret_key="short", database_url="sqlite:///./x.db")
+    assert "ICEBERG_SECRET_KEY" in str(exc.value)
+    assert "PostgreSQL" in str(exc.value)
+
+
+def test_guard_errors_are_empty_outside_production():
+    from iceberg.config import Settings, production_guard_errors
+
+    assert production_guard_errors(Settings(environment="dev", secret_key="short")) == []

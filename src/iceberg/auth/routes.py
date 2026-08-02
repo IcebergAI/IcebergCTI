@@ -9,7 +9,6 @@ legacy ``ICEBERG_OIDC_REDIRECT_URI`` so an existing Entra app registration keeps
 working). Identity extraction is delegated to the per-provider adapter.
 """
 
-import logging
 from datetime import datetime
 from typing import Annotated
 
@@ -31,7 +30,6 @@ from .request_actor import resolve_request_actor
 from .tokens import create_access_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-logger = logging.getLogger("iceberg.auth")
 
 # Human-readable button labels for the login page.
 _PROVIDER_LABELS = {
