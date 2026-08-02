@@ -106,7 +106,11 @@
             <div class="tile-meta">{{ nb.topic or "No topic set" }}</div>
           </a>
         {% endfor %}
-        <a href="#new-notebook" class="tile tile--new">
+        {# The href alone only scrolls to the <details>, which stays CLOSED, so
+           the tile appeared to do nothing. Open it on the way (#282); the plain
+           href remains the no-JS fallback. #}
+        <a href="#new-notebook" class="tile tile--new"
+           x-data="opensDetails('new-notebook')" @click="openDetails()">
           <span class="eyebrow">+ Start a notebook</span>
         </a>
       </div>

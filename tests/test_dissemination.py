@@ -296,3 +296,48 @@ def test_smtp_backend_uses_configured_timeout(monkeypatch):
     email_service.send_email("to@example.com", "Subj", "Body")
 
     assert captured["timeout"] == 3.5
+
+
+# --------------------------------------------------------------------------- #
+# Delivery-reason honesty (#282)
+# --------------------------------------------------------------------------- #
+def test_tag_reason_is_as_honest_as_the_level_reason():
+    """Delivery is never retracted, so a reader whose preferences changed after
+    delivery still sees the item. The level branch already said "outside your
+    current preference" in that case; the tag branch still showed a positive
+    "Matches your … interest" for a report whose tags the reader had since
+    unsubscribed from (#282).
+
+    ``_match`` is a pure function of the two objects, so this needs no database.
+    """
+    from iceberg.models import IntelLevel, Report, Tag, TagKind, User
+    from iceberg.services import feed as feed_service
+
+    followed = Tag(id=1, label="Volt Typhoon", kind=TagKind.ACTOR, slug="volt-typhoon")
+    other = Tag(id=2, label="Sandworm", kind=TagKind.ACTOR, slug="sandworm")
+    user = User(id=1, email="s@example.test", display_name="S")
+    user.tag_subscriptions = [followed]
+    report = Report(title="R", body_md="b", intel_level=IntelLevel.OPERATIONAL)
+
+    # Tagged, but not with anything they follow any more.
+    report.tags = [other]
+    assert feed_service._match(user, report)["kind"] == "tag_changed"
+    assert "Outside your current" in feed_service._match(user, report)["label"]
+
+    # And the positive statement is still made when it is actually true.
+    report.tags = [followed]
+    match = feed_service._match(user, report)
+    assert match["kind"] == "tag"
+    assert "Volt Typhoon" in match["label"]
+
+
+def test_no_tag_subscriptions_falls_through_to_the_level_reason():
+    """A reader who never subscribed to tags must not get a tag-shaped chip."""
+    from iceberg.models import IntelLevel, Report, Tag, TagKind, User
+    from iceberg.services import feed as feed_service
+
+    user = User(id=1, email="s@example.test", display_name="S")
+    user.preferred_intel_level = IntelLevel.OPERATIONAL
+    report = Report(title="R", body_md="b", intel_level=IntelLevel.OPERATIONAL)
+    report.tags = [Tag(id=9, label="X", kind=TagKind.TOPIC, slug="x")]
+    assert feed_service._match(user, report)["kind"] == "level"

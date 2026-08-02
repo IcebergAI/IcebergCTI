@@ -10,6 +10,22 @@
 # Both are one bounded pass per run (made for a CronJob), reuse the same image,
 # ConfigMap and Secret as the app, and share migrate-job.yaml's hardened pod
 # security context. Adjust the schedules to taste.
+#
+# Two scheduling hazards these manifests are shaped to avoid (#279). With
+# `concurrencyPolicy: Forbid`, a single job that never finishes suppresses every
+# later run — retention then stops silently, which is exactly the unbounded
+# growth it exists to prevent. So:
+#
+#   * `activeDeadlineSeconds` caps a run, letting a wedged job fail and the next
+#     one start, and `backoffLimit` bounds retries within a run.
+#   * `resources.requests` are set on both: a namespace with a ResourceQuota
+#     rejects pods that omit requests, which is another silent-stop path.
+#   * The audit prune no longer mounts `iceberg-data`. That PVC is ReadWriteOnce
+#     and permanently attached to the running app pod, so on a multi-node
+#     cluster a cron pod scheduled elsewhere hangs in ContainerCreating on volume
+#     attach. The audit/feed-item prune is DB-only, so it simply doesn't need it.
+#     `prune-renders` genuinely does (it deletes PDF files), so it is pinned to
+#     the app's node instead — see its affinity block.
 ---
 apiVersion: batch/v1
 kind: CronJob
@@ -23,6 +39,9 @@ spec:
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
+      # A wedged run must not suppress the schedule forever (Forbid, above).
+      activeDeadlineSeconds: 3600
+      backoffLimit: 2
       template:
         spec:
           restartPolicy: OnFailure
@@ -47,17 +66,19 @@ spec:
                 readOnlyRootFilesystem: true
                 capabilities:
                   drop: ["ALL"]
+              resources:
+                requests:
+                  cpu: "100m"
+                  memory: "256Mi"
+                limits:
+                  cpu: "1"
+                  memory: "512Mi"
               volumeMounts:
-                # /data is needed only for the SQLite default; harmless for
-                # Postgres. /tmp is scratch for a read-only root.
-                - name: data
-                  mountPath: /data
+                # DB-only work — no /data mount, so this job never contends for
+                # the app's RWO PVC. /tmp is scratch for a read-only root.
                 - name: tmp
                   mountPath: /tmp
           volumes:
-            - name: data
-              persistentVolumeClaim:
-                claimName: iceberg-data
             - name: tmp
               emptyDir: {}
 ---
@@ -73,9 +94,24 @@ spec:
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
+      activeDeadlineSeconds: 3600
+      backoffLimit: 2
       template:
         spec:
           restartPolicy: OnFailure
+          # This job deletes rendered PDFs, so it must mount the same
+          # `iceberg-data` PVC as the app. That claim is ReadWriteOnce (pvc.yaml)
+          # and already attached to the running app pod, so the cron pod has to
+          # land on the SAME node or it will hang in ContainerCreating on attach.
+          # Co-locate it with the app pod. If you move to a ReadWriteMany storage
+          # class (or run single-node), this block is unnecessary — drop it.
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app: iceberg
+                  topologyKey: kubernetes.io/hostname
           securityContext:
             runAsNonRoot: true
             runAsUser: 10001
@@ -96,6 +132,13 @@ spec:
                 readOnlyRootFilesystem: true
                 capabilities:
                   drop: ["ALL"]
+              resources:
+                requests:
+                  cpu: "100m"
+                  memory: "256Mi"
+                limits:
+                  cpu: "1"
+                  memory: "512Mi"
               volumeMounts:
                 - name: data
                   mountPath: /data

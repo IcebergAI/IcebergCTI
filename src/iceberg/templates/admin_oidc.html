@@ -12,6 +12,18 @@
   </div>
 </div>
 
+{% if provider_problems %}
+  <div class="card card-pad-lg mb-5" style="border-color:var(--c-warn);">
+    <h2 class="section-title mb-2">Enabled but not usable</h2>
+    <p class="text-sm mb-3" style="color:var(--muted);">These providers are switched on but sign-in will fail — the authorization-code flow can't complete until each is resolved.</p>
+    <ul class="text-sm" style="color:var(--c-warn);margin-left:18px;list-style:disc;">
+      {% for name, problems in provider_problems.items() %}
+        <li><strong>{{ name }}</strong> — {{ problems | join('; ') }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endif %}
+
 <form method="post" action="/admin/oidc">
   <section class="card card-pad-lg mb-5">
     <h2 class="section-title mb-4">Global</h2>

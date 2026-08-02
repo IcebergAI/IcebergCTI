@@ -62,14 +62,20 @@
       </select>
     </label>
 
-    <label class="chip-check">
-      <input type="checkbox" name="embeddings_enabled" {% if settings.embeddings_enabled %}checked{% endif %}>
-      <span>Enable embeddings <span class="opt">(related-report vectors)</span></span>
+    {# These two are persisted but NOT yet read by anything: related-report
+       vectors always use the local non-egress fallback (services/related.py).
+       Disabled rather than removed — the columns exist and the feature is
+       planned — because a working-looking toggle that does nothing is worse
+       than none on a governance console (#282). #}
+    <label class="chip-check" title="Not yet implemented">
+      <input type="checkbox" name="embeddings_enabled" disabled
+             {% if settings.embeddings_enabled %}checked{% endif %}>
+      <span>Enable embeddings <span class="opt">(related-report vectors — not yet implemented)</span></span>
     </label>
 
     <label class="field-wrap">
-      <span class="field-label">Embedding model <span class="opt">optional; blank uses the local non-egress fallback</span></span>
-      <input name="embedding_model" class="field mono" value="{{ settings.embedding_model }}" placeholder="embedding model identifier">
+      <span class="field-label">Embedding model <span class="opt">not yet implemented; related reports always use the local non-egress fallback</span></span>
+      <input name="embedding_model" class="field mono" disabled value="{{ settings.embedding_model }}" placeholder="embedding model identifier">
     </label>
 
     <p class="text-sm mt-2" style="color:var(--muted);">

@@ -57,6 +57,20 @@ tagged release will snapshot it under a dated heading.
 
 ### Security
 
+- **The `uv` binary in the release image is digest-pinned** (#281). It was the one mutable image
+  reference in a build whose base images are digest-pinned — and it resolves and installs *every*
+  dependency into the release image, so a re-pushed `0.11.23` tag on GHCR would have been a direct
+  supply-chain compromise. Dependabot's docker ecosystem tracks `FROM` lines, not `COPY --from`, so
+  it would not have flagged a bad pin either.
+- **The release workflow drops privilege on the dry-run path** (#254). It was a single job holding
+  `contents/packages/id-token/attestations: write`; a `workflow_dispatch` build-only run used none
+  of them but executed with all of them. Split into a `build` job (`contents: read`) and a `publish`
+  job gated on it and on an actual tag push — so validation now completes in a low-privilege context
+  *before* any credential-bearing job starts.
+- **The workflow security auditor is no longer pinned to a yanked release.** CI pinned
+  `zizmor@1.27.0`, which PyPI yanked under advisory GHSA-f42p-wjw5-97qh; moved to 1.29.0 (verified
+  to report the same clean result).
+
 - **OIDC role mapping no longer escalates on an uncurated group name** (#269). A claim value that
   spells a role is honoured only on an app-roles claim (`roles`) with no `role_map` configured — the
   legacy single-Entra flow. A directory `groups` claim (the Authentik/Okta default) now always
@@ -82,6 +96,65 @@ tagged release will snapshot it under a dated heading.
   in none of the classification sets — on the DB settings rows as well as `Settings`.
 
 ### Fixed
+
+- **Design-debt cleanup across the portal** (#282). The report editor's `<noscript>` save fallback
+  was non-functional *and* destructive — the hidden `version` had only an Alpine binding (posting
+  `""` → 422) and the textareas rendered empty, so a "successful" no-JS submit would have blanked the
+  report; all now carry real server-rendered values. The stakeholder feed eager-loads what it renders
+  instead of O(N) lazy loads, and no longer computes every delivery context twice per GET. The
+  dashboard's "needs you now" queue filters and orders in SQL rather than loading every draft in the
+  deployment to keep five. A changed *tag* filter now gets the same honest "outside your current
+  interests" treatment a changed *level* preference already had. Notebook phase tabs expose
+  `aria-current`, and the dashboard's "+ Start a notebook" tile opens the form it points at.
+- **Design-debt cleanup across config, AI and OIDC** (#282). The `/admin/config` validation panel
+  hand-duplicated `config._guard_production`, so a future guard would silently not appear there —
+  both now call one `production_guard_errors`. The AI console's embeddings toggle is labelled and
+  disabled (nothing reads it; related reports always use the local fallback), its provider list is
+  derived from the backend vocabulary rather than hand-maintained, its timeout is clamped
+  server-side, and its settings-change audit now records `base_url`/`model` old→new — the field that
+  can redirect the API key previously looked like a no-op save. `probe()` goes through a new
+  `AIBackend.check()` instead of reaching into the private `_complete`. The Entra-specific
+  `preferred_username` email fallback moved out of the generic OIDC base, where it was wrong for
+  Okta. The multi-provider migration's downgrade now refuses up front when duplicate emails exist
+  (the designed multi-provider state) rather than failing part-way through. A least-privilege role
+  fallback logs a warning again. The RSS hub tile says when the poller is off instead of showing a
+  green "N ACTIVE" while nothing is fetched. `/admin/oidc` gained role-gate tests — it had none.
+
+- **The release tag guard rejects unsupported PEP 440 forms** (#253). Dev/post releases, epochs,
+  local versions and zero-padded pre-releases passed through the PEP 440 → SemVer normaliser
+  untouched; a genuine mismatch still failed closed, but a hand-crafted tag matching the
+  un-normalised string could have minted a malformed OCI tag. They now fail with an actionable error.
+- **The docker build + Trivy gate runs pre-merge on PRs that can break it** (#282). It was exempt
+  from PRs entirely, so a base-digest bump that broke the build or tripped Trivy surfaced only on the
+  post-merge `main` push — leaving `main` red at exactly the commit a `v*` tag would release. It now
+  also runs on PRs touching `Dockerfile`, `.dockerignore`, `uv.lock` or `pyproject.toml` (detected
+  with git, not a new third-party action), and stays non-required so it can't deadlock.
+- **The release workflow serialises per ref** (#282) — two `v*` tags pushed close together could
+  land `:latest` out of order. Added a concurrency group without `cancel-in-progress`, since a
+  half-published release is worse than a queued one.
+- **Tightened the documented cosign verification identity** (#282) — the example regexp accepted a
+  certificate from any workflow on any ref in the repo; it now pins `release.yml@refs/tags/v*`.
+
+- **The body-size limit returns the documented 413 on streaming bodies** (#272). On the chunked /
+  no-`Content-Length` path the mid-stream abort was caught by FastAPI's broad `except Exception`
+  around body parsing and reported as `400 "There was an error parsing the body"` — misleading, since
+  the body was oversized rather than malformed. The overflow is now signalled out-of-band and the
+  app's own response rewritten to a 413. Covered by integration tests through the real `create_app()`
+  stack, which the previous bare-Starlette tests never exercised.
+
+- **Retention pruners delete in committed batches** (#280). The audit and feed-item pruners did a
+  single unbatched `DELETE ... WHERE cutoff` in one transaction against the fastest-growing tables;
+  a first run over a year-long window could match millions of rows, hold locks for the whole
+  statement, and on failure roll back entirely — making no progress, so the next run faced the same
+  oversized delete and retention never advanced. They now share a portable key-paged batch loop
+  (`services/retention.delete_in_batches`) and return the rows actually deleted rather than a
+  pre-delete `SELECT count(*)`.
+- **Retention CronJobs can no longer wedge their own schedule** (#279). With `concurrencyPolicy:
+  Forbid`, one stuck job suppressed every later run — silently stopping the retention it exists to
+  provide. Both now carry `activeDeadlineSeconds`, a `backoffLimit` and resource requests;
+  `iceberg-prune-audit` drops the `iceberg-data` mount it never needed (that PVC is ReadWriteOnce and
+  attached to the app pod, so a cron pod on another node hung on volume attach), and
+  `iceberg-prune-renders`, which does need it, gains pod affinity onto the app.
 
 - **OIDC outbound HTTP honours the global proxy** (#277). Discovery, JWKS and the token exchange
   went direct, so SSO simply timed out in the egress-restricted deployment the proxy feature exists

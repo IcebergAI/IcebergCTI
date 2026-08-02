@@ -51,7 +51,13 @@
       <div class="nb-phase-group">
         <span class="eyebrow">{{ label }}</span>
         {% for section, section_label, count in sections %}
+          {# `is-active` alone conveyed the current section by colour only, so AT
+             users got no state at all. These are in-page section links, so
+             aria-current is the honest signal — tab/tablist would promise the
+             arrow-key contract the dock_tab macro implements and this doesn't
+             (#282). #}
           <a href="#{{ section }}" class="help-tab" :class="section === '{{ section }}' ? 'is-active' : ''"
+             :aria-current="section === '{{ section }}' ? 'true' : 'false'"
              @click="show('{{ phase }}', '{{ section }}')">{{ section_label }} <span class="nb-count">{{ count }}</span></a>
         {% endfor %}
       </div>

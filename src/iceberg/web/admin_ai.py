@@ -19,8 +19,12 @@ from ..services import ai_settings, audit, proxy_settings
 from ..templating import templates
 from .common import SessionDep, _redirect, _require_admin, router
 
-# Presentation order for the provider <select> (a superset of _AI_BACKENDS).
-_BACKEND_CHOICES = [
+# Presentation order for the provider <select>. DERIVED from _AI_BACKENDS rather
+# than hand-maintained beside it: a backend added to the vocabulary but forgotten
+# here used to be unreachable from the console, and a value outside the vocabulary
+# silently coerces to "none" with no feedback (#282). Anything not in the ordered
+# list still appears (appended, sorted) so it can never go missing.
+_BACKEND_ORDER = (
     "none",
     "openai",
     "openai-compatible",
@@ -28,8 +32,14 @@ _BACKEND_CHOICES = [
     "gemini",
     "claude",
     "bedrock",
-]
+)
+_BACKEND_CHOICES = [b for b in _BACKEND_ORDER if b in _AI_BACKENDS] + sorted(
+    _AI_BACKENDS - set(_BACKEND_ORDER)
+)
 _TLP_CHOICES = ["CLEAR", "GREEN", "AMBER", "AMBER_STRICT", "RED"]
+# Server-side bounds for the provider timeout (the form's min= is advisory only).
+_MIN_TIMEOUT = 1.0
+_MAX_TIMEOUT = 300.0
 
 
 @router.get("/admin/ai")
@@ -73,11 +83,30 @@ def admin_ai_save(
     # can't reach the DB row (resolve() overlays these onto Settings unvalidated).
     backend = backend if backend in _AI_BACKENDS else "none"
     max_tlp = max_tlp if max_tlp in _TLP_VALUES else "AMBER"
+    # The form's min="1" is client-side only, so 0/negative/1e9 all reached the
+    # row; resolve() would then hand a nonsense timeout to httpx (#282).
+    timeout = min(max(timeout, _MIN_TIMEOUT), _MAX_TIMEOUT)
+    base_url = base_url.strip()
+    model = model.strip()
+    # Capture what actually changed BEFORE the write. The base URL is the one
+    # field that can redirect the API key (see #270), so repointing it must not
+    # look like a no-op save in the audit trail; both are non-secret (#282).
+    before = ai_settings.get(session)
+    changed = {
+        field: {"from": old, "to": new}
+        for field, old, new in (
+            ("backend", before.backend, backend),
+            ("base_url", before.base_url, base_url),
+            ("model", before.model, model),
+            ("max_tlp", before.max_tlp, max_tlp),
+        )
+        if old != new
+    }
     ai_settings.update(
         session,
         backend=backend,
-        base_url=base_url.strip(),
-        model=model.strip(),
+        base_url=base_url,
+        model=model,
         aws_region=aws_region.strip(),
         timeout=timeout,
         max_tlp=max_tlp,
@@ -92,7 +121,7 @@ def admin_ai_save(
         severity=AuditSeverity.WARNING,
         actor=user,
         request=request,
-        detail={"backend": backend, "max_tlp": max_tlp},
+        detail={"backend": backend, "max_tlp": max_tlp, "changed": changed},
     )
     return _redirect("/admin/ai")
 

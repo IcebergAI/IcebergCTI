@@ -275,3 +275,77 @@ def test_a_valid_row_still_resolves_with_its_ceiling_and_timeout(engine, monkeyp
         "RED",
         45.0,
     )
+
+
+# --------------------------------------------------------------------------- #
+# Admin console design debt (#282)
+# --------------------------------------------------------------------------- #
+def test_backend_choices_are_derived_from_the_vocabulary():
+    """Three hand-maintained backend lists meant a provider could exist in the
+    vocabulary but be unreachable from the console dropdown."""
+    from iceberg.config import _AI_BACKENDS
+    from iceberg.web.admin_ai import _BACKEND_CHOICES
+
+    assert set(_BACKEND_CHOICES) == _AI_BACKENDS
+    assert _BACKEND_CHOICES[0] == "none"  # presentation order preserved
+
+
+def test_timeout_is_clamped_server_side(client, login, engine):
+    """`min="1"` is client-side only, so 0 / negative / 1e9 all reached the row
+    and would then be handed to httpx (#282)."""
+    from iceberg.web.admin_ai import _MAX_TIMEOUT, _MIN_TIMEOUT
+
+    login("ADMIN")
+    for sent, expected in ((0, _MIN_TIMEOUT), (-5, _MIN_TIMEOUT), (1e9, _MAX_TIMEOUT)):
+        resp = client.post(
+            "/admin/ai",
+            data={"backend": "none", "max_tlp": "AMBER", "timeout": str(sent)},
+            follow_redirects=False,
+        )
+        assert resp.status_code in (302, 303)
+        with Session(engine) as session:
+            assert ai_settings.get(session).timeout == expected
+
+
+def test_settings_audit_records_the_base_url_change(client, login, engine):
+    """The base URL is the one field that can redirect the API key, so
+    repointing it must not look like a no-op save in the trail (#282)."""
+    from iceberg.models import AuditAction, AuditEvent
+    from sqlmodel import select
+
+    login("ADMIN")
+    client.post(
+        "/admin/ai",
+        data={
+            "backend": "openai-compatible",
+            "base_url": "https://gateway.internal/v1",
+            "model": "m",
+            "max_tlp": "AMBER",
+            "timeout": "20",
+        },
+        follow_redirects=False,
+    )
+    with Session(engine) as session:
+        event = session.exec(
+            select(AuditEvent)
+            .where(AuditEvent.action == AuditAction.AI_SETTINGS_UPDATED)
+            .order_by(AuditEvent.id.desc())
+        ).first()
+    changed = event.detail["changed"]
+    assert changed["base_url"]["to"] == "https://gateway.internal/v1"
+    assert changed["model"]["to"] == "m"
+    assert changed["backend"]["to"] == "openai-compatible"
+
+
+def test_probe_goes_through_the_backend_check_method(monkeypatch):
+    """`probe()` reached into the private `_complete` and re-implemented the
+    BackendUnavailable mapping that AIBackend already owns (#282)."""
+    backend = ai_service._BACKENDS["openai"]
+    assert hasattr(backend, "check")
+
+    def _boom(*a, **k):
+        raise ai_service.BackendUnavailable("provider says no")
+
+    monkeypatch.setattr(type(backend), "_complete", _boom)
+    settings = Settings(ai_backend="openai", ai_model="m", ai_api_key="k")
+    assert ai_service.probe(settings) == "provider says no"

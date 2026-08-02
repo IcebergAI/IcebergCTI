@@ -425,34 +425,65 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _guard_production(self) -> "Settings":
-        """Fail fast rather than boot an unsafe production instance."""
-        if self.is_prod and (
-            self.secret_key == _INSECURE_DEFAULT_SECRET or len(self.secret_key) < 32
-        ):
-            # The default signing key is public, so it would allow JWT forgery.
-            raise ValueError(
-                "ICEBERG_SECRET_KEY must be a unique value of at least 32 "
-                "characters in production (the built-in default is public)."
-            )
-        if self.is_prod and self.is_sqlite:
-            # SQLite is the dev/test default only — it is single-writer, has no
-            # network/HA story, and the container path mounts a local file that
-            # doesn't survive horizontal scaling. Production runs on PostgreSQL.
-            raise ValueError(
-                "ICEBERG_DATABASE_URL must be a PostgreSQL URL in production "
-                "(postgresql+psycopg://…); SQLite is for local dev/test only."
-            )
-        forwarded_allow_ips = os.getenv(
-            "FORWARDED_ALLOW_IPS", self.forwarded_allow_ips
-        )
-        if self.is_prod and "*" in {
-            item.strip() for item in forwarded_allow_ips.split(",")
-        }:
-            raise ValueError(
-                "FORWARDED_ALLOW_IPS cannot contain '*' in production; configure "
-                "only the reverse-proxy addresses or CIDRs."
-            )
+        """Fail fast rather than boot an unsafe production instance.
+
+        The checks themselves live in :func:`production_guard_errors` so the
+        read-only ``/admin/config`` validation panel can list them **all**,
+        non-fatally, from the same source. They were previously duplicated by
+        hand, so a fourth guard would silently not appear on that page and the
+        admin hub would report "0 issues" for a config that refuses to boot
+        (#282).
+        """
+        errors = production_guard_errors(self)
+        if errors:
+            raise ValueError(" ".join(errors))
         return self
+
+
+def production_guard_errors(settings: "Settings") -> list[str]:
+    """Every production boot-guard violation, as human-readable messages.
+
+    The single source for both consumers: ``Settings._guard_production`` raises
+    on any of these (fail fast rather than boot an unsafe instance), and
+    ``services/effective_config._validation`` lists them non-fatally on
+    ``/admin/config`` so an operator can see every problem at once. Keeping one
+    implementation means a new guard cannot appear in one place and silently not
+    the other (#282) — add a check here and both surfaces gain it.
+
+    Empty outside production: every guard here is prod-only by design.
+    """
+    if not settings.is_prod:
+        return []
+    errors: list[str] = []
+    if (
+        settings.secret_key == _INSECURE_DEFAULT_SECRET
+        or len(settings.secret_key) < 32
+    ):
+        # The default signing key is public, so it would allow JWT forgery.
+        errors.append(
+            "ICEBERG_SECRET_KEY must be a unique value of at least 32 "
+            "characters in production (the built-in default is public)."
+        )
+    if settings.is_sqlite:
+        # SQLite is the dev/test default only — it is single-writer, has no
+        # network/HA story, and the container path mounts a local file that
+        # doesn't survive horizontal scaling. Production runs on PostgreSQL.
+        errors.append(
+            "ICEBERG_DATABASE_URL must be a PostgreSQL URL in production "
+            "(postgresql+psycopg://…); SQLite is for local dev/test only."
+        )
+    # The guard and uvicorn both read the UNPREFIXED env var.
+    forwarded_allow_ips = os.getenv(
+        "FORWARDED_ALLOW_IPS", settings.forwarded_allow_ips
+    )
+    if "*" in {item.strip() for item in forwarded_allow_ips.split(",")}:
+        # Client IPs key rate limits and audit data, so wildcard proxy trust
+        # lets any client forge them.
+        errors.append(
+            "FORWARDED_ALLOW_IPS cannot contain '*' in production; configure "
+            "only the reverse-proxy addresses or CIDRs."
+        )
+    return errors
 
 
 @lru_cache

@@ -728,6 +728,17 @@ document.addEventListener('alpine:init', () => {
   Alpine.data('sendToNotebook', () => ({ notebookId: '' }));
 
   /* ---- Confirm-before-submit guard (delete forms) ------------------------ */
+  /* ---- Open a <details> from a link elsewhere on the page ---------------- */
+  /* The dashboard's "+ Start a notebook" tile links to #new-notebook, but an
+     href alone only scrolls to the <details> — it stays closed, so the tile
+     looked broken (#282). The plain href remains the no-JS fallback. */
+  Alpine.data('opensDetails', (id) => ({
+    openDetails() {
+      const el = document.getElementById(id);
+      if (el) el.open = true;
+    },
+  }));
+
   Alpine.data('confirmSubmit', (message) => ({
     message,
     check(e) { if (!window.confirm(this.message)) e.preventDefault(); },

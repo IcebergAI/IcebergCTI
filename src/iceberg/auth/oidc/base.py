@@ -12,9 +12,12 @@ through the operator's ``role_map``, defaulting to least-privilege STAKEHOLDER).
 Provider modules subclass it and override ``metadata_url`` (+ any quirk).
 """
 
+import logging
 from dataclasses import dataclass, field, replace
 
 from ...models import Role
+
+logger = logging.getLogger("iceberg.auth.oidc")
 
 # Least-privilege default when no recognised role/group claim is present.
 _DEFAULT_ROLE = Role.STAKEHOLDER
@@ -119,10 +122,33 @@ class StandardOIDCAdapter:
                     return Role(group.upper())
                 except ValueError:
                     continue
+        if groups:
+            # The claim carried values but none mapped. Falling back to
+            # least-privilege is correct, but doing it silently leaves an
+            # operator with a mis-typed role_map no way to see why everyone
+            # lands on STAKEHOLDER (#282). Counts and the claim name only —
+            # group names are directory data and don't belong in the log.
+            logger.warning(
+                "OIDC role mapping fell through for provider %r: %d value(s) in "
+                "the %r claim matched no role_map entry; defaulting to "
+                "least-privilege %s.",
+                config.name,
+                len(groups),
+                config.role_claim,
+                _DEFAULT_ROLE.value,
+            )
         return _DEFAULT_ROLE
 
     def _email(self, claims: dict) -> str:
-        return (claims.get("email") or claims.get("preferred_username") or "").strip()
+        """The spec-compliant ``email`` claim, and nothing else.
+
+        Deliberately no ``preferred_username`` fallback here: that is an
+        Entra-ism, and on Okta the claim is commonly a bare login name. A
+        provider omitting ``email`` would then provision ``User.email = "jdoe"``,
+        which flows straight into dissemination and the JWT. The fallback lives
+        in ``EntraAdapter``, where it is actually correct (#282).
+        """
+        return (claims.get("email") or "").strip()
 
     def _email_verified(self, claims: dict) -> bool:
         # An explicit ``false`` denies JIT provisioning; an absent claim is

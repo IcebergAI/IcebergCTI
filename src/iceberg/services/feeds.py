@@ -35,14 +35,14 @@ import httpcore
 import httpx
 import nh3
 from fastapi import HTTPException, status
-from sqlalchemy import delete, func, text
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
 
 from ..config import get_settings
 from ..models import TLP, Feed, FeedItem, Notebook, Source, utcnow
 from . import notebooks as notebook_service
-from . import proxy, proxy_settings
+from . import proxy, proxy_settings, retention
 
 logger = logging.getLogger("iceberg.feeds")
 _HTTPX_STREAM = httpx.stream
@@ -518,17 +518,17 @@ def prune_feed_items(session: Session) -> int:
     reader inventory can be reclaimed without losing analyst value. A retention
     window ``<= 0`` disables pruning (keep forever). Returns the rows deleted.
     Intended for the ``iceberg-prune-audit`` CLI / a scheduled Job.
+
+    Batched with a commit per batch, like the audit pruner — accumulation across
+    polls can be large, and a failed unbatched delete would make no progress at
+    all (see ``services/retention.py``, #280).
     """
     days = max(0, get_settings().feed_item_retention_days)
     if not days:
         return 0
     cutoff = utcnow() - timedelta(days=days)
     stale = (col(FeedItem.ingested_at).is_(None)) & (col(FeedItem.fetched_at) < cutoff)
-    count = session.scalar(select(func.count()).select_from(FeedItem).where(stale))
-    if count:
-        session.execute(delete(FeedItem).where(stale))
-        session.commit()
-    return count or 0
+    return retention.delete_in_batches(session, FeedItem, stale)
 
 
 class FeedPollError(RuntimeError):

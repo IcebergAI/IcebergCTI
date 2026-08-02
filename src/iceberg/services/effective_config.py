@@ -27,7 +27,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 from sqlmodel import col, select
 
-from ..config import _INSECURE_DEFAULT_SECRET, get_settings
+from ..config import get_settings, production_guard_errors
 from ..models import Feed, ProxyMode
 from . import (
     ai_settings,
@@ -332,23 +332,13 @@ def snapshot(session) -> dict:
 
 
 def _validation(s) -> dict:
-    """Re-run the prod boot-guards non-fatally so the page can list every issue."""
-    errors: list[str] = []
-    if s.is_prod and (
-        s.secret_key == _INSECURE_DEFAULT_SECRET or len(s.secret_key) < 32
-    ):
-        errors.append(
-            "ICEBERG_SECRET_KEY must be a unique value of at least 32 characters in "
-            "production (the built-in default is public)."
-        )
-    if s.is_prod and s.is_sqlite:
-        errors.append(
-            "ICEBERG_DATABASE_URL must be a PostgreSQL URL in production; SQLite is "
-            "for local dev/test only."
-        )
-    forwarded = os.getenv("FORWARDED_ALLOW_IPS", s.forwarded_allow_ips)
-    if s.is_prod and "*" in {item.strip() for item in forwarded.split(",")}:
-        errors.append("FORWARDED_ALLOW_IPS cannot contain '*' in production.")
+    """The prod boot-guards, re-run non-fatally so the page lists every issue.
+
+    Delegates to ``config.production_guard_errors`` — the same function the boot
+    guard raises from — so this panel can never drift from what actually refuses
+    to start (#282).
+    """
+    errors = production_guard_errors(s)
     return {"ok": not errors, "errors": errors}
 
 
@@ -490,9 +480,29 @@ def admin_hub_tiles(session) -> list[dict]:
             group="Outbound integrations",
             title="RSS feeds",
             href="/admin/feeds",
-            status=f"{active_feeds} ACTIVE" if active_feeds else "NONE",
-            tone="is-ok" if active_feeds else "is-neutral",
-            meta="Inbound collection · SSRF-guarded fetcher",
+            # `rss_poll_enabled` defaults false, so enabled feeds are fetched only
+            # on a manual POST. A green "N ACTIVE" gave no hint that automatic
+            # collection is off — the tile has to say so (#282).
+            status=(
+                f"{active_feeds} ACTIVE"
+                if active_feeds and s.rss_poll_enabled
+                else f"{active_feeds} · POLLER OFF"
+                if active_feeds
+                else "NONE"
+            ),
+            tone=(
+                "is-ok"
+                if active_feeds and s.rss_poll_enabled
+                else "is-warn"
+                if active_feeds
+                else "is-neutral"
+            ),
+            meta=(
+                "Inbound collection · SSRF-guarded fetcher"
+                if s.rss_poll_enabled
+                else "Feeds configured but ICEBERG_RSS_POLL_ENABLED is off — "
+                "articles arrive only on a manual fetch"
+            ),
         ),
         _integration_tile(
             title="Publication webhook",

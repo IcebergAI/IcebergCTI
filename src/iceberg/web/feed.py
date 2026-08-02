@@ -48,7 +48,7 @@ def feed_view(request: Request, session: SessionDep, user: CurrentUser):
     items = feed_service.visible_items(session, user)
     unread_ids = {item["event"].id for item in items if item["event"].read_at is None}
     # Viewing the feed marks currently visible items read.
-    feed_service.mark_visible_read(session, user)
+    feed_service.mark_visible_read(session, user, items)
     return templates.TemplateResponse(
         request,
         "feed.html",

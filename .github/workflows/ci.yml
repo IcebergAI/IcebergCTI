@@ -126,9 +126,44 @@ jobs:
       - name: Postgres smoke tests
         run: uv run pytest tests/test_postgres_smoke.py tests/test_dissemination.py tests/test_related.py -n0 -p no:cacheprovider
 
+  # Which files a PR touches, so the expensive docker job can run pre-merge on
+  # exactly the PRs that can break it (#282). Done with git rather than a
+  # paths-filter action — one less third-party action to trust, consistent with
+  # the `gh`-over-release-action choice in release.yml (zizmor
+  # superfluous-actions).
+  changes:
+    name: Detect build-affecting changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      docker: ${{ steps.filter.outputs.docker }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # A pull_request checkout is the merge commit, so HEAD^1 is the base
+          # branch tip and the diff against it is exactly the PR's own changes.
+          fetch-depth: 2
+          persist-credentials: false
+      - id: filter
+        run: |
+          if git diff --name-only HEAD^1 HEAD \
+              | grep -qE '^(Dockerfile|\.dockerignore|uv\.lock|pyproject\.toml)$'; then
+            echo "docker=true" >> "$GITHUB_OUTPUT"
+            echo "Image inputs changed — the docker job will run."
+          else
+            echo "docker=false" >> "$GITHUB_OUTPUT"
+            echo "No image inputs changed — skipping the docker job."
+          fi
+
   docker:
     name: Docker image build + boot smoke
-    if: github.event_name != 'pull_request'
+    # Runs on every push to main, and on a PR only when it touches the image's
+    # inputs. Previously PR-exempt entirely, so a Dependabot base-digest bump that
+    # broke the build or tripped Trivy was discovered on the post-merge main push
+    # — leaving main red at exactly the commit a v* tag would release (#282).
+    # Deliberately NOT a required check, so the added PR coverage can't deadlock.
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.docker == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -224,7 +259,10 @@ jobs:
       - name: zizmor
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: uvx zizmor@1.27.0 .github/workflows/
+        # 1.27.0 was YANKED from PyPI under GHSA-f42p-wjw5-97qh — a security
+        # advisory against the auditor itself. Pinning a yanked release keeps
+        # installing it, so this moves to the first clean version after it.
+        run: uvx zizmor@1.29.0 .github/workflows/
       # actionlint: syntax + shellcheck over every run: block. Installed from the
       # Go module proxy at a pinned version and verified by Go's checksum database
       # (sum.golang.org) rather than trusting a third-party action.
