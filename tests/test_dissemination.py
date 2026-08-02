@@ -324,6 +324,15 @@ def test_tag_reason_is_as_honest_as_the_level_reason():
     assert feed_service._match(user, report)["kind"] == "tag_changed"
     assert "Outside your current" in feed_service._match(user, report)["label"]
 
+    # An UNTAGGED report fails a subscribed reader's filter just the same
+    # (`subscription_ids & report_tag_ids` is empty either way in
+    # `matched_stakeholders`), so it must get the honest negative too — not
+    # fall through to a positive level chip (post-#282 review).
+    report.tags = []
+    user.preferred_intel_level = IntelLevel.OPERATIONAL
+    assert feed_service._match(user, report)["kind"] == "tag_changed"
+    user.preferred_intel_level = None
+
     # And the positive statement is still made when it is actually true.
     report.tags = [followed]
     match = feed_service._match(user, report)

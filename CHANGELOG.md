@@ -97,6 +97,13 @@ tagged release will snapshot it under a dated heading.
 
 ### Fixed
 
+- **Review follow-ups to the final backlog batch (#298).** The release workflow's new concurrency
+  group was keyed on `github.ref` — but every tag is its own ref, so two close `v*` tags landed in
+  different groups and the `:latest`-ordering race it claimed to prevent was not serialised at all;
+  the group is now a constant. And the feed's "outside your current tag interests" honesty fix
+  required the report to carry tags, though a subscribed reader's filter also excludes *untagged*
+  reports — that case no longer falls through to a positive preference chip.
+
 - **Design-debt cleanup across the portal** (#282). The report editor's `<noscript>` save fallback
   was non-functional *and* destructive — the hidden `version` had only an Alpine binding (posting
   `""` → 422) and the textareas rendered empty, so a "successful" no-JS submit would have blanked the

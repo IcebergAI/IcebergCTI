@@ -64,8 +64,14 @@ def _match(user: User, report: Report) -> FeedMatch:
     matched_tags = [t for t in report.tags if t.id in subscribed]
     if matched_tags:
         return {"kind": "tag", "label": f"Matches your {matched_tags[0].label} interest"}
-    # Subscribed to tags, but none of them are on this report any more.
-    if subscribed and report.tags:
+    # Subscribed to tags, but none of them are on this report. The subscription
+    # acts as a hard filter in ``matched_stakeholders`` — a subscribed reader
+    # with no tag overlap is skipped whether the report is tagged or UNTAGGED —
+    # so this fires on the bare ``subscribed`` state, not only when the report
+    # carries other tags. Requiring ``report.tags`` here would let an untagged
+    # report fall through to a positive "Matches your … preference" chip that
+    # the reader's current filters would never deliver (post-#282 review).
+    if subscribed:
         return {
             "kind": "tag_changed",
             "label": "Outside your current tag interests",
