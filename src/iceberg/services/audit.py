@@ -15,8 +15,7 @@ from datetime import datetime, timedelta, timezone
 from importlib.metadata import PackageNotFoundError, version
 from typing import TYPE_CHECKING
 
-from sqlalchemy import delete, func
-from sqlmodel import Session, col, select
+from sqlmodel import Session, col
 
 from ..config import get_settings
 from ..models import (
@@ -29,7 +28,7 @@ from ..models import (
     User,
     utcnow,
 )
-from . import audit_settings, proxy_settings, siem
+from . import audit_settings, proxy_settings, retention, siem
 
 # Static deployment identity for the OWASP "Where" attributes — resolved once.
 APP_NAME = "iceberg"
@@ -218,16 +217,16 @@ def prune_audit_events(session: Session) -> int:
     buffer. A retention window ``<= 0`` disables pruning (keep forever). Returns
     the number of rows deleted. Intended for the ``iceberg-prune-audit`` CLI /
     a scheduled Job, mirroring ``reports.prune_rendered_products``.
+
+    ``AuditEvent`` is the fastest-growing table in the deployment, so the delete
+    is **batched with a commit per batch** — an unbatched first run over a
+    year-long window can match millions of rows and, on failure, make no
+    progress at all (see ``services/retention.py``, #280).
     """
     days = max(0, get_settings().audit_retention_days)
     if not days:
         return 0
     cutoff = utcnow() - timedelta(days=days)
-    stale = col(AuditEvent.occurred_at) < cutoff
-    count = session.scalar(
-        select(func.count()).select_from(AuditEvent).where(stale)
+    return retention.delete_in_batches(
+        session, AuditEvent, col(AuditEvent.occurred_at) < cutoff
     )
-    if count:
-        session.execute(delete(AuditEvent).where(stale))
-        session.commit()
-    return count or 0

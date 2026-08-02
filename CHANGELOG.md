@@ -83,6 +83,20 @@ tagged release will snapshot it under a dated heading.
 
 ### Fixed
 
+- **Retention pruners delete in committed batches** (#280). The audit and feed-item pruners did a
+  single unbatched `DELETE ... WHERE cutoff` in one transaction against the fastest-growing tables;
+  a first run over a year-long window could match millions of rows, hold locks for the whole
+  statement, and on failure roll back entirely — making no progress, so the next run faced the same
+  oversized delete and retention never advanced. They now share a portable key-paged batch loop
+  (`services/retention.delete_in_batches`) and return the rows actually deleted rather than a
+  pre-delete `SELECT count(*)`.
+- **Retention CronJobs can no longer wedge their own schedule** (#279). With `concurrencyPolicy:
+  Forbid`, one stuck job suppressed every later run — silently stopping the retention it exists to
+  provide. Both now carry `activeDeadlineSeconds`, a `backoffLimit` and resource requests;
+  `iceberg-prune-audit` drops the `iceberg-data` mount it never needed (that PVC is ReadWriteOnce and
+  attached to the app pod, so a cron pod on another node hung on volume attach), and
+  `iceberg-prune-renders`, which does need it, gains pod affinity onto the app.
+
 - **OIDC outbound HTTP honours the global proxy** (#277). Discovery, JWKS and the token exchange
   went direct, so SSO simply timed out in the egress-restricted deployment the proxy feature exists
   for. The OAuth registry cache is versioned on the proxy row too, so a `/admin/proxy` change takes

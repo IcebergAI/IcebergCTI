@@ -269,3 +269,18 @@ placeholder for readability only — don't apply it directly):
   (`ICEBERG_RENDER_RETENTION_KEEP` / `ICEBERG_RENDER_RETENTION_DAYS`).
 
 Set any window to `0` to keep that store forever.
+
+Both deletes are **batched with a commit per batch**, so a first run on an
+instance that predates retention makes durable progress instead of attempting one
+enormous transaction that rolls back on failure.
+
+**Scheduling caveats (#279).** Both CronJobs use `concurrencyPolicy: Forbid`, so
+a run that never finishes would suppress every later run and stop retention
+silently. Each therefore carries an `activeDeadlineSeconds` cap, a `backoffLimit`,
+and `resources.requests` (a namespace with a `ResourceQuota` rejects pods that
+omit requests — another silent-stop path). `iceberg-prune-audit` is DB-only and
+deliberately mounts **no** `iceberg-data` volume; `iceberg-prune-renders` does
+need it, and because `iceberg-data` is `ReadWriteOnce` and already attached to
+the app pod, that job carries a **pod affinity onto `app: iceberg`** so it lands
+on the same node instead of hanging in `ContainerCreating`. On a ReadWriteMany
+storage class, or a single-node cluster, that affinity block can be removed.
