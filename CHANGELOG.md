@@ -90,6 +90,12 @@ tagged release will snapshot it under a dated heading.
   disseminate" within ~1.2 s of typing dropped the pending save and froze the pre-edit text into the
   immutable snapshot, unrecoverably. Transitions now flush the autosave first and refuse to move the
   report forward if that flush fails.
+- **Review follow-ups to the #268–#278 backlog batches.** The transition flush now repeats while a
+  save is in flight — a single `await saveNow()` returned the in-flight promise, whose form snapshot
+  predated keystrokes typed after it started, so the #278 publish race was narrowed but not closed.
+  `/admin/config` no longer 500s on a malformed URL-shaped value (bad port, unbalanced IPv6
+  bracket): an unparseable value that may carry a credential is hidden wholesale instead. And a save
+  queued behind a 409'd save no longer fires a redundant re-post after conflict recovery.
 - **Report editor: a stale-write conflict is reported and recoverable** (#271). With autosave as the
   only save path, an optimistic-lock 409 was indistinguishable from a network blip: the editor
   re-posted the same stale version forever, so a second writer's work was silently discarded. The

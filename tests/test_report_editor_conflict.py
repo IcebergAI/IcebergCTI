@@ -214,3 +214,36 @@ def test_a_reviewer_transition_does_not_attempt_an_author_only_save(client, logi
         follow_redirects=False,
     )
     assert blocked.status_code in (400, 403, 409)
+
+
+def test_transition_flush_repeats_while_a_save_is_in_flight():
+    """Post-merge review fix for #278: with a save already in flight, saveNow()
+    returns THAT promise — whose FormData snapshot predates any keystrokes typed
+    since it started — and merely queues a follow-up. A single await therefore
+    narrowed the publish race to one save RTT without closing it, and the queued
+    follow-up is a plain fetch the navigation aborts. The handler must repeat
+    the flush until nothing is dirty or in flight, bounded so a persistent
+    failure surfaces instead of spinning."""
+    script = EDITOR_JS.read_text()
+    handler = script[
+        script.index("async submitTransition(event)") : script.index("async refresh()")
+    ]
+
+    assert "(this.dirty || this.savePromise) && attempt < 5" in handler
+    # After the loop, a leftover queued save or re-armed timer must not fire a
+    # doomed fetch into the navigation.
+    assert handler.count("clearTimeout(this.saveTimer)") >= 2
+    assert "this.saveQueued = false" in handler
+    # Exiting the loop still dirty (cap hit / failure) refuses the transition.
+    assert "if (!flushed || this.dirty || this.savePromise)" in handler
+
+
+def test_conflict_recovery_drops_a_stale_queued_save():
+    """A save queued behind the one that 409'd would re-post the same stale
+    version the moment recovery re-enabled saving; the 409 branch clears it."""
+    script = EDITOR_JS.read_text()
+    save_now = script[script.index("async saveNow()") : script.index("async autosave()")]
+    conflict_branch = save_now[
+        save_now.index("res.status === 409") : save_now.index("if (!res.ok)")
+    ]
+    assert "this.saveQueued = false" in conflict_branch

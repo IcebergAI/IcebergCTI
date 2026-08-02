@@ -398,3 +398,36 @@ def test_acknowledged_plaintext_urls_still_render_in_full(engine, monkeypatch):
     with Session(engine) as session:
         rows = effective_config.snapshot(session)["rows"]
     assert _row(rows, "ICEBERG_MISP_URL")["value"] == "https://misp.test/events/add"
+
+
+def test_malformed_url_values_neither_crash_the_page_nor_leak(engine, monkeypatch):
+    """Post-merge review hardening of #273: ``urlsplit`` raises on an unbalanced
+    IPv6 bracket and ``.port`` raises on a bad port, so a typo'd URL made
+    ``snapshot()`` 500 — on exactly the malformed config the page exists to
+    display. An unparseable URL-ish value may carry a credential that cannot be
+    safely carved out, so it is hidden wholesale instead."""
+    from iceberg.services import proxy_settings, webhook_settings
+
+    monkeypatch.setattr(
+        get_settings(), "proxy_url", "http://alice:S3cretPW@proxy:notaport"
+    )
+    monkeypatch.setattr(get_settings(), "webhook_url", "https://[::1/services/x")
+    with Session(engine) as session:
+        proxy_settings.update(session, proxy_url="http://alice:S3cretPW@proxy:notaport")
+        webhook_settings.update(session, url="https://[::1/services/x")
+        snap = effective_config.snapshot(session)  # must not raise
+
+    blob = str(snap)
+    assert "S3cretPW" not in blob
+    assert "alice" not in blob
+    for name in ("ICEBERG_PROXY_URL", "Proxy.proxy_url"):
+        assert _row(snap["rows"], name)["value"] == "(unparseable URL — value hidden)"
+    for name in ("ICEBERG_WEBHOOK_URL", "Webhook.url"):
+        assert _row(snap["rows"], name)["value"] == "(set — unparseable URL)"
+
+
+def test_scrub_passes_through_non_url_values_with_an_at_sign():
+    """An email address is not a URL — the dev-login default must render."""
+    assert effective_config._scrub_userinfo("dev@example.com") == "dev@example.com"
+    # A bad port with no scheme separator is not URL-ish either.
+    assert effective_config._scrub_userinfo("user@host:notaport") == "user@host:notaport"

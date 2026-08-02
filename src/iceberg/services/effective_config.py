@@ -182,24 +182,40 @@ def _scrub_userinfo(text: str) -> str:
     """
     if "@" not in text:
         return text
-    parts = urlsplit(text)
-    if not parts.scheme or not parts.hostname or "@" not in parts.netloc:
+    try:
+        parts = urlsplit(text)
+        hostname = parts.hostname
+        port = f":{parts.port}" if parts.port else ""
+    except ValueError:
+        # Unparseable as a URL (bad port, unbalanced IPv6 bracket) — ``urlsplit``
+        # or ``.port`` raises, and this page must not 500 on exactly the
+        # malformed config it exists to display. The value has an ``@`` and a
+        # scheme separator, so it may carry a credential that cannot be safely
+        # carved out: hide it wholesale rather than guess.
+        return "(unparseable URL — value hidden)" if "://" in text else text
+    if not parts.scheme or not hostname or "@" not in parts.netloc:
         return text
-    port = f":{parts.port}" if parts.port else ""
     return urlunsplit(
-        (parts.scheme, f"***@{parts.hostname}{port}", parts.path, parts.query,
+        (parts.scheme, f"***@{hostname}{port}", parts.path, parts.query,
          parts.fragment)
     )
 
 
 def _origin_only(text: str) -> str:
     """``https://host/…`` — the origin, with any credential-bearing path hidden."""
-    parts = urlsplit(text)
-    if not parts.scheme or not parts.hostname:
+    try:
+        parts = urlsplit(text)
+        hostname = parts.hostname
+        port = f":{parts.port}" if parts.port else ""
+    except ValueError:
+        # Same hardening as ``_scrub_userinfo``: an origin-only field is
+        # credential-bearing by classification, so an unparseable value shows
+        # nothing of itself.
+        return "(set — unparseable URL)"
+    if not parts.scheme or not hostname:
         return "(set)" if text else "(empty)"
-    port = f":{parts.port}" if parts.port else ""
     tail = "/…" if parts.path.strip("/") or parts.query else ""
-    return f"{parts.scheme}://{parts.hostname}{port}{tail}"
+    return f"{parts.scheme}://{hostname}{port}{tail}"
 
 
 _URL_SUFFIXES = ("_url", "_uri", "_dsn", "_endpoint")
