@@ -1,6 +1,6 @@
 """Dashboard & notebook collection portal routes."""
 
-from sqlalchemy import case, func
+from sqlalchemy import and_, case, func, or_
 from sqlmodel import Session, col, select
 from datetime import timedelta
 from typing import Annotated
@@ -123,27 +123,39 @@ def _needs_you_now(session: Session, user: User) -> list[dict]:
     rather than only what the numbers are.
     """
     can_review = user.role in (Role.REVIEWER, Role.ADMIN)
-    statuses = [ReportStatus.DRAFT] + ([ReportStatus.IN_REVIEW] if can_review else [])
-    rows = session.exec(
-        select(Report)
-        .where(col(Report.status).in_(statuses))
-        .order_by(col(Report.updated_at).desc())
-    ).all()
-    queue: list[dict] = []
-    for report in rows:
-        status_ = ReportStatus(report.status)
-        if status_ is ReportStatus.DRAFT and report.author_id != user.id:
-            continue  # someone else's draft is not your work
-        queue.append(
-            {
-                "report": report,
-                "kind": "review" if status_ is ReportStatus.IN_REVIEW else "draft",
-            }
+    # The author filter and the ordering both belong in SQL. Selecting every
+    # DRAFT in the deployment and discarding other people's in Python cost a full
+    # scan to keep at most five rows (#282). The ordering has to go down with it:
+    # a LIMIT applied before a Python re-sort could drop a review item that
+    # belonged in the top five.
+    mine_or_reviewable = [
+        and_(
+            col(Report.status) == ReportStatus.DRAFT,
+            col(Report.author_id) == user.id,  # someone else's draft isn't your work
         )
+    ]
+    if can_review:
+        mine_or_reviewable.append(col(Report.status) == ReportStatus.IN_REVIEW)
     # Waiting on *you* (review) outranks work only you can resume (your drafts);
     # within each half the most recently touched leads.
-    queue.sort(key=lambda item: (item["kind"] != "review", -item["report"].updated_at.timestamp()))
-    return queue[:_NEEDS_YOU_LIMIT]
+    review_first = case((col(Report.status) == ReportStatus.IN_REVIEW, 0), else_=1)
+    rows = session.exec(
+        select(Report)
+        .where(or_(*mine_or_reviewable))
+        .order_by(review_first, col(Report.updated_at).desc())
+        .limit(_NEEDS_YOU_LIMIT)
+    ).all()
+    return [
+        {
+            "report": report,
+            "kind": (
+                "review"
+                if ReportStatus(report.status) is ReportStatus.IN_REVIEW
+                else "draft"
+            ),
+        }
+        for report in rows
+    ]
 
 
 @router.get("/")

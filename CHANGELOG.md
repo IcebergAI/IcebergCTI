@@ -97,6 +97,15 @@ tagged release will snapshot it under a dated heading.
 
 ### Fixed
 
+- **Design-debt cleanup across the portal** (#282). The report editor's `<noscript>` save fallback
+  was non-functional *and* destructive — the hidden `version` had only an Alpine binding (posting
+  `""` → 422) and the textareas rendered empty, so a "successful" no-JS submit would have blanked the
+  report; all now carry real server-rendered values. The stakeholder feed eager-loads what it renders
+  instead of O(N) lazy loads, and no longer computes every delivery context twice per GET. The
+  dashboard's "needs you now" queue filters and orders in SQL rather than loading every draft in the
+  deployment to keep five. A changed *tag* filter now gets the same honest "outside your current
+  interests" treatment a changed *level* preference already had. Notebook phase tabs expose
+  `aria-current`, and the dashboard's "+ Start a notebook" tile opens the form it points at.
 - **Design-debt cleanup across config, AI and OIDC** (#282). The `/admin/config` validation panel
   hand-duplicated `config._guard_production`, so a future guard would silently not appear there —
   both now call one `production_guard_errors`. The AI console's embeddings toggle is labelled and

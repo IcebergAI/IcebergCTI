@@ -644,3 +644,60 @@ def test_editor_has_one_save_model_and_a_publish_tab(client, login):
     assert 'class="flow"' in publish
     assert "Rendered products" in publish
     assert "Submit for review" in page.split('class="dock-foot"', 1)[1]
+
+
+def test_noscript_save_fallback_carries_real_values(client, login):
+    """The <noscript> submit was non-functional AND destructive (#282): the
+    hidden `version` had only an Alpine `:value` binding, so without JS it posted
+    "" → 422; and the textareas were bound with x-model but rendered EMPTY, so a
+    "successful" submit would have blanked the report. A presence-only test
+    pinned that broken fallback."""
+    login("ANALYST", email="noscript@example.com")
+    nb = client.post("/api/notebooks", json={"title": "Noscript nb"}).json()
+    rid = client.post(
+        "/api/reports",
+        json={
+            "notebook_id": nb["id"],
+            "title": "Fallback report",
+            "body_md": "Body that must survive a no-JS save.",
+        },
+    ).json()["id"]
+    client.post(
+        f"/reports/{rid}",
+        data={
+            "version": "1",
+            "title": "Fallback report",
+            "body_md": "Body that must survive a no-JS save.",
+            "key_judgements": "A judgement.",
+        },
+    )
+
+    page = client.get(f"/reports/{rid}/edit").text
+    # A real server-rendered version, not just the binding.
+    assert 'name="version" value="2"' in page
+    # Content is in the markup, so a no-JS submit round-trips it.
+    assert "Body that must survive a no-JS save." in page.split("<textarea", 1)[1]
+    assert "A judgement." in page
+
+
+def test_noscript_fallback_actually_round_trips(client, login, engine):
+    """End to end: post exactly what the no-JS form would carry."""
+    from iceberg.models import Report
+
+    login("ANALYST", email="noscript2@example.com")
+    nb = client.post("/api/notebooks", json={"title": "Noscript nb2"}).json()
+    rid = client.post(
+        "/api/reports",
+        json={"notebook_id": nb["id"], "title": "RT", "body_md": "Original body."},
+    ).json()["id"]
+
+    page = client.get(f"/reports/{rid}/edit").text
+    version = page.split('name="version" value="', 1)[1].split('"', 1)[0]
+    resp = client.post(
+        f"/reports/{rid}",
+        data={"version": version, "title": "RT", "body_md": "Original body."},
+        follow_redirects=False,
+    )
+    assert resp.status_code in (200, 302, 303)
+    with Session(engine) as session:
+        assert session.get(Report, rid).body_md == "Original body."

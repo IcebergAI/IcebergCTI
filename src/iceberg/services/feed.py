@@ -3,6 +3,7 @@
 from typing import TypedDict
 
 from fastapi import HTTPException
+from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
 from ..models import DisseminationEvent, Report, User, utcnow
@@ -45,12 +46,30 @@ class FeedItem(TypedDict):
 
 
 def _match(user: User, report: Report) -> FeedMatch:
-    """The strongest current match, in the order ``matched_stakeholders`` gates
-    on: tag subscription → audience group → level preference → no preference."""
+    """The strongest reason the feed can honestly give for this delivery.
+
+    Routing is a **conjunction** — a report reaches a stakeholder only when the
+    audience-group gate, the TLP ceiling and the level/tag preference all permit
+    it — so this is not a "first rule that fired" ordering. It reports the most
+    specific thing still true *now*, preferring tag → audience → level.
+
+    "Now" is the point. Delivery is never retracted, so a reader whose
+    preferences changed after delivery still sees the item; claiming it
+    "matches" would be a false present-tense statement. The level branch already
+    said so when the preference had moved on, but the tag branch did not — a
+    report whose tags the reader has since unsubscribed from still showed a
+    positive "Matches your … interest" chip (#282). Both are honest now.
+    """
     subscribed = {t.id for t in user.tag_subscriptions}
     matched_tags = [t for t in report.tags if t.id in subscribed]
     if matched_tags:
         return {"kind": "tag", "label": f"Matches your {matched_tags[0].label} interest"}
+    # Subscribed to tags, but none of them are on this report any more.
+    if subscribed and report.tags:
+        return {
+            "kind": "tag_changed",
+            "label": "Outside your current tag interests",
+        }
     user_groups = {g.id for g in user.audience_groups}
     matched_groups = [g for g in report.audience_groups if g.id in user_groups]
     if matched_groups:
@@ -85,11 +104,26 @@ def delivery_context(user: User, report: Report) -> FeedContext:
 
 
 def visible_items(session: Session, user: User) -> list[FeedItem]:
-    """Current feed items visible to ``user``, newest first."""
+    """Current feed items visible to ``user``, newest first.
+
+    Eager-loads exactly what ``delivery_context`` and the visibility gate touch.
+    Without this each event lazy-loaded its report's tags, audience groups and
+    requirements one query at a time — O(N) round-trips to render one page, the
+    same shape ``dissemination.matched_stakeholders`` already avoids (#282).
+    """
     events = session.exec(
         select(DisseminationEvent)
         .where(DisseminationEvent.stakeholder_id == user.id)
         .order_by(DisseminationEvent.created_at.desc())
+        .options(
+            selectinload(DisseminationEvent.report).selectinload(Report.tags),
+            selectinload(DisseminationEvent.report).selectinload(
+                Report.audience_groups
+            ),
+            selectinload(DisseminationEvent.report).selectinload(
+                Report.requirements
+            ),
+        )
     ).all()
     items: list[FeedItem] = []
     for event in events:
@@ -107,10 +141,15 @@ def visible_items(session: Session, user: User) -> list[FeedItem]:
     return items
 
 
-def mark_visible_read(session: Session, user: User) -> int:
-    """Mark only currently visible unread feed events as read."""
+def mark_visible_read(session: Session, user: User, items: list[FeedItem] | None = None) -> int:
+    """Mark only currently visible unread feed events as read.
+
+    Accepts an already-computed ``items`` list: the feed view builds one to
+    render, and re-deriving it here meant every delivery context was computed
+    twice per GET for a value this function throws away (#282).
+    """
     marked = 0
-    for item in visible_items(session, user):
+    for item in items if items is not None else visible_items(session, user):
         event = item["event"]
         if event.read_at is None:
             event.read_at = utcnow()

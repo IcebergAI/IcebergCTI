@@ -190,9 +190,16 @@
       <div class="editor-pane-scroll">
         {% if can_edit %}
           <form id="reportform" method="post" action="/reports/{{ report.id }}">
-            <input type="hidden" name="version" :value="version">
+            {# A real value, not just the Alpine binding: without JS the bound attribute
+               never renders and the form posted version="" → 422. Alpine overwrites
+               this on hydration (#282). #}
+            <input type="hidden" name="version" value="{{ report.version }}" :value="version">
+            {# Server-rendered content too: x-model replaces it on hydration with the
+               identical value from the JSON island, but without JS the textarea would
+               otherwise render EMPTY and a "successful" noscript submit would blank
+               the report (#282). #}
             <textarea name="body_md" class="editor-body-textarea" x-model="body" @input="schedule()"
-                      placeholder="Write the assessment in Markdown. Use the Insert menu to embed diamonds, figures and ACH matrices."></textarea>
+                      placeholder="Write the assessment in Markdown. Use the Insert menu to embed diamonds, figures and ACH matrices.">{{ report.body_md }}</textarea>
 
             <details class="yardstick mt-4" open>
               <summary>Analytic scaffolding · ICD 203
@@ -200,17 +207,17 @@
               <div class="mt-3">
                 <label class="field-label">Key judgements</label>
                 <p class="text-xs mb-1" style="color:var(--muted);">Markdown · the BLUF — leads the report and is the sole content of the Executive Brief / One-Pager.</p>
-                <textarea name="key_judgements" rows="5" x-model="kj" @input="schedule()" class="field field-mono"></textarea>
+                <textarea name="key_judgements" rows="5" x-model="kj" @input="schedule()" class="field field-mono">{{ report.key_judgements }}</textarea>
               </div>
               <div class="mt-3">
                 <label class="field-label">Key assumptions</label>
                 <p class="text-xs mb-1" style="color:var(--muted);">Markdown · the analytic assumptions the judgements rest on.</p>
-                <textarea name="key_assumptions" rows="4" x-model="ka" @input="schedule()" class="field field-mono"></textarea>
+                <textarea name="key_assumptions" rows="4" x-model="ka" @input="schedule()" class="field field-mono">{{ report.key_assumptions }}</textarea>
               </div>
               <div class="mt-3">
                 <label class="field-label">Intelligence gaps</label>
                 <p class="text-xs mb-1" style="color:var(--muted);">Markdown · what is not known, and collection still required.</p>
-                <textarea name="intelligence_gaps" rows="4" x-model="gaps" @input="schedule()" class="field field-mono"></textarea>
+                <textarea name="intelligence_gaps" rows="4" x-model="gaps" @input="schedule()" class="field field-mono">{{ report.intelligence_gaps }}</textarea>
               </div>
             </details>
 
