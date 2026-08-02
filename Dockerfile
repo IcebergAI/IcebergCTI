@@ -9,7 +9,14 @@ FROM python:3.14-slim@sha256:cea0e6040540fb2b965b6e7fb5ffa00871e632eef63719f0ea5
 # (the build verifies the tarball and fails closed on a mismatch).
 ARG TYPST_VERSION=0.15.0
 # Pinned to match CI (.github/workflows/ci.yml) so the image deps == tested graph.
-COPY --from=ghcr.io/astral-sh/uv:0.11.23 /uv /usr/local/bin/uv
+# Digest-pinned like the base images above: this binary resolves and installs
+# EVERY dependency in the release image, so a re-pushed or compromised `0.11.23`
+# tag would be a straight supply-chain compromise (OWASP CICD-SEC-3) — and
+# Dependabot's docker ecosystem tracks `FROM` lines, not `COPY --from`, so it
+# would not flag a bad pin either (#281). The tag is kept alongside the digest
+# for human readability; the digest is what Docker resolves.
+# Multi-arch index (linux/amd64 + linux/arm64), matching the base images.
+COPY --from=ghcr.io/astral-sh/uv:0.11.23@sha256:d0a0a753ab981624b49c97abc98821c1c09f4ca69d1ef5cee69c501be3d88479 /uv /usr/local/bin/uv
 
 ENV UV_PROJECT_ENVIRONMENT=/app/.venv \
     UV_PYTHON_DOWNLOADS=never \

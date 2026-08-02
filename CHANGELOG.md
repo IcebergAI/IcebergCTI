@@ -57,6 +57,20 @@ tagged release will snapshot it under a dated heading.
 
 ### Security
 
+- **The `uv` binary in the release image is digest-pinned** (#281). It was the one mutable image
+  reference in a build whose base images are digest-pinned — and it resolves and installs *every*
+  dependency into the release image, so a re-pushed `0.11.23` tag on GHCR would have been a direct
+  supply-chain compromise. Dependabot's docker ecosystem tracks `FROM` lines, not `COPY --from`, so
+  it would not have flagged a bad pin either.
+- **The release workflow drops privilege on the dry-run path** (#254). It was a single job holding
+  `contents/packages/id-token/attestations: write`; a `workflow_dispatch` build-only run used none
+  of them but executed with all of them. Split into a `build` job (`contents: read`) and a `publish`
+  job gated on it and on an actual tag push — so validation now completes in a low-privilege context
+  *before* any credential-bearing job starts.
+- **The workflow security auditor is no longer pinned to a yanked release.** CI pinned
+  `zizmor@1.27.0`, which PyPI yanked under advisory GHSA-f42p-wjw5-97qh; moved to 1.29.0 (verified
+  to report the same clean result).
+
 - **OIDC role mapping no longer escalates on an uncurated group name** (#269). A claim value that
   spells a role is honoured only on an app-roles claim (`roles`) with no `role_map` configured — the
   legacy single-Entra flow. A directory `groups` claim (the Authentik/Okta default) now always
@@ -82,6 +96,21 @@ tagged release will snapshot it under a dated heading.
   in none of the classification sets — on the DB settings rows as well as `Settings`.
 
 ### Fixed
+
+- **The release tag guard rejects unsupported PEP 440 forms** (#253). Dev/post releases, epochs,
+  local versions and zero-padded pre-releases passed through the PEP 440 → SemVer normaliser
+  untouched; a genuine mismatch still failed closed, but a hand-crafted tag matching the
+  un-normalised string could have minted a malformed OCI tag. They now fail with an actionable error.
+- **The docker build + Trivy gate runs pre-merge on PRs that can break it** (#282). It was exempt
+  from PRs entirely, so a base-digest bump that broke the build or tripped Trivy surfaced only on the
+  post-merge `main` push — leaving `main` red at exactly the commit a `v*` tag would release. It now
+  also runs on PRs touching `Dockerfile`, `.dockerignore`, `uv.lock` or `pyproject.toml` (detected
+  with git, not a new third-party action), and stays non-required so it can't deadlock.
+- **The release workflow serialises per ref** (#282) — two `v*` tags pushed close together could
+  land `:latest` out of order. Added a concurrency group without `cancel-in-progress`, since a
+  half-published release is worse than a queued one.
+- **Tightened the documented cosign verification identity** (#282) — the example regexp accepted a
+  certificate from any workflow on any ref in the repo; it now pins `release.yml@refs/tags/v*`.
 
 - **The body-size limit returns the documented 413 on streaming bodies** (#272). On the chunked /
   no-`Content-Length` path the mid-stream abort was caught by FastAPI's broad `except Exception`

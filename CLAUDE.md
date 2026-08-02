@@ -155,8 +155,14 @@ is a git tag: pushing a `v*` tag to `main` fires the workflow, which verifies th
 `pyproject.toml` version (PEP 440 → SemVer normalised) and that the commit is on `main`, then builds
 and pushes `ghcr.io/icebergai/icebergcti` (SemVer tags; `:latest`/`major.minor` only for a stable
 tag) **with an SBOM + SLSA `mode=max` provenance**, attests provenance to the registry,
-**cosign-signs** the image (keyless/OIDC), and creates the GitHub Release. `workflow_dispatch` is a
-build-only dry run. Version bumps are documented in `docs/RELEASING.md`; notable changes in
+**cosign-signs** the image (keyless/OIDC), and creates the GitHub Release. It runs as **two jobs for
+least privilege**: `build` (`contents: read`) does the tag/pyproject + commit-on-`main` validation and
+a never-pushed build, and `publish` — holding the `packages`/`contents`/`id-token`/`attestations`
+write scopes — is gated on it and on an actual tag push, so validation completes before any
+credential-bearing job starts and `workflow_dispatch` never touches the elevated scopes.
+`workflow_dispatch` is a build-only dry run. The version guard **rejects** PEP 440 forms outside
+{final, `aN`, `bN`, `rcN`} rather than passing them through un-normalised, and a `concurrency` group
+serialises releases per ref so two close tags can't land `:latest` out of order. Version bumps are documented in `docs/RELEASING.md`; notable changes in
 `CHANGELOG.md`. The `deploy/k8s/` manifests reference the published image (pin an immutable digest
 in prod via `deploy/k8s/release.sh`).
 

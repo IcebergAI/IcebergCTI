@@ -77,7 +77,7 @@ Verify the signature and provenance before deploying:
 
 ```bash
 cosign verify ghcr.io/icebergai/icebergcti@sha256:<digest> \
-  --certificate-identity-regexp 'https://github.com/IcebergAI/IcebergCTI/.*' \
+  --certificate-identity-regexp '^https://github\.com/IcebergAI/IcebergCTI/\.github/workflows/release\.yml@refs/tags/v.*' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 gh attestation verify oci://ghcr.io/icebergai/icebergcti@sha256:<digest> --repo IcebergAI/IcebergCTI
 ```
