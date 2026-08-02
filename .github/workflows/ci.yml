@@ -89,7 +89,7 @@ jobs:
     timeout-minutes: 10
     services:
       postgres:
-        image: postgres:17
+        image: postgres:18
         env:
           POSTGRES_USER: iceberg
           POSTGRES_PASSWORD: iceberg
@@ -135,7 +135,7 @@ jobs:
       # PostgreSQL is the supported container datastore (the prod image refuses to
       # boot on SQLite), so the boot smoke runs against a real Postgres.
       postgres:
-        image: postgres:17
+        image: postgres:18
         env:
           POSTGRES_USER: iceberg
           POSTGRES_PASSWORD: iceberg

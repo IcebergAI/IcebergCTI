@@ -44,7 +44,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: postgres
-          image: postgres:17
+          image: postgres:18
           envFrom:
             - secretRef:
                 name: postgres-secret
@@ -56,7 +56,12 @@ spec:
               drop: ["ALL"]
           volumeMounts:
             - name: pgdata
-              mountPath: /var/lib/postgresql/data
+              # postgres:18 relocated PGDATA to a versioned subdir under
+              # /var/lib/postgresql (default /var/lib/postgresql/18/docker), so
+              # the mount moves from the old …/data path to the parent dir. A
+              # PVC initialised by postgres:17 is NOT reusable directly — dump
+              # on 17, restore on 18 (see README.md, Backup & restore).
+              mountPath: /var/lib/postgresql
               subPath: pgdata   # subdir so the volume's lost+found doesn't clash
           readinessProbe:
             exec:
