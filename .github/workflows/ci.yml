@@ -42,7 +42,7 @@ jobs:
           cache-dependency-glob: uv.lock
       # Lets tests/test_render.py exercise the real Typst PDF path instead of
       # skipping (it fetches the pinned cmarker package over the network once).
-      - uses: typst-community/setup-typst@63ac138db421d586de61f7f5ac3bcef6a2e6c78c # v5.1.0
+      - uses: typst-community/setup-typst@40d32bb6ccb235bd7f5164cb47cfd40a5ea3a314 # v5.2.0
       - run: uv sync --locked --extra dev
       - name: Run tests with coverage
         run: uv run pytest --cov=iceberg --cov-report=term-missing  # fail_under enforced from pyproject
