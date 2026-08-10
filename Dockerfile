@@ -3,7 +3,7 @@
 # Builder: resolve the *locked* dependency graph (uv.lock) into a venv and fetch
 # the Typst binary. Build-only tooling (uv, curl, xz) stays out of the runtime.
 # ---------------------------------------------------------------------------- #
-FROM python:3.14-slim@sha256:cea0e6040540fb2b965b6e7fb5ffa00871e632eef63719f0ea54bca189ce14a6 AS builder
+FROM python:3.14-slim@sha256:a7fb1e634c4a578f9e0bd6327f11a3cde11b7a9395f48e24360c0988bcc5c2bc AS builder
 
 # Bumping TYPST_VERSION requires updating the per-arch typst_sha checksums below
 # (the build verifies the tarball and fails closed on a mismatch).
@@ -53,7 +53,7 @@ RUN set -eux; \
 # Base pinned by digest (tag + @sha256) so the build is reproducible and the exact
 # bytes are auditable; Dependabot (docker ecosystem) bumps the digest as PRs.
 # ---------------------------------------------------------------------------- #
-FROM python:3.14-slim@sha256:cea0e6040540fb2b965b6e7fb5ffa00871e632eef63719f0ea54bca189ce14a6 AS runtime
+FROM python:3.14-slim@sha256:a7fb1e634c4a578f9e0bd6327f11a3cde11b7a9395f48e24360c0988bcc5c2bc AS runtime
 
 # No ICEBERG_DATABASE_URL default: the container datastore is PostgreSQL and the
 # prod app refuses to boot on SQLite (config._guard_production), so the operator
@@ -72,9 +72,18 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 ENV FORWARDED_ALLOW_IPS="127.0.0.1"
 
 # ca-certificates for outbound TLS (OIDC, RSS, SIEM/MISP/webhook/AI, Postgres TLS).
+# The base image's pip (+ ensurepip bootstrap wheel) is removed: nothing installs
+# packages at runtime (the venv is built by uv in the builder stage), and pip 26.2+
+# ships a CycloneDX SBOM declaring its vendored libraries (msgpack, setuptools/
+# pkg_resources, ...), whose CVEs the Trivy gate would otherwise fail on even
+# though pip is never executed here — same "build-only tooling stays out of the
+# runtime" rule as uv/curl/xz above.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /usr/local/lib/python3.14/site-packages/pip* \
+              /usr/local/lib/python3.14/ensurepip \
+              /usr/local/bin/pip*
 
 WORKDIR /app
 COPY --from=builder /usr/local/bin/typst /usr/local/bin/typst
