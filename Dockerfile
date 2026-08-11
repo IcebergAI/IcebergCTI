@@ -29,7 +29,7 @@ WORKDIR /app
 # package-data), so the runtime copies src/ to the same path below.
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
-RUN uv sync --frozen --no-dev --extra postgres
+RUN uv sync --frozen --no-dev --extra postgres --extra object-storage
 
 RUN set -eux; \
     apt-get update; \
@@ -97,6 +97,7 @@ RUN useradd --system --create-home --uid 10001 iceberg \
 
 USER iceberg
 EXPOSE 8000
-# --proxy-headers: honour X-Forwarded-For/-Proto from the trusted proxy
-# (FORWARDED_ALLOW_IPS above) so the request scheme + client IP are correct.
-CMD ["uvicorn", "iceberg.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--proxy-headers"]
+# One process per container keeps operational metrics coherent; production
+# concurrency comes from independent Kubernetes replicas. --proxy-headers
+# honours X-Forwarded-For/-Proto only from FORWARDED_ALLOW_IPS above.
+CMD ["uvicorn", "iceberg.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--proxy-headers"]

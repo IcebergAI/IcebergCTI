@@ -9,9 +9,16 @@ data:
   # ICEBERG_DATABASE_URL carries credentials, so it lives in the iceberg-secrets
   # Secret, not here. Run the migrate Job (alembic upgrade head) against it
   # before/at rollout. See deploy/k8s/README.md and deploy/k8s/postgres.yaml.
-  ICEBERG_ATTACHMENTS_DIR: "/data/attachments"
-  ICEBERG_FIGURES_DIR: "/data/figures"
-  ICEBERG_RENDER_OUTPUT_DIR: "/data/rendered"
+  # Shared durable object storage is required by the two-replica deployment.
+  # Replace the bucket and region for AWS S3. For a compatible service, also
+  # set ICEBERG_STORAGE_S3_ENDPOINT_URL and FORCE_PATH_STYLE as required.
+  ICEBERG_STORAGE_BACKEND: "s3"
+  ICEBERG_STORAGE_S3_BUCKET: "replace-with-private-bucket"
+  ICEBERG_STORAGE_S3_PREFIX: "iceberg"
+  ICEBERG_STORAGE_S3_REGION: ""
+  ICEBERG_STORAGE_S3_FORCE_PATH_STYLE: "false"
+  ICEBERG_STORAGE_S3_VERIFY_TLS: "true"
+  ICEBERG_METRICS_ENABLED: "true"
   # Example ingress-controller pod CIDR. Replace with the narrow CIDR/address
   # used by your cluster; production rejects wildcard forwarding-header trust.
   FORWARDED_ALLOW_IPS: "10.244.0.0/16"

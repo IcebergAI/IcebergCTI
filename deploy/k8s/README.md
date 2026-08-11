@@ -2,9 +2,9 @@
 
 These manifests run Iceberg on **PostgreSQL** — the only supported deployment
 datastore. (SQLite is the zero-dependency *local* dev/test default; the prod app
-refuses to boot on it, and the image carries no SQLite fallback.) The Deployment
-stays single replica (`ReadWriteOnce` PVC, `Recreate` rollout) until uploads/
-renders move to shared storage — see *Scaling caveat*.
+refuses to boot on it, and the image carries no SQLite fallback.) Persistent files
+live in a private S3/S3-compatible bucket, allowing a two-replica rolling Deployment
+without filesystem affinity.
 
 ## Secrets
 
@@ -24,7 +24,9 @@ kubectl create secret generic iceberg-secrets \
   # plus any of: ICEBERG_OIDC_CLIENT_SECRET, ICEBERG_AUDIT_HTTP_TOKEN,
   # ICEBERG_MISP_API_KEY, ICEBERG_WEBHOOK_TOKEN, ICEBERG_AI_API_KEY,
   # ICEBERG_SMTP_PASSWORD, ICEBERG_PROXY_USERNAME/PASSWORD,
-  # ICEBERG_RATE_LIMIT_REDIS_URL
+  # ICEBERG_RATE_LIMIT_REDIS_URL, ICEBERG_STORAGE_S3_ACCESS_KEY_ID,
+  # ICEBERG_STORAGE_S3_SECRET_ACCESS_KEY, ICEBERG_STORAGE_S3_SESSION_TOKEN,
+  # ICEBERG_METRICS_TOKEN
 ```
 
 ## Authentication / Login
@@ -95,23 +97,27 @@ locator + role map, and put its client secret in `iceberg-secrets` as
    timeout, prints failed migration logs, and rolls out only after success.
    The same migrations cover both backends — the SQLite-only FTS5 objects and the
    Postgres-only `search_vector` (tsvector + GIN) block are each dialect-guarded.
-4. **Deploy.** `kubectl apply -f configmap.yaml -f service.yaml -f pvc.yaml -f deployment.yaml`.
+4. **Storage.** Provision a private, preferably versioned bucket and a deployment-owned prefix.
+   On AWS, use workload identity. A custom endpoint may use the env-only credentials from
+   `iceberg-secrets`. Grant only bucket listing on the exact prefix and Get/Put/DeleteObject
+   beneath it; enforce TLS and your organisation's encryption policy.
+5. **Deploy.** Apply the service and release as shown below. `pvc.yaml` is used only when
+   migrating legacy local data, not by a new S3-backed installation.
 
 ## Apply order
 
 ```bash
 # Apply EITHER configmap.yaml (prod + Entra OIDC) OR configmap.beta.yaml (OIDC-free
 # evaluation) — see "Authentication / Login". They share the ConfigMap name.
-kubectl apply -f configmap.yaml -f service.yaml -f pvc.yaml
+kubectl apply -f configmap.yaml -f service.yaml -f pdb.yaml
 kubectl apply -f secret.yaml          # from secret.example.yaml (sets ICEBERG_DATABASE_URL)
 IMAGE=ghcr.io/icebergai/icebergcti@sha256:<digest> RELEASE=<unique-id> ./release.sh
 kubectl apply -f ingress.yaml         # optional — TLS exposure (edit host + secret first)
 ```
 
-`release.sh` also applies the retention CronJobs ([`prune-cronjob.yaml`](prune-cronjob.yaml)),
-pinning them to the same `$IMAGE` digest as the Deployment and migration Job — so don't
-`kubectl apply` that manifest directly (its `:latest` placeholder would bypass digest pinning).
-See [Retention](#retention-bounding-table--disk-growth).
+`release.sh` applies the migration, active storage check, Deployment, storage workers,
+reconciliation and retention jobs, pinning every workload to the same `$IMAGE` digest. Do not
+apply workload manifests containing the readable `:latest` placeholder directly.
 
 ## TLS / Ingress
 
@@ -139,34 +145,53 @@ records the real client IP rather than the ingress pod's. Set
 
 ## Backup & restore
 
-Two stores hold all persistent state: **PostgreSQL** (every report, requirement,
-tag, audit event, settings row) and the **`iceberg-data` PVC** (uploaded
-attachments and figures, plus rendered PDFs under `/data`). Back up **both** —
-the PDFs regenerate from a report, but attachments/figures are original material
-with no other copy. Capture both while application writers are quiesced.
+Two stores form one consistency set: **PostgreSQL** (domain rows, immutable object keys,
+digests, tombstones and maintenance cursors) and the configured **private object prefix**
+(attachments, figures and retained PDFs). A database dump without its matching object snapshot
+is not a complete backup.
 
-### PostgreSQL
+### Consistent backup
 
-Prefer a **managed** instance's automated backups / PITR. For the self-hosted
-`postgres` StatefulSet (or any reachable instance), use `pg_dump`/`pg_restore`:
+1. Quiesce the app, outbox and storage workers, RSS scheduling, render pruning, migration and
+   reconciliation. Wait for active job/deletion leases to finish or expire.
+2. Record the release digest, schema revision, bucket, prefix and UTC start time in a backup
+   manifest. Do not record credentials or signed URLs.
+3. Take a PostgreSQL custom-format dump, then copy/snapshot the exact object prefix while writers
+   remain stopped. Prefer provider-native versioning/retention or copy into an immutable backup
+   prefix with inventory and SHA-256 metadata preserved.
+4. Record object count/bytes and both artifact identifiers in the manifest, then restart the
+   workers and application only after both backup halves succeed.
+
+For the supplied workloads, scale both writer Deployments to zero before dumping:
 
 ```bash
-# Stop writers before either backup half; keep them stopped through both.
 kubectl scale deploy/iceberg --replicas=0
-kubectl rollout status deploy/iceberg --timeout=5m
-# Back up — a custom-format dump (compressed, restorable selectively).
+kubectl scale deploy/iceberg-storage-worker --replicas=0
 kubectl exec postgres-0 -- \
   pg_dump -U iceberg -d iceberg -Fc > iceberg-$(date +%F).dump
-
-# Restore while writers remain stopped.
-kubectl exec -i postgres-0 -- \
-  pg_restore -U iceberg -d iceberg --clean --if-exists < iceberg-2026-06-27.dump
 ```
 
-The dump is schema + data, so a restore lands at the schema version it was taken
-at; run the migrate Job afterwards (`kubectl apply -f migrate-job.yaml`) if you
-are restoring into a newer image. The SQLite FTS index has no Postgres analogue —
-the `tsvector` column is generated, so search works immediately after restore.
+Provider-native object copy/snapshot commands are deliberately not embedded here: their
+encryption, account and retention semantics are deployment-specific. Limit the operation to
+`ICEBERG_STORAGE_S3_PREFIX`; never make the source or backup public.
+
+### Verified restore
+
+Restore into a **fresh database and fresh object prefix**, not over a partially running
+deployment:
+
+1. Keep all writers stopped. Restore the PostgreSQL dump and the matching object snapshot.
+2. Set the ConfigMap/Secret to the restored destinations and run the release migration Job.
+3. From the restored release, run `iceberg-verify-files` to stream and hash every referenced
+   object, then `iceberg-storage-check` to prove PUT → HEAD → GET/SHA-256 → DELETE with current
+   credentials. Run `iceberg-reconcile-storage --dry-run` and require zero missing/invalid
+   references and no unexpected objects outside the configured grace window.
+4. Start storage workers, then app replicas. Prove upload on one replica, download on another,
+   and read availability after terminating either replica before admitting traffic.
+
+Any missing object, digest/size mismatch, permission error or active-check failure is a failed
+restore. The verifier reports row IDs and safe object identifiers without exposing filenames,
+endpoints, credentials or object bytes.
 
 **Major Postgres upgrades** (e.g. 17 → 18) ride the same dump/restore path — a
 data directory initialised by one major version cannot be opened by the next.
@@ -175,61 +200,45 @@ also relocated its data mount from `/var/lib/postgresql/data` to
 `/var/lib/postgresql` (already reflected in `postgres.yaml`); a PVC carrying
 17-era data is not reusable directly.
 
-### `iceberg-data` PVC (uploads + renders)
+### Legacy local-storage migration and rollback
 
-If your storage class supports `VolumeSnapshot`, that's the simplest route.
-Otherwise tar the volume through a short-lived helper pod that mounts it (the app
-is single-replica with a `Recreate` rollout, so scale it to 0 first for a
-consistent copy):
+`pvc.yaml` and `storage-migrate-job.yaml` exist only for a controlled migration from the former
+local backend. Quiesce all writers, retain the legacy PVC read-only, run
+`iceberg-migrate-storage --destination s3 --dry-run`, then the bounded resumable copy job. Each
+row is hashed, conditionally written and verified before its database reference changes; source
+files are never deleted by migration. The Job uses `--until-complete`, so it succeeds only after
+successive 500-row batches reach zero unfinished rows (or fails on a conflict/missing source).
+Run deep verification and the active check before switching the Deployment to S3. Retain the PVC
+through a soak period and at least one verified backup.
 
-```bash
-kubectl scale deploy/iceberg --replicas=0
+Rollback to an old local-only release requires a completed reverse migration and verification.
+The Alembic downgrade guard rejects an unsafe downgrade while rows still reference S3 keys.
 
-# Spin up a helper pod that mounts the PVC read/write.
-kubectl apply -f - <<'EOF'
-apiVersion: v1
-kind: Pod
-metadata:
-  name: pvc-tool
-spec:
-  containers:
-    - name: tool
-      image: busybox
-      command: ["sleep", "3600"]
-      volumeMounts: [{ name: data, mountPath: /data }]
-  volumes:
-    - name: data
-      persistentVolumeClaim: { claimName: iceberg-data }
-EOF
-kubectl wait --for=condition=Ready pod/pvc-tool
+## Scaling and health
 
-# Back up: stream a tar of /data out through the helper.
-kubectl exec pvc-tool -- tar cf - -C /data . > iceberg-data-$(date +%F).tar
-
-# Restore replaces filesystem state rather than extracting over stale files.
-kubectl exec pvc-tool -- sh -c 'rm -rf /data/attachments /data/figures /data/rendered && mkdir -p /data/attachments /data/figures /data/rendered'
-kubectl exec -i pvc-tool -- tar xf - -C /data < iceberg-data-2026-06-27.tar
-
-kubectl delete pod pvc-tool
-```
-
-After restore, run the unique release migration workflow and execute
-`iceberg-verify-files` from the restored image with the data PVC mounted. Restart
-only after database restore, filesystem replacement, migration, and verification
-all succeed. The verifier reports missing attachment, figure, and retained-render
-row IDs without exposing filenames or content.
-
-## Scaling caveat
-
-Postgres removes the database single-writer bottleneck, but **uploads and
-rendered PDFs are still written to the local `/data` PVC** (attachments, figures,
-renders). Running more than one replica needs shared file storage (an RWX volume
-or object storage) — a separate follow-on. Until then keep `replicas: 1` +
-`Recreate`.
+The app runs two pods with `RollingUpdate` (`maxUnavailable: 0`, `maxSurge: 1`), a PDB and topology
+spread. Each pod runs one Uvicorn process so Prometheus observations are not split between hidden
+process-local registries. Storage-deletion workers use database leases and idempotent tombstones;
+the reconciliation CronJob uses durable cursors so bounded runs eventually cover the full prefix.
 
 The pod runs as non-root (uid 10001) with a read-only root filesystem, dropped
 capabilities and `RuntimeDefault` seccomp; `/tmp` and the Typst cache (`/cache`)
-are `emptyDir` mounts, and `/data` is the PVC.
+are `emptyDir` mounts.
+
+`/healthz` is process-only liveness. `/readyz` checks database/schema state plus a bounded,
+read-only store reachability probe. It returns a generic 503 without provider details. The
+release-only `iceberg-storage-check` command performs the write/read/delete canary; readiness
+does not write on every probe.
+
+## Storage observability
+
+`/metrics` is disabled by default and requires `ICEBERG_METRICS_TOKEN` in production. Exported
+storage metrics use fixed `backend`, `kind`, `operation`, `outcome`, `direction`, `reason` and
+`task` labels only—never bucket names, keys, endpoints, filenames, URLs or exception strings.
+They cover operation latency/counts, bytes, integrity failures, deletion queue/failed age and
+database-persisted migration/reconciliation last-run and last-success state. Alert on integrity
+failures, terminal deletion failures, increasing queue age, readiness failures and stale
+maintenance success.
 
 ## Rate limiting
 

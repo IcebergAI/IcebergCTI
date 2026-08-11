@@ -92,3 +92,26 @@ def test_feed_indicator_migration_reuses_existing_postgres_ioc_enum():
     assert isinstance(enum, postgresql.ENUM)
     assert enum.name == "ioctype"
     assert enum.create_type is False
+
+
+def test_object_storage_downgrade_refuses_unfinished_deletion(migrated_db):
+    url, cfg = migrated_db
+    command.upgrade(cfg, "head")
+    engine = create_engine(url)
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO storagedeletion "
+                    "(kind, backend, object_key, content_sha256, status, "
+                    "not_before, available_at, attempt_count, max_attempts, "
+                    "lease_token, leased_by, last_error, created_at) "
+                    "VALUES ('attachment', 's3', 'opaque.bin', '', 'PENDING', "
+                    "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, 5, '', '', '', "
+                    "CURRENT_TIMESTAMP)"
+                )
+            )
+        with pytest.raises(RuntimeError, match="Cannot downgrade object-storage"):
+            command.downgrade(cfg, "c3d4e5f6a7b8")
+    finally:
+        engine.dispose()

@@ -166,7 +166,8 @@ def test_raw_serves_inline_bytes(client, login):
 # --------------------------------------------------------------------------- #
 # Deletion + cascade clean-up
 # --------------------------------------------------------------------------- #
-def test_delete_removes_row_and_file(client, login, _figures_dir):
+def test_delete_removes_row_and_file(client, login, _figures_dir, monkeypatch):
+    monkeypatch.setattr(get_settings(), "storage_deletion_grace_seconds", 0)
     login("ANALYST")
     nb = _notebook(client)
     fig = _upload(client, nb["id"]).json()
@@ -180,7 +181,10 @@ def test_delete_removes_row_and_file(client, login, _figures_dir):
     assert client.get(f"/api/notebooks/{nb['id']}").json()["figures"] == []
 
 
-def test_notebook_delete_cascades_and_cleans_files(client, login, _figures_dir):
+def test_notebook_delete_cascades_and_cleans_files(
+    client, login, _figures_dir, monkeypatch
+):
+    monkeypatch.setattr(get_settings(), "storage_deletion_grace_seconds", 0)
     login("ANALYST")
     nb = _notebook(client)
     _upload(client, nb["id"])

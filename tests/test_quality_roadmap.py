@@ -428,12 +428,18 @@ def test_render_retention_prunes_old_rows_and_files(engine, tmp_path, monkeypatc
             )
         session.commit()
         settings = report_service.get_settings()
+        monkeypatch.setattr(settings, "render_output_dir", str(tmp_path))
+        monkeypatch.setattr(settings, "storage_deletion_grace_seconds", 0)
         monkeypatch.setattr(settings, "render_retention_keep", 2)
         monkeypatch.setattr(settings, "render_retention_days", 90)
         pruned = report_service.prune_rendered_products(
             session, report_id=report.id, fmt=ProductFormat.FULL
         )
         remaining = session.exec(select(RenderedProduct)).all()
+    from iceberg.services import storage_deletions
+
+    result = storage_deletions.process_due_deletions(bind=engine)
     assert pruned == 3
+    assert result["succeeded"] == 3
     assert len(remaining) == 2
     assert len(list(Path(tmp_path).glob("*.pdf"))) == 2

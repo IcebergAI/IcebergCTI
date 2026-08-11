@@ -46,11 +46,9 @@ def get_snapshot(session: Session, report: Report) -> PublicationSnapshot | None
 def _figure_assets(session: Session, report: Report) -> list[dict]:
     assets: list[dict] = []
     for figure in figure_service.referenced_figures(session, report):
-        path = figure_service.figure_path(figure)
-        try:
-            raw = path.read_bytes()
-        except OSError:
-            continue
+        # A finished product must never silently freeze a missing or tampered
+        # figure. Draft previews may degrade, but publication fails closed.
+        raw = figure_service.figure_bytes(session, figure)
         assets.append(
             {
                 "id": figure.id,
@@ -226,7 +224,7 @@ def publish(session: Session, report: Report, *, actor, request, background_task
     """
 
     from ..models import AuditCategory, AuditSeverity, Role, utcnow
-    from . import audit, dissemination, jobs
+    from . import audit, dissemination, jobs, storage
 
     if ReportStatus(report.status) is not ReportStatus.APPROVED:
         raise PublicationConflict("Report must be approved before publication")
@@ -237,7 +235,13 @@ def publish(session: Session, report: Report, *, actor, request, background_task
     report.published_at = utcnow()
     report.updated_at = utcnow()
     session.add(report)
-    create_snapshot(session, report)
+    try:
+        create_snapshot(session, report)
+    except storage.StorageError as exc:
+        session.rollback()
+        raise PublicationConflict(
+            "Referenced figure storage failed integrity verification"
+        ) from exc
     recipients = dissemination.disseminate(session, report, commit=False)
     # External egress is represented by durable rows in this same transaction.
     # The synchronous DisseminationEvent feed records above remain the source of

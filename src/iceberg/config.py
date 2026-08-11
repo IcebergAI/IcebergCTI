@@ -3,6 +3,7 @@
 import logging
 import os
 from functools import lru_cache
+from urllib.parse import urlsplit
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -23,6 +24,7 @@ _LOG_FORMATS = {"auto", "text", "json"}
 _RATE_LIMIT_STORES = {"auto", "redis", "memory"}
 _ENVIRONMENTS = {"dev", "test", "prod"}
 _EMAIL_BACKENDS = {"console", "smtp"}
+_STORAGE_BACKENDS = {"local", "s3"}
 _TLP_VALUES = {"CLEAR", "GREEN", "AMBER", "AMBER_STRICT", "RED"}
 
 # The default signing key shipped for local dev. It is public (it's in source
@@ -48,6 +50,11 @@ class Settings(BaseSettings):
     # container logs structured by default; uvicorn.* loggers are left alone.
     log_level: str = "INFO"
     log_format: str = "auto"  # auto | text | json
+    # Prometheus-compatible operational metrics. Disabled unless deliberately
+    # enabled; production requires a long bearer token because the main ingress
+    # otherwise exposes every application path.
+    metrics_enabled: bool = False
+    metrics_token: str = ""
 
     # Schema migrations. When true, init_db() runs `alembic upgrade head` on boot
     # (idempotent) — convenient for local dev. Set false in production so the
@@ -134,6 +141,35 @@ class Settings(BaseSettings):
     # base64-inlined into the report HTML.
     figures_dir: str = "./figures"
     figure_max_mb: int = 10
+
+    # Persistent binary storage. ``local`` preserves the development and
+    # single-node layout above. ``s3`` stores attachments, figures, and retained
+    # rendered products under separate prefixes in one private S3-compatible
+    # bucket, allowing every application replica to observe the same bytes.
+    # Credentials remain environment-only and are never persisted or rendered.
+    storage_backend: str = "local"  # local | s3
+    storage_s3_bucket: str = ""
+    storage_s3_prefix: str = "iceberg"
+    storage_s3_region: str = ""
+    storage_s3_endpoint_url: str = ""
+    storage_s3_access_key_id: str = ""
+    storage_s3_secret_access_key: str = ""
+    storage_s3_session_token: str = ""
+    storage_s3_force_path_style: bool = False
+    storage_s3_verify_tls: bool = True
+    storage_s3_ca_bundle: str = ""
+    storage_s3_connect_timeout: float = 3.0
+    storage_s3_read_timeout: float = 15.0
+    # Reconciliation never removes an unreferenced object until this grace
+    # window has elapsed. That protects an upload finalized by one replica while
+    # its database transaction is still committing on another.
+    storage_orphan_grace_seconds: int = 3600
+    # Logical deletion is immediate; physical removal waits long enough for a
+    # normal backup/snapshot window and is executed by the leased storage worker.
+    storage_deletion_grace_seconds: int = 86400
+    # Legacy rows may not have a trustworthy size/digest yet. Reads remain
+    # bounded until the resumable migration verifies and stamps them.
+    storage_legacy_read_max_mb: int = 100
 
     # Global request-body ceiling enforced by BodySizeLimitMiddleware. Uploads are
     # already streamed with a mid-stream cap, but every non-upload endpoint reads
@@ -302,6 +338,10 @@ class Settings(BaseSettings):
         return self.max_body_mb * 1024 * 1024
 
     @property
+    def max_storage_legacy_bytes(self) -> int:
+        return self.storage_legacy_read_max_mb * 1024 * 1024
+
+    @property
     def allowed_attachment_types(self) -> frozenset[str]:
         return frozenset(
             t.strip().lower()
@@ -398,6 +438,63 @@ class Settings(BaseSettings):
             )
         return store
 
+    @field_validator("storage_backend")
+    @classmethod
+    def _validate_storage_backend(cls, value: str) -> str:
+        backend = (value or "").strip().lower()
+        if backend not in _STORAGE_BACKENDS:
+            raise ValueError(
+                "ICEBERG_STORAGE_BACKEND must be one of "
+                f"{sorted(_STORAGE_BACKENDS)}; got {value!r}."
+            )
+        return backend
+
+    @field_validator("storage_s3_prefix")
+    @classmethod
+    def _validate_storage_prefix(cls, value: str) -> str:
+        prefix = (value or "").strip().strip("/")
+        if ".." in prefix.split("/"):
+            raise ValueError("ICEBERG_STORAGE_S3_PREFIX cannot contain '..'.")
+        return prefix
+
+    @field_validator("storage_s3_endpoint_url")
+    @classmethod
+    def _validate_storage_endpoint(cls, value: str) -> str:
+        endpoint = (value or "").strip().rstrip("/")
+        if not endpoint:
+            return ""
+        parts = urlsplit(endpoint)
+        if (
+            parts.scheme not in {"http", "https"}
+            or not parts.hostname
+            or parts.username
+            or parts.password
+            or parts.query
+            or parts.fragment
+            or (parts.path and parts.path != "/")
+        ):
+            raise ValueError(
+                "ICEBERG_STORAGE_S3_ENDPOINT_URL must be an http(s) origin "
+                "without credentials, path, query, or fragment."
+            )
+        return endpoint
+
+    @field_validator("storage_orphan_grace_seconds", "storage_deletion_grace_seconds")
+    @classmethod
+    def _validate_storage_grace(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError(
+                "ICEBERG_STORAGE_*_GRACE_SECONDS cannot be negative."
+            )
+        return value
+
+    @field_validator("storage_legacy_read_max_mb")
+    @classmethod
+    def _validate_storage_legacy_limit(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("ICEBERG_STORAGE_LEGACY_READ_MAX_MB must be at least 1.")
+        return value
+
     @field_validator(
         "rate_limit_auth_dev_login_per_minute",
         "rate_limit_auth_oidc_per_minute",
@@ -471,6 +568,36 @@ def production_guard_errors(settings: "Settings") -> list[str]:
         errors.append(
             "ICEBERG_DATABASE_URL must be a PostgreSQL URL in production "
             "(postgresql+psycopg://…); SQLite is for local dev/test only."
+        )
+    if settings.storage_backend == "s3" and not settings.storage_s3_bucket.strip():
+        errors.append(
+            "ICEBERG_STORAGE_S3_BUCKET is required when "
+            "ICEBERG_STORAGE_BACKEND=s3."
+        )
+    if settings.storage_backend == "s3" and settings.storage_s3_endpoint_url:
+        if not (
+            settings.storage_s3_access_key_id
+            and settings.storage_s3_secret_access_key
+        ):
+            errors.append(
+                "A custom S3 endpoint requires dedicated "
+                "ICEBERG_STORAGE_S3_ACCESS_KEY_ID and "
+                "ICEBERG_STORAGE_S3_SECRET_ACCESS_KEY credentials; ambient AWS "
+                "credentials are not sent to operator-defined endpoints."
+            )
+        if not settings.storage_s3_endpoint_url.startswith("https://"):
+            errors.append(
+                "ICEBERG_STORAGE_S3_ENDPOINT_URL must use HTTPS in production."
+            )
+    if settings.storage_backend == "s3" and not settings.storage_s3_verify_tls:
+        errors.append(
+            "ICEBERG_STORAGE_S3_VERIFY_TLS cannot be disabled in production; "
+            "configure ICEBERG_STORAGE_S3_CA_BUNDLE for a private CA."
+        )
+    if settings.metrics_enabled and len(settings.metrics_token) < 32:
+        errors.append(
+            "ICEBERG_METRICS_TOKEN must be a unique value of at least 32 "
+            "characters when metrics are enabled in production."
         )
     # The guard and uvicorn both read the UNPREFIXED env var.
     forwarded_allow_ips = os.getenv(

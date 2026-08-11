@@ -1,11 +1,13 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: iceberg-migrate
+  name: iceberg-storage-check
 spec:
+  activeDeadlineSeconds: 300
+  backoffLimit: 0
   template:
     spec:
-      restartPolicy: OnFailure
+      restartPolicy: Never
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -13,12 +15,9 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       containers:
-        - name: migrate
-          # Pin to the same immutable tag/digest as the Deployment.
+        - name: storage-check
           image: ghcr.io/icebergai/icebergcti:latest
-          # Uses the app's in-code Alembic config (no packaged alembic.ini needed);
-          # reads ICEBERG_DATABASE_URL from the env above. Schema only.
-          command: ["iceberg-migrate"]
+          command: ["iceberg-storage-check"]
           envFrom:
             - configMapRef:
                 name: iceberg-config
@@ -29,6 +28,13 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "1"
+              memory: "512Mi"
           volumeMounts:
             - name: tmp
               mountPath: /tmp

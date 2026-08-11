@@ -33,6 +33,16 @@ services:
       ICEBERG_ATTACHMENTS_DIR: /data/attachments
       ICEBERG_FIGURES_DIR: /data/figures
       ICEBERG_RENDER_OUTPUT_DIR: /data/rendered
+      ICEBERG_STORAGE_BACKEND: ${ICEBERG_STORAGE_BACKEND:-local}
+      ICEBERG_STORAGE_S3_BUCKET: ${ICEBERG_STORAGE_S3_BUCKET:-}
+      ICEBERG_STORAGE_S3_PREFIX: ${ICEBERG_STORAGE_S3_PREFIX:-iceberg}
+      ICEBERG_STORAGE_S3_REGION: ${ICEBERG_STORAGE_S3_REGION:-}
+      ICEBERG_STORAGE_S3_ENDPOINT_URL: ${ICEBERG_STORAGE_S3_ENDPOINT_URL:-}
+      ICEBERG_STORAGE_S3_ACCESS_KEY_ID: ${ICEBERG_STORAGE_S3_ACCESS_KEY_ID:-}
+      ICEBERG_STORAGE_S3_SECRET_ACCESS_KEY: ${ICEBERG_STORAGE_S3_SECRET_ACCESS_KEY:-}
+      ICEBERG_STORAGE_S3_SESSION_TOKEN: ${ICEBERG_STORAGE_S3_SESSION_TOKEN:-}
+      ICEBERG_STORAGE_S3_FORCE_PATH_STYLE: ${ICEBERG_STORAGE_S3_FORCE_PATH_STYLE:-false}
+      ICEBERG_STORAGE_S3_VERIFY_TLS: ${ICEBERG_STORAGE_S3_VERIFY_TLS:-true}
       ICEBERG_RATE_LIMIT_REDIS_URL: ${ICEBERG_RATE_LIMIT_REDIS_URL:-redis://redis:6379/0}
       # Only peers on the dedicated Compose network may supply forwarding headers.
       FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-172.30.0.0/24}
@@ -91,6 +101,52 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    networks: [iceberg-internal]
+
+  # Optional S3-compatible development service. Enable explicitly with
+  # `docker compose --profile object-storage up` and set the app's
+  # ICEBERG_STORAGE_* values in `.env`. This is a test convenience, not the
+  # recommended production object-store deployment.
+  object-storage:
+    profiles: [object-storage]
+    image: chrislusf/seaweedfs:4.29@sha256:d47c7ee99fcb951351d7194915f4e3a5ea604a8e8871183d713907dec4fb9bf5
+    restart: unless-stopped
+    environment:
+      AWS_ACCESS_KEY_ID: ${ICEBERG_STORAGE_S3_ACCESS_KEY_ID:-iceberg-dev-access}
+      AWS_SECRET_ACCESS_KEY: ${ICEBERG_STORAGE_S3_SECRET_ACCESS_KEY:-iceberg-dev-secret}
+      S3_BUCKET: ${ICEBERG_STORAGE_S3_BUCKET:-iceberg-dev}
+    ports:
+      - "127.0.0.1:8333:8333"
+    volumes:
+      - iceberg-object-data:/data
+    networks: [iceberg-internal]
+
+  storage-worker:
+    profiles: [object-storage]
+    build: .
+    restart: unless-stopped
+    command: ["iceberg-storage-worker", "--forever"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      ICEBERG_ENVIRONMENT: ${ICEBERG_ENVIRONMENT:-dev}
+      ICEBERG_AUTO_MIGRATE: "false"
+      ICEBERG_DATABASE_URL: ${ICEBERG_DATABASE_URL:-postgresql+psycopg://${POSTGRES_USER:-iceberg}:${POSTGRES_PASSWORD:-iceberg}@postgres:5432/${POSTGRES_DB:-iceberg}}
+      ICEBERG_STORAGE_BACKEND: ${ICEBERG_STORAGE_BACKEND:-s3}
+      ICEBERG_STORAGE_S3_BUCKET: ${ICEBERG_STORAGE_S3_BUCKET:-iceberg-dev}
+      ICEBERG_STORAGE_S3_PREFIX: ${ICEBERG_STORAGE_S3_PREFIX:-iceberg}
+      ICEBERG_STORAGE_S3_REGION: ${ICEBERG_STORAGE_S3_REGION:-}
+      ICEBERG_STORAGE_S3_ENDPOINT_URL: ${ICEBERG_STORAGE_S3_ENDPOINT_URL:-http://object-storage:8333}
+      ICEBERG_STORAGE_S3_ACCESS_KEY_ID: ${ICEBERG_STORAGE_S3_ACCESS_KEY_ID:-iceberg-dev-access}
+      ICEBERG_STORAGE_S3_SECRET_ACCESS_KEY: ${ICEBERG_STORAGE_S3_SECRET_ACCESS_KEY:-iceberg-dev-secret}
+      ICEBERG_STORAGE_S3_FORCE_PATH_STYLE: ${ICEBERG_STORAGE_S3_FORCE_PATH_STYLE:-true}
+      ICEBERG_STORAGE_S3_VERIFY_TLS: ${ICEBERG_STORAGE_S3_VERIFY_TLS:-false}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      object-storage:
+        condition: service_started
     networks: [iceberg-internal]
 
   # TLS reverse proxy — the default front end for a single-host Docker
@@ -171,5 +227,6 @@ networks:
 volumes:
   iceberg-data:
   iceberg-pg-data:
+  iceberg-object-data:
   caddy-data:
   caddy-config:

@@ -43,7 +43,7 @@ jobs:
       # Lets tests/test_render.py exercise the real Typst PDF path instead of
       # skipping (it fetches the pinned cmarker package over the network once).
       - uses: typst-community/setup-typst@40d32bb6ccb235bd7f5164cb47cfd40a5ea3a314 # v5.2.0
-      - run: uv sync --locked --extra dev
+      - run: uv sync --locked --extra dev --extra object-storage
       - name: Install guided-demo browser
         run: uv run playwright install --with-deps chromium
       - name: Run tests with coverage
@@ -128,6 +128,78 @@ jobs:
       - name: Postgres smoke tests
         run: uv run pytest tests/test_postgres_smoke.py tests/test_dissemination.py tests/test_related.py -n0 -p no:cacheprovider
 
+  object-storage:
+    name: Shared object storage acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: iceberg
+          POSTGRES_PASSWORD: iceberg
+          POSTGRES_DB: iceberg
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U iceberg -d iceberg"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      seaweedfs:
+        # Multi-architecture digest for SeaweedFS 4.29. `weed mini` provides an
+        # authenticated S3 endpoint plus a pre-created test bucket on :8333.
+        image: chrislusf/seaweedfs:4.29@sha256:d47c7ee99fcb951351d7194915f4e3a5ea604a8e8871183d713907dec4fb9bf5
+        env:
+          AWS_ACCESS_KEY_ID: iceberg-ci-access
+          AWS_SECRET_ACCESS_KEY: iceberg-ci-secret
+          S3_BUCKET: iceberg-ci
+        ports:
+          - 8333:8333
+    env:
+      ICEBERG_ENVIRONMENT: dev
+      ICEBERG_DEV_AUTH: "true"
+      ICEBERG_AUTO_MIGRATE: "false"
+      ICEBERG_SECRET_KEY: ci-secret-0123456789abcdef0123456789
+      ICEBERG_DATABASE_URL: postgresql+psycopg://iceberg:iceberg@127.0.0.1:5432/iceberg
+      ICEBERG_RATE_LIMIT_ENABLED: "false"
+      ICEBERG_STORAGE_BACKEND: s3
+      ICEBERG_STORAGE_S3_BUCKET: iceberg-ci
+      ICEBERG_STORAGE_S3_PREFIX: ci
+      ICEBERG_STORAGE_S3_ENDPOINT_URL: http://127.0.0.1:8333
+      ICEBERG_STORAGE_S3_ACCESS_KEY_ID: iceberg-ci-access
+      ICEBERG_STORAGE_S3_SECRET_ACCESS_KEY: iceberg-ci-secret
+      ICEBERG_STORAGE_S3_FORCE_PATH_STYLE: "true"
+      ICEBERG_STORAGE_S3_VERIFY_TLS: "false"
+      ICEBERG_STORAGE_ORPHAN_GRACE_SECONDS: "0"
+      ICEBERG_STORAGE_DELETION_GRACE_SECONDS: "0"
+      ICEBERG_ATTACHMENTS_DIR: /tmp/iceberg-legacy-attachments
+      ICEBERG_FIGURES_DIR: /tmp/iceberg-legacy-figures
+      ICEBERG_RENDER_OUTPUT_DIR: /tmp/iceberg-legacy-renders
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.11.23"
+          python-version: "3.14"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --locked --extra dev --extra postgres --extra object-storage
+      - name: Wait for compatible object storage
+        run: |
+          for _ in $(seq 1 60); do
+            if uv run python -c 'from iceberg.services.storage import S3ObjectStore; S3ObjectStore().ready()' 2>/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Compatible object storage did not become ready" >&2
+          exit 1
+      - name: Run multi-replica, migration, recovery, and security acceptance
+        run: uv run python scripts/storage_replica_acceptance.py
+
   # Which files a PR touches, so the expensive docker job can run pre-merge on
   # exactly the PRs that can break it (#282). Done with git rather than a
   # paths-filter action — one less third-party action to trust, consistent with
@@ -149,7 +221,7 @@ jobs:
       - id: filter
         run: |
           if git diff --name-only HEAD^1 HEAD \
-              | grep -qE '^(Dockerfile|\.dockerignore|uv\.lock|pyproject\.toml)$'; then
+              | grep -qE '^(Dockerfile|\.dockerignore|uv\.lock|pyproject\.toml|src/iceberg/)'; then
             echo "docker=true" >> "$GITHUB_OUTPUT"
             echo "Image inputs changed — the docker job will run."
           else

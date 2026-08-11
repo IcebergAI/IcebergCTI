@@ -3,14 +3,12 @@ kind: Deployment
 metadata:
   name: iceberg
 spec:
-  # Scaling note: even with PostgreSQL, attachments/figures/rendered PDFs are
-  # still written to the local /data PVC (ReadWriteOnce), so this stays a single
-  # replica with a Recreate rollout until shared file storage (RWX or object
-  # store) lands. Postgres removes the *database* single-writer bottleneck; the
-  # filesystem one is a separate follow-on.
-  replicas: 1
+  replicas: 2
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app: iceberg
@@ -19,6 +17,14 @@ spec:
       labels:
         app: iceberg
     spec:
+      terminationGracePeriodSeconds: 30
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: iceberg
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -48,8 +54,6 @@ spec:
             capabilities:
               drop: ["ALL"]
           volumeMounts:
-            - name: data
-              mountPath: /data
             - name: tmp
               mountPath: /tmp
             - name: cache
@@ -59,11 +63,16 @@ spec:
               path: /healthz
               port: 8000
             initialDelaySeconds: 15
+            periodSeconds: 15
+            timeoutSeconds: 3
           readinessProbe:
             httpGet:
               path: /readyz
               port: 8000
             initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
           resources:
             requests:
               cpu: "250m"
@@ -72,9 +81,6 @@ spec:
               cpu: "2"
               memory: "1Gi"
       volumes:
-        - name: data
-          persistentVolumeClaim:
-            claimName: iceberg-data
         # Read-only root filesystem ⇒ scratch space for tempfile + Typst renders
         # and the Typst package cache come from emptyDir mounts.
         - name: tmp

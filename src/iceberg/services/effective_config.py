@@ -55,6 +55,10 @@ SECRET_FIELDS: frozenset[str] = frozenset(
         "oidc_authentik_client_secret",
         "oidc_auth0_client_secret",
         "oidc_okta_client_secret",
+        "storage_s3_access_key_id",
+        "storage_s3_secret_access_key",
+        "storage_s3_session_token",
+        "metrics_token",
     }
 )
 
@@ -62,7 +66,9 @@ SECRET_FIELDS: frozenset[str] = frozenset(
 # URL (``hooks.slack.com/services/T…/B…/<secret>``) is bearer-equivalent by
 # design. Rendered as origin only: enough to confirm where a callout goes without
 # handing over the credential to whoever is looking at the screen (#273).
-ORIGIN_ONLY_FIELDS: frozenset[str] = frozenset({"webhook_url"})
+ORIGIN_ONLY_FIELDS: frozenset[str] = frozenset(
+    {"webhook_url", "storage_s3_endpoint_url"}
+)
 ORIGIN_ONLY_DB_FIELDS: frozenset[str] = frozenset({"Webhook.url"})
 
 # URL/DSN-shaped fields deliberately rendered in full, because knowing exactly
@@ -118,6 +124,8 @@ _CATEGORY_PREFIXES: tuple[tuple[str, str], ...] = (
     ("figure", "Uploads"),
     ("figures", "Uploads"),
     ("jobs_", "Durable jobs"),
+    ("storage_", "Persistent storage"),
+    ("metrics_", "Observability"),
     ("dissemination", "Dissemination"),
 )
 # Built from a category → fields mapping (avoids a dict with a password-like key

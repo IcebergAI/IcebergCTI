@@ -66,6 +66,10 @@ _.prune_audit_main  # console script entry point (pyproject.toml)
 _.rebuild_related_main  # console script entry point (pyproject.toml)
 _.worker_main  # console script entry point (pyproject.toml)
 _.verify_files_main  # console script entry point (pyproject.toml)
+_.storage_worker_main  # console script entry point (pyproject.toml)
+_.storage_check_main  # console script entry point (pyproject.toml)
+_.migrate_storage_main  # console script entry point (pyproject.toml)
+_.reconcile_storage_main  # console script entry point (pyproject.toml)
 _.reviewer_id  # unused attribute (src/iceberg/services/lifecycle.py:50)
 _.reviewer_id  # unused attribute (src/iceberg/services/lifecycle.py:55)
 _.handle_starttag  # unused method (src/iceberg/services/source_grading.py:181)
@@ -100,6 +104,8 @@ extract  # unused function (src/iceberg/services/iocs.py)
 cls  # unused variable (pydantic @field_validator first arg, src/iceberg/config.py)
 # Test-only cache reset (tests/conftest.py clears the process-global LRU per test).
 clear_bundle_cache  # unused function (src/iceberg/services/taxii.py)
+reset_for_tests  # test-only process-local storage-metrics registry reset
+last_run_at  # SQLModel field read dynamically and through metrics serialization
 
 # Durable jobs, taxonomy merge lineage and import results are ORM/API fields.
 merged_at  # unused variable (src/iceberg/models.py)

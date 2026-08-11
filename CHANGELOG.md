@@ -42,6 +42,11 @@ tagged release will snapshot it under a dated heading.
   same-origin CSRF + strict CSP + security headers, token-bucket rate limiting, OWASP audit logging
   → pluggable SIEM, a global outbound-proxy option, self-hosted SRI-pinned frontend assets, health
   probes, and a production container + Kubernetes manifests on PostgreSQL.
+- **Shared object storage and multi-replica operation** (#315): local/S3-compatible blob adapters
+  for attachments, figures and retained PDFs; staged checksum-verified writes and bounded verified
+  reads; durable deletion tombstones; resumable migration and cursor-backed reconciliation;
+  authenticated storage metrics; backup/restore and active-check commands; two-replica rolling
+  Kubernetes workloads; and real S3-compatible concurrent/failover/tamper/recovery CI acceptance.
 - **Engineering**: CI with ruff / bandit / vulture / **mypy** / djlint / biome / pip-audit,
   **CodeQL** SAST, **zizmor + actionlint** workflow SAST, and a tag-driven **release workflow**
   publishing a signed, SBOM- and provenance-attested GHCR image (this section).
@@ -54,6 +59,9 @@ tagged release will snapshot it under a dated heading.
   `pg_upgrade`), so the volume mounts moved with it — a bare image bump would have stranded the
   cluster on an anonymous volume. Existing 17 volumes/PVCs require a dump/restore; procedure
   documented in the deployment docs and `deploy/k8s/README.md`.
+- The production Kubernetes topology now uses private S3-compatible storage instead of an app
+  `ReadWriteOnce` data PVC. `pvc.yaml` remains only as a read-only source for controlled migration
+  of legacy local objects.
 
 ### Security
 

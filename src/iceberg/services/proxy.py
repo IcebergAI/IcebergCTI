@@ -18,6 +18,7 @@ a secret: they live only in the environment and are injected into the proxy URL
 at call time (never persisted on the DB row).
 """
 
+import os
 from ipaddress import ip_address, ip_network
 from urllib.parse import quote, urlsplit, urlunsplit
 
@@ -40,6 +41,47 @@ def resolve(settings: ProxySettings, url: str) -> dict:
             # NONE, or EXPLICIT with no proxy URL configured → direct connection.
             return direct
     return direct  # pragma: no cover — exhaustive above
+
+
+def for_botocore(settings: ProxySettings, url: str) -> dict[str, str]:
+    """Botocore ``Config.proxies`` for the same global routing decision.
+
+    An empty mapping explicitly selects a direct connection. ``SYSTEM`` returns
+    the process environment's proxy mapping because botocore does not expose an
+    httpx-style ``trust_env`` flag.
+    """
+    route = resolve(settings, url)
+    if route.get("trust_env"):
+        no_proxy = (
+            os.getenv("NO_PROXY")
+            or os.getenv("no_proxy")
+            or settings.no_proxy
+        )
+        if _should_bypass(urlsplit(url).hostname, _parse_no_proxy(no_proxy)):
+            return {}
+        proxies: dict[str, str] = {}
+        for scheme, names in (
+            ("http", ("HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy")),
+            (
+                "https",
+                (
+                    "HTTPS_PROXY",
+                    "https_proxy",
+                    "HTTP_PROXY",
+                    "http_proxy",
+                    "ALL_PROXY",
+                    "all_proxy",
+                ),
+            ),
+        ):
+            for name in names:
+                value = os.getenv(name)
+                if value:
+                    proxies[scheme] = value
+                    break
+        return proxies
+    selected = route.get("proxy")
+    return {"http": selected, "https": selected} if selected else {}
 
 
 def _parse_no_proxy(value: str) -> list[str]:
