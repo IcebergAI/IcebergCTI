@@ -85,6 +85,10 @@ def _wait_ready(base_url: str, process: subprocess.Popen[str]) -> None:
 
 
 def _login(client: httpx.Client) -> None:
+    # Browser cookie-authenticated writes are same-origin CSRF protected. The
+    # acceptance client must model a browser by retaining the session cookie and
+    # sending its own origin on every subsequent POST.
+    client.headers["origin"] = str(client.base_url).rstrip("/")
     response = client.post(
         "/auth/dev-login",
         data={
