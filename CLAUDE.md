@@ -53,6 +53,7 @@ _Compact index — full per-model bullets in ARCHITECTURE.md._
 - **RenderedProduct** — on-demand PDF (FULL / EXEC_BRIEF / ONE_PAGER); retention-pruned, snapshot-bound.
 - **PublicationSnapshot** — immutable publish-time frozen representation (HTML / Typst / MISP inputs).
 - **Requirement** — stakeholder requirement (PIR/GIR/RFI) feeding the analyst tasking board.
+- **DemoWorkspace** — a resettable synthetic-cycle boundary linking one analyst owner to one stakeholder through a one-time join code. Its marked roots are excluded from operational metrics and reset without touching user-created work; publication still uses the normal immutable snapshot/feed path but queues no external notifications.
 - **Tag** — controlled CTI taxonomy term; admin-curated; named-threat kinds carry aliases + attribution.
 - **DisseminationEvent** — a published report delivered to a stakeholder's feed, with read tracking.
 - **OutboxJob** — durable lease-based unit of external work (dissemination email / webhook / RSS poll).

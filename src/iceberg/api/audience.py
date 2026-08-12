@@ -60,6 +60,8 @@ def update_group(
     group_id: int, body: AudienceGroupUpdate, session: SessionDep, _a: Admin
 ) -> AudienceGroup:
     group = _group_or_404(session, group_id)
+    if group.demo_workspace_id is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Demo audiences are reset-managed")
     if body.name is not None:
         name = body.name.strip()
         slug = slugify(name)
@@ -83,6 +85,8 @@ def set_group_members(
     group_id: int, body: AudienceMembers, session: SessionDep, _a: Admin
 ) -> AudienceGroup:
     group = _group_or_404(session, group_id)
+    if group.demo_workspace_id is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Demo audiences are reset-managed")
     group.members = _stakeholder_members(session, body.member_user_ids)
     session.add(group)
     session.commit()

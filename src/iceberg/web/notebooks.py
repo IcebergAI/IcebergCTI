@@ -101,7 +101,7 @@ def _workspace_report_counts(session: Session) -> dict[str, int]:
             func.count(
                 case((Report.status == ReportStatus.APPROVED, 1))
             ).label("approved"),
-        )
+        ).where(col(Report.demo_workspace_id).is_(None))
     ).one()
     return {
         "draft": int(row.draft),
@@ -166,7 +166,11 @@ def dashboard(request: Request, session: SessionDep, user: CurrentUser):
         []
         if is_stakeholder
         else list(
-            session.exec(select(Notebook).order_by(Notebook.updated_at.desc())).all()
+            session.exec(
+                select(Notebook)
+                .where(col(Notebook.demo_workspace_id).is_(None))
+                .order_by(Notebook.updated_at.desc())
+            ).all()
         )
     )
     recent_stmt = select(Report).order_by(Report.updated_at.desc())
@@ -206,6 +210,7 @@ def dashboard(request: Request, session: SessionDep, user: CurrentUser):
         open_tasking = len(
             session.exec(
                 select(Requirement).where(
+                    col(Requirement.demo_workspace_id).is_(None),
                     col(Requirement.status).in_(
                         [RequirementStatus.OPEN, RequirementStatus.IN_PROGRESS]
                     )
@@ -216,6 +221,7 @@ def dashboard(request: Request, session: SessionDep, user: CurrentUser):
         published_30d = len(
             session.exec(
                 select(Report).where(
+                    col(Report.demo_workspace_id).is_(None),
                     Report.status == ReportStatus.PUBLISHED,
                     col(Report.published_at) >= cutoff,
                 )

@@ -242,7 +242,13 @@ def publish(session: Session, report: Report, *, actor, request, background_task
     # External egress is represented by durable rows in this same transaction.
     # The synchronous DisseminationEvent feed records above remain the source of
     # stakeholder visibility; a worker runs only after the commit below.
-    queued_jobs = dissemination.enqueue_notifications(session, report, recipients)
+    # Demo reports exercise the real immutable publication + in-product feed,
+    # but must never create external email/webhook work.
+    queued_jobs = (
+        0
+        if report.demo_workspace_id is not None
+        else dissemination.enqueue_notifications(session, report, recipients)
+    )
     event = audit.record(
         session,
         action=audit.lifecycle_action(ReportStatus.PUBLISHED),

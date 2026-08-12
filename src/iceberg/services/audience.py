@@ -59,6 +59,16 @@ def set_report_audience(
     """
 
     groups = resolve_groups(session, group_ids)
+    if any(group.demo_workspace_id != report.demo_workspace_id for group in groups):
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "Demo audiences can only be assigned inside their demo workspace",
+        )
+    if report.demo_workspace_id is not None and not groups:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "A demo report must retain its isolated demo audience",
+        )
     report.audience_groups = groups
     session.add(report)
     session.commit()
@@ -88,6 +98,12 @@ def set_report_audience(
 
 def delete_group(session: Session, group: AudienceGroup) -> None:
     """Delete an unreferenced group, preserving any report scope on conflict."""
+
+    if group.demo_workspace_id is not None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Use the demo workspace reset to replace its isolated audience",
+        )
 
     referenced = session.exec(
         select(ReportAudienceGroup.report_id)

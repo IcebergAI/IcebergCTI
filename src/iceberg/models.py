@@ -586,6 +586,26 @@ class User(SQLModel, table=True):
     )
 
 
+class DemoWorkspace(SQLModel, table=True):
+    """Durable ownership boundary for one disposable synthetic demo cycle."""
+
+    __table_args__ = (
+        UniqueConstraint("public_id", name="uq_demo_workspace_public_id"),
+        UniqueConstraint("owner_id", name="uq_demo_workspace_owner"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    public_id: str = Field(index=True)
+    owner_id: int = Field(foreign_key="user.id", index=True)
+    stakeholder_id: int | None = Field(default=None, foreign_key="user.id", index=True)
+    join_code_digest: str
+    join_expires_at: datetime
+    generation: int = Field(default=1)
+    scenario_version: int = Field(default=1)
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
 class AudienceGroup(SQLModel, table=True):
     """Need-to-know group for published products.
 
@@ -600,6 +620,9 @@ class AudienceGroup(SQLModel, table=True):
     name: str
     slug: str = Field(index=True)
     description: str = ""
+    demo_workspace_id: int | None = Field(
+        default=None, foreign_key="demoworkspace.id", index=True, unique=True
+    )
     created_at: datetime = Field(default_factory=utcnow)
 
     members: list[User] = Relationship(
@@ -615,6 +638,9 @@ class Notebook(SQLModel, table=True):
     title: str
     topic: str = ""
     owner_id: int = Field(foreign_key="user.id", index=True)
+    demo_workspace_id: int | None = Field(
+        default=None, foreign_key="demoworkspace.id", index=True, unique=True
+    )
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
 
@@ -885,6 +911,9 @@ class Report(SQLModel, table=True):
     tlp: TLP = Field(default=TLP.AMBER)
     status: ReportStatus = Field(default=ReportStatus.DRAFT)
     author_id: int = Field(foreign_key="user.id")
+    demo_workspace_id: int | None = Field(
+        default=None, foreign_key="demoworkspace.id", index=True, unique=True
+    )
     reviewer_id: int | None = Field(default=None, foreign_key="user.id")
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
@@ -963,6 +992,9 @@ class Requirement(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     stakeholder_id: int = Field(foreign_key="user.id", index=True)
+    demo_workspace_id: int | None = Field(
+        default=None, foreign_key="demoworkspace.id", index=True, unique=True
+    )
     title: str
     description: str = ""
     intel_level: IntelLevel = Field(default=IntelLevel.STRATEGIC)

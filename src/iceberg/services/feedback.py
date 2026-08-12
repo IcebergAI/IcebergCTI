@@ -144,17 +144,24 @@ def _pct(part: int, whole: int) -> float:
     return round(part / whole, 3) if whole else 0.0
 
 
-def feedback_effectiveness(session: Session) -> dict:
+def feedback_effectiveness(session: Session, *, exclude_demo: bool = False) -> dict:
     """Program-level feedback metrics for the maturity dashboard.
 
     ``response_rate`` is feedback rows per distinct (report, stakeholder)
     dissemination delivery — the share of deliveries that drew a response.
     """
-    rows = list(session.exec(select(ProductFeedback)).all())
+    feedback_stmt = select(ProductFeedback)
+    delivery_stmt = select(func.count(col(DisseminationEvent.id)))
+    if exclude_demo:
+        feedback_stmt = feedback_stmt.join(Report).where(
+            col(Report.demo_workspace_id).is_(None)
+        )
+        delivery_stmt = delivery_stmt.join(Report).where(
+            col(Report.demo_workspace_id).is_(None)
+        )
+    rows = list(session.exec(feedback_stmt).all())
     total = len(rows)
-    deliveries = session.exec(
-        select(func.count(col(DisseminationEvent.id)))
-    ).one()
+    deliveries = session.exec(delivery_stmt).one()
     verdicts = [r for r in rows if r.satisfaction is not None]
     met = sum(1 for r in verdicts if r.satisfaction == RfiSatisfaction.MET)
     useful = sum(

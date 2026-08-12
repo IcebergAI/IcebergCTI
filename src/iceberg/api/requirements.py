@@ -26,6 +26,7 @@ from ..schemas import (
     RequirementUpdate,
 )
 from ..services import requirements as req_service
+from ..services import demo as demo_service
 
 router = APIRouter(prefix="/requirements", tags=["requirements"])
 
@@ -148,5 +149,6 @@ def delete_requirement(
     req = _get(session, requirement_id)
     if not _can_edit_fields(req, user):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Cannot delete this requirement")
+    demo_service.ensure_not_reset_managed(req)
     session.delete(req)
     session.commit()

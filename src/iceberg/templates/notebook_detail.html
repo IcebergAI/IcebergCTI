@@ -4,6 +4,8 @@
 {% block title %}{{ notebook.title }} · {{ app_name }}{% endblock %}
 {% block content %}
 
+{% if notebook.demo_workspace_id %}<div class="banner demo-banner mb-5" role="note"><strong>DEMO · SYNTHETIC</strong><span>This disposable notebook contains fictional demo material only.</span></div>{% endif %}
+
 <div class="mb-7">
   <a href="/" class="backlink">← Dashboard</a>
   <div class="eyebrow eyebrow-accent mt-3">Notebook</div>

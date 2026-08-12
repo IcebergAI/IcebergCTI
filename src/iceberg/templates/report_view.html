@@ -4,6 +4,8 @@
 {% block crumb %}{{ report.title }}{% endblock %}
 {% block content %}
 
+{% if report.demo_workspace_id %}<div class="banner demo-banner mb-5" role="note"><strong>DEMO · SYNTHETIC</strong><span>This published snapshot contains fictional demo material only.</span></div>{% endif %}
+
 {% set tech_tags = tags | selectattr('kind.value', 'equalto', 'TECHNIQUE') | selectattr('external_id') | list %}
 
 <a href="/reports" class="backlink">← Reports</a>

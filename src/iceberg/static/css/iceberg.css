@@ -1709,3 +1709,30 @@ h2 .help-hint, .eyebrow .help-hint {
 .distbar-track > span { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
 .distbar-val { font-family: var(--fs-mono); font-size: 12px; color: var(--muted); text-align: right; }
 .maturity-disclaimer { font-size: 12px; color: var(--muted); font-style: italic; margin-top: 10px; }
+
+/* ── Guided synthetic demo ──────────────────────────────────────────────── */
+.demo-shell { max-width: 1120px; margin: 0 auto; }
+.demo-banner { align-items: flex-start; gap: 12px; }
+.demo-banner strong { white-space: nowrap; }
+.demo-shell .muted { color: var(--ink-soft); }
+.demo-shell .inline-notice { color: var(--ink); }
+.demo-layout { display: grid; grid-template-columns: minmax(230px, 290px) minmax(0, 1fr); gap: 20px; align-items: start; }
+.demo-progress, .demo-checklist { list-style: none; padding: 0; margin-bottom: 0; }
+.demo-progress { display: grid; gap: 12px; }
+.demo-progress li { display: flex; gap: 10px; align-items: center; color: var(--ink-soft); font-size: 13px; }
+.demo-progress li > span { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 50%; font-family: var(--fs-mono); }
+.demo-progress li.is-current { color: var(--ink); font-weight: 600; }
+.demo-progress li.is-current > span { border-color: var(--accent); color: var(--accent-deep); }
+.demo-progress li.is-complete > span { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.demo-checklist { display: grid; gap: 12px; }
+.demo-checklist li { display: grid; grid-template-columns: minmax(130px, .7fr) minmax(180px, 1.3fr) auto; align-items: center; gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.demo-checklist li:last-child { border-bottom: 0; }
+.demo-checklist span { color: var(--ink-soft); font-size: 13px; }
+.demo-action { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+@media (max-width: 760px) {
+  .demo-layout { grid-template-columns: 1fr; }
+  .demo-overview { order: 2; }
+  .demo-checklist li { grid-template-columns: 1fr; gap: 7px; }
+  .demo-action { width: 100%; }
+  .demo-banner { flex-direction: column; }
+}

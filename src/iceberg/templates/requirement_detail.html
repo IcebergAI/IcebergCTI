@@ -4,6 +4,8 @@
 {% block page_class %}page-narrow{% endblock %}
 {% block content %}
 
+{% if req.demo_workspace_id %}<div class="banner demo-banner mb-5" role="note"><strong>DEMO · SYNTHETIC</strong><span>This disposable requirement is part of the fictional guided demo.</span></div>{% endif %}
+
 <a href="/requirements" class="backlink">← Requirements</a>
 
 <div class="head-row mt-3 mb-5">
