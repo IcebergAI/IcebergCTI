@@ -85,6 +85,8 @@ dev = [
     # schema validation silently unusable. Pin the last complete release until
     # its successor restores those assets.
     "stix2-validator==3.2.0",
+    "playwright>=1.58.0",
+    "axe-playwright-python>=0.1.7",
 ]
 
 [project.scripts]

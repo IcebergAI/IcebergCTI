@@ -7,6 +7,7 @@ import hmac
 import secrets
 from dataclasses import dataclass
 from datetime import timedelta, timezone
+from pathlib import Path
 from typing import Any, cast
 
 from fastapi import HTTPException, status
@@ -43,6 +44,8 @@ from ..models import (
     UserAudienceGroup,
     utcnow,
 )
+from . import attachments as attachment_service
+from . import figures as figure_service
 
 
 @dataclass(frozen=True)
@@ -172,8 +175,9 @@ def join(
         raise HTTPException(status.HTTP_409_CONFLICT, "Demo workspace already joined")
     session.expire(workspace)
     session.refresh(workspace)
-    _replace_scenario(session, workspace)
+    files = _replace_scenario(session, workspace)
     session.commit()
+    _unlink_files(files)
     session.refresh(workspace)
     return workspace
 
@@ -197,8 +201,16 @@ def _roots(
     )
 
 
-def _delete_scenario(session: Session, workspace: DemoWorkspace) -> None:
+def _delete_scenario(session: Session, workspace: DemoWorkspace) -> list[Path]:
     notebook, requirement, report, audience = _roots(session, _id(workspace))
+    files: list[Path] = []
+    if notebook is not None:
+        files.extend(
+            attachment_service.attachment_path(row) for row in notebook.attachments
+        )
+        files.extend(figure_service.figure_path(row) for row in notebook.figures)
+    if report is not None:
+        files.extend(Path(row.pdf_path) for row in report.rendered_products)
     # The notebook owns the report; explicit report deletion keeps ordering clear
     # for databases that defer relationship-cascade bookkeeping until flush.
     if report is not None:
@@ -208,12 +220,23 @@ def _delete_scenario(session: Session, workspace: DemoWorkspace) -> None:
         if row is not None:
             session.delete(row)
     session.flush()
+    return files
 
 
-def _replace_scenario(session: Session, workspace: DemoWorkspace) -> None:
+def _unlink_files(files: list[Path]) -> None:
+    """Best-effort cleanup only after the database transaction has committed."""
+
+    for path in files:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _replace_scenario(session: Session, workspace: DemoWorkspace) -> list[Path]:
     if workspace.stakeholder_id is None:
-        return
-    _delete_scenario(session, workspace)
+        return []
+    files = _delete_scenario(session, workspace)
     notebook = Notebook(
         title=content.NOTEBOOK_TITLE,
         topic=content.NOTEBOOK_TOPIC,
@@ -277,6 +300,7 @@ def _replace_scenario(session: Session, workspace: DemoWorkspace) -> None:
         UserAudienceGroup(user_id=workspace.stakeholder_id, group_id=audience.id)
     )
     session.flush()
+    return files
 
 
 def reset(
@@ -313,8 +337,9 @@ def reset(
         )
     session.expire(workspace)
     session.refresh(workspace)
-    _replace_scenario(session, workspace)
+    files = _replace_scenario(session, workspace)
     session.commit()
+    _unlink_files(files)
     session.refresh(workspace)
     return workspace
 
@@ -369,7 +394,9 @@ def progress(session: Session, workspace: DemoWorkspace) -> dict[str, object]:
         "published": published,
         "delivered": delivered,
         "feedback": feedback,
-        "complete": feedback
-        and requirement is not None
-        and requirement.status == RequirementStatus.SATISFIED,
+        # Any persisted stakeholder feedback closes the representative demo
+        # cycle. A truthful NOT_MET/PARTIALLY_MET verdict must not trap a user
+        # in an artificial tutorial state; requirement satisfaction remains an
+        # ordinary product outcome shown on its own screen.
+        "complete": feedback and published,
     }

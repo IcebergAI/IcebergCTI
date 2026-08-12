@@ -8,13 +8,17 @@ from starlette.requests import Request
 
 from iceberg import demo_content
 from iceberg.models import (
+    Attachment,
     DemoWorkspace,
     DisseminationEvent,
+    Figure,
     Notebook,
     OutboxJob,
+    ProductFormat,
     ProductUsefulness,
     PublicationSnapshot,
     Report,
+    RenderedProduct,
     ReportStatus,
     Requirement,
     RequirementStatus,
@@ -61,7 +65,7 @@ def _joined_workspace(session: Session):
     return workspace, analyst, stakeholder
 
 
-def test_start_join_and_web_discovery_are_role_safe(client, login):
+def test_start_join_and_web_discovery_are_role_safe(client, login, engine):
     login("ANALYST", "demo-owner@example.com")
     start = client.post("/api/demo-workspaces")
     assert start.status_code == 200
@@ -77,25 +81,48 @@ def test_start_join_and_web_discovery_are_role_safe(client, login):
     )
     assert joined.status_code == 200
     joined_payload = joined.json()
+    assert set(joined_payload["progress"]) == {
+        "joined",
+        "requirement_started",
+        "submitted",
+        "approved",
+        "published",
+        "delivered",
+        "feedback",
+        "complete",
+    }
+    serialized = joined.text
+    for private_field in (
+        "body_md",
+        "key_judgements",
+        "key_assumptions",
+        "intelligence_gaps",
+        "owner_id",
+    ):
+        assert private_field not in serialized
+    with Session(engine) as session:
+        workspace = session.exec(
+            select(DemoWorkspace).where(DemoWorkspace.public_id == payload["public_id"])
+        ).one()
+        state = demo.progress(session, workspace)
+        requirement_id = state["requirement"].id
+        notebook_id = state["notebook"].id
     page = client.get("/demo")
     assert page.status_code == 200
     assert "DEMO · SYNTHETIC" in page.text
     assert "Nothing here is live intelligence" in page.text
+    assert "/help?role=STAKEHOLDER#requirements" in page.text
+    assert "/help?role=STAKEHOLDER#dissemination" in page.text
     assert "Open feed" not in page.text
-    assert (
-        client.delete(
-            f"/api/requirements/{joined_payload['progress']['requirement']['id']}"
-        ).status_code
-        == 409
-    )
+    assert client.delete(f"/api/requirements/{requirement_id}").status_code == 409
 
     login("ANALYST", "demo-owner@example.com")
-    assert (
-        client.delete(
-            f"/api/notebooks/{joined_payload['progress']['notebook']['id']}"
-        ).status_code
-        == 409
+    assert client.delete(f"/api/notebooks/{notebook_id}").status_code == 409
+    extra_report = client.post(
+        "/api/reports",
+        json={"notebook_id": notebook_id, "title": "Escaped report"},
     )
+    assert extra_report.status_code == 409
 
     login("STAKEHOLDER", "demo-stakeholder@example.com")
     reused = client.post(
@@ -209,6 +236,62 @@ def test_reset_replaces_only_demo_generation_and_rejects_stale_reset(engine):
             assert getattr(exc, "status_code", None) == 409
         else:  # pragma: no cover - makes the concurrency contract explicit
             raise AssertionError("stale reset unexpectedly succeeded")
+
+
+def test_reset_unlinks_only_demo_owned_files(engine, tmp_path, monkeypatch):
+    with Session(engine) as session:
+        workspace, analyst, _stakeholder = _joined_workspace(session)
+        state = demo.progress(session, workspace)
+        attachment_file = tmp_path / "attachment.bin"
+        figure_file = tmp_path / "figure.png"
+        render_file = tmp_path / "report.pdf"
+        control_file = tmp_path / "user-owned.bin"
+        for path in (attachment_file, figure_file, render_file, control_file):
+            path.write_bytes(b"synthetic")
+        session.add(
+            Attachment(
+                notebook_id=state["notebook"].id,
+                original_filename="attachment.bin",
+                stored_filename=attachment_file.name,
+                content_type="application/octet-stream",
+                file_size=9,
+            )
+        )
+        session.add(
+            Figure(
+                notebook_id=state["notebook"].id,
+                original_filename="figure.png",
+                stored_filename=figure_file.name,
+                content_type="image/png",
+                file_size=9,
+            )
+        )
+        session.add(
+            RenderedProduct(
+                report_id=state["report"].id,
+                format=ProductFormat.FULL,
+                pdf_path=str(render_file),
+            )
+        )
+        session.commit()
+        monkeypatch.setattr(
+            demo.attachment_service, "attachment_path", lambda _row: attachment_file
+        )
+        monkeypatch.setattr(
+            demo.figure_service, "figure_path", lambda _row: figure_file
+        )
+
+        demo.reset(
+            session,
+            workspace=workspace,
+            actor=analyst,
+            expected_generation=1,
+        )
+
+        assert not attachment_file.exists()
+        assert not figure_file.exists()
+        assert not render_file.exists()
+        assert control_file.exists()
 
 
 def test_fixture_is_synthetic_and_contains_no_indicators(engine):

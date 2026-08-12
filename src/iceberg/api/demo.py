@@ -25,11 +25,27 @@ class DemoReset(BaseModel):
 
 
 def _response(session: Session, workspace: DemoWorkspace) -> dict[str, object]:
+    progress = demo_service.progress(session, workspace)
     return {
         "public_id": workspace.public_id,
         "generation": workspace.generation,
         "scenario_version": workspace.scenario_version,
-        "progress": demo_service.progress(session, workspace),
+        # This endpoint is shared with stakeholders. Never serialize the ORM
+        # rows used by the server-rendered checklist: draft report prose and
+        # notebook metadata remain behind their ordinary authorization paths.
+        "progress": {
+            key: progress[key]
+            for key in (
+                "joined",
+                "requirement_started",
+                "submitted",
+                "approved",
+                "published",
+                "delivered",
+                "feedback",
+                "complete",
+            )
+        },
     }
 
 

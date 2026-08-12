@@ -44,6 +44,8 @@ jobs:
       # skipping (it fetches the pinned cmarker package over the network once).
       - uses: typst-community/setup-typst@40d32bb6ccb235bd7f5164cb47cfd40a5ea3a314 # v5.2.0
       - run: uv sync --locked --extra dev
+      - name: Install guided-demo browser
+        run: uv run playwright install --with-deps chromium
       - name: Run tests with coverage
         run: uv run pytest --cov=iceberg --cov-report=term-missing  # fail_under enforced from pyproject
       - name: Ruff (lint)

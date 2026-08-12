@@ -1728,6 +1728,7 @@ h2 .help-hint, .eyebrow .help-hint {
 .demo-checklist li { display: grid; grid-template-columns: minmax(130px, .7fr) minmax(180px, 1.3fr) auto; align-items: center; gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--line); }
 .demo-checklist li:last-child { border-bottom: 0; }
 .demo-checklist span { color: var(--ink-soft); font-size: 13px; }
+.demo-checklist span a { color: var(--accent-deep); text-decoration: underline; text-underline-offset: 2px; }
 .demo-action { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
 @media (max-width: 760px) {
   .demo-layout { grid-template-columns: 1fr; }

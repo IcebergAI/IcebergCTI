@@ -221,8 +221,14 @@ def create_report(
 ) -> Report:
     """Create a report under an existing notebook (404 if the notebook is gone).
     Shared by the JSON API and the portal."""
-    if not session.get(Notebook, notebook_id):
+    notebook = session.get(Notebook, notebook_id)
+    if notebook is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Notebook not found")
+    if notebook.demo_workspace_id is not None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "The guided demo owns its single isolated assessment",
+        )
     report = Report(
         notebook_id=notebook_id,
         title=title,
