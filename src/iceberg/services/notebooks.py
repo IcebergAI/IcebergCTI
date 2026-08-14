@@ -41,9 +41,11 @@ def add_source(
     summary: str = "",
     content_md: str = "",
     tlp: TLP = TLP.AMBER,
+    feed_item_id: int | None = None,
     reliability: SourceReliability | None = None,
     credibility: SourceCredibility | None = None,
     grading_rationale: str = "",
+    commit: bool = True,
 ) -> Source:
     source = Source(
         notebook_id=notebook.id,
@@ -52,6 +54,7 @@ def add_source(
         summary=summary,
         content_md=content_md,
         tlp=tlp,
+        feed_item_id=feed_item_id,
     )
     if reliability or credibility:
         source_grading.set_manual_grade(
@@ -64,8 +67,11 @@ def add_source(
         # Offline heuristic grade — instant, no network.
         source_grading.auto_grade(source)
     session.add(source)
-    session.commit()
-    session.refresh(source)
+    if commit:
+        session.commit()
+        session.refresh(source)
+    else:
+        session.flush()
     return source
 
 

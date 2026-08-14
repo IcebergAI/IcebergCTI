@@ -40,7 +40,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
 
 from ..config import get_settings
-from ..models import TLP, Feed, FeedItem, Notebook, Source, utcnow
+from ..models import FeedIndicatorCandidate, TLP, Feed, FeedItem, Notebook, Source, utcnow
 from . import notebooks as notebook_service
 from . import proxy, proxy_settings, retention
 
@@ -527,7 +527,13 @@ def prune_feed_items(session: Session) -> int:
     if not days:
         return 0
     cutoff = utcnow() - timedelta(days=days)
-    stale = (col(FeedItem.ingested_at).is_(None)) & (col(FeedItem.fetched_at) < cutoff)
+    # A rejected/duplicate candidate remains analyst evidence even when no
+    # notebook source was created, so candidate-bearing items are retained.
+    stale = (
+        col(FeedItem.ingested_at).is_(None)
+        & (col(FeedItem.fetched_at) < cutoff)
+        & col(FeedItem.id).not_in(select(FeedIndicatorCandidate.feed_item_id))
+    )
     return retention.delete_in_batches(session, FeedItem, stale)
 
 
@@ -594,6 +600,17 @@ def send_item_to_notebook(
 ) -> Source:
     """Capture a fetched article into a notebook as an (auto-graded) Source and
     stamp ``ingested_at`` on the item."""
+    existing = session.exec(
+        select(Source).where(
+            Source.notebook_id == notebook.id, Source.feed_item_id == item.id
+        )
+    ).first()
+    if existing is not None:
+        if item.ingested_at is None:
+            item.ingested_at = utcnow()
+            session.add(item)
+            session.commit()
+        return existing
     source = notebook_service.add_source(
         session,
         notebook,
@@ -603,6 +620,7 @@ def send_item_to_notebook(
         content_md=_to_text(item.content or item.summary),
         # Public RSS/Atom articles are open-source material — mark TLP:CLEAR.
         tlp=TLP.CLEAR,
+        feed_item_id=item.id,
     )
     item.ingested_at = utcnow()
     session.add(item)

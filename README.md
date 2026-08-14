@@ -87,10 +87,13 @@ its response / satisfaction / useful rates roll up into the maturity dashboard.*
 ### Inbound collection — RSS feed ingestion
 ![Feed reader](docs/images/feed-reader.png)
 *An admin configures external **RSS/Atom feeds**; their articles are polled into a writer-only
-**feed reader** where an analyst **sends an article to a notebook** (existing or new) — capturing it
+**feed reader** where an analyst can run a local, advisory IOC-shaped-value scan, review exact
+evidence and warnings, then accept selected candidates into a notebook. Acceptance captures the
+article as a provenance source and creates an ordinary light-touch IOC; nothing is published or
+sent to MISP automatically. Analysts can also **send an article to a notebook** (existing or new) — capturing it
 as an auto-graded source. The fetcher is opt-in, timeout-bounded and failure-isolated, fetched
 content is sanitised, and feed URLs are admin-only (the SSRF-containment boundary). Article bodies
-are retained as the seam for future IOC extraction + summarisation.*
+are retained as the source for deterministic candidate extraction + future summarisation.*
 
 ![Admin — RSS feeds](docs/images/admin-feeds.png)
 *Admins manage the feed list at `/admin/feeds` — add/enable feeds, see last-fetch status, and
