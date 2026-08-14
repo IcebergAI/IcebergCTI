@@ -31,6 +31,9 @@ _IOC_VALUES = (
     "FILENAME",
     "CVE",
 )
+_CANDIDATE_STATUS = sa.Enum(
+    "PENDING", "ACCEPTED", "REJECTED", "DUPLICATE", name="feedcandidatestatus"
+)
 
 
 def _ioc_type(bind):
@@ -68,7 +71,7 @@ def upgrade() -> None:
         sa.Column("source_excerpt", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         sa.Column("confidence", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         sa.Column("warnings", sa.JSON(), nullable=False, server_default="[]"),
-        sa.Column("status", sa.Enum("PENDING", "ACCEPTED", "REJECTED", "DUPLICATE", name="feedcandidatestatus"), nullable=False),
+        sa.Column("status", _CANDIDATE_STATUS, nullable=False),
         sa.Column("extraction_error", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         sa.Column("extracted_at", sa.DateTime(), nullable=False),
         sa.Column("decided_at", sa.DateTime(), nullable=True),
@@ -108,6 +111,7 @@ def downgrade() -> None:
     ):
         op.drop_index(name, table_name="feedindicatorcandidate")
     op.drop_table("feedindicatorcandidate")
+    _CANDIDATE_STATUS.drop(op.get_bind(), checkfirst=True)
     with op.batch_alter_table("feeditem") as batch:
         batch.drop_column("indicator_extraction_error")
         batch.drop_column("indicator_extracted_at")
