@@ -7,14 +7,20 @@ in-memory engine + create_all). The fixture clears the settings cache on the way
 in and out so the temp URL doesn't leak into other tests.
 """
 
+from types import SimpleNamespace
+
 import pytest
 from alembic import command
 from sqlalchemy import column, create_engine, String, table, text
+from sqlalchemy.dialects import postgresql
 
 from iceberg import db as db_mod
 from iceberg.config import get_settings
 from iceberg.migrations.versions.a4b5c6d7e8f9_attack_tactics import (
     _technique_predicate,
+)
+from iceberg.migrations.versions.d4e5f6a7b8c9_feed_indicator_candidates import (
+    _ioc_type,
 )
 
 
@@ -78,3 +84,11 @@ def test_attack_tactic_backfill_casts_native_postgres_enum():
     predicate = str(_technique_predicate(tag, "postgresql"))
 
     assert predicate == "tag.kind = 'TECHNIQUE'::tagkind"
+
+
+def test_feed_indicator_migration_reuses_existing_postgres_ioc_enum():
+    enum = _ioc_type(SimpleNamespace(dialect=postgresql.dialect()))
+
+    assert isinstance(enum, postgresql.ENUM)
+    assert enum.name == "ioctype"
+    assert enum.create_type is False

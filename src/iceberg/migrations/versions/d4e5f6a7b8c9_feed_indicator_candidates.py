@@ -10,6 +10,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 import sqlmodel
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 
 revision: str = "d4e5f6a7b8c9"
@@ -17,8 +18,33 @@ down_revision: str | Sequence[str] | None = "c3d4e5f6a7b8"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
+_IOC_VALUES = (
+    "IP_SRC",
+    "IP_DST",
+    "DOMAIN",
+    "HOSTNAME",
+    "URL",
+    "MD5",
+    "SHA1",
+    "SHA256",
+    "EMAIL",
+    "FILENAME",
+    "CVE",
+)
+_CANDIDATE_STATUS = sa.Enum(
+    "PENDING", "ACCEPTED", "REJECTED", "DUPLICATE", name="feedcandidatestatus"
+)
+
+
+def _ioc_type(bind):
+    """Reference the IOC enum created by the earlier IOC migration."""
+    if bind.dialect.name == "postgresql":
+        return postgresql.ENUM(*_IOC_VALUES, name="ioctype", create_type=False)
+    return sa.Enum(*_IOC_VALUES, name="ioctype")
+
 
 def upgrade() -> None:
+    bind = op.get_bind()
     with op.batch_alter_table("source") as batch:
         batch.add_column(sa.Column("feed_item_id", sa.Integer(), nullable=True))
         batch.create_foreign_key("fk_source_feed_item", "feeditem", ["feed_item_id"], ["id"], ondelete="SET NULL")
@@ -39,13 +65,13 @@ def upgrade() -> None:
         sa.Column("extractor_version", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         sa.Column("raw_value", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         sa.Column("normalized_value", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("ioc_type", sa.Enum("IP_SRC", "IP_DST", "DOMAIN", "HOSTNAME", "URL", "MD5", "SHA1", "SHA256", "EMAIL", "FILENAME", "CVE", name="ioctype"), nullable=True),
+        sa.Column("ioc_type", _ioc_type(bind), nullable=True),
         sa.Column("start_offset", sa.Integer(), nullable=False),
         sa.Column("end_offset", sa.Integer(), nullable=False),
         sa.Column("source_excerpt", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         sa.Column("confidence", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         sa.Column("warnings", sa.JSON(), nullable=False, server_default="[]"),
-        sa.Column("status", sa.Enum("PENDING", "ACCEPTED", "REJECTED", "DUPLICATE", name="feedcandidatestatus"), nullable=False),
+        sa.Column("status", _CANDIDATE_STATUS, nullable=False),
         sa.Column("extraction_error", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         sa.Column("extracted_at", sa.DateTime(), nullable=False),
         sa.Column("decided_at", sa.DateTime(), nullable=True),
@@ -85,6 +111,7 @@ def downgrade() -> None:
     ):
         op.drop_index(name, table_name="feedindicatorcandidate")
     op.drop_table("feedindicatorcandidate")
+    _CANDIDATE_STATUS.drop(op.get_bind(), checkfirst=True)
     with op.batch_alter_table("feeditem") as batch:
         batch.drop_column("indicator_extraction_error")
         batch.drop_column("indicator_extracted_at")
