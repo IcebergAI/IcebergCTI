@@ -59,7 +59,7 @@ _Compact index — full per-model bullets in ARCHITECTURE.md._
 - **AudienceGroup** — admin-managed need-to-know group scoping stakeholders + reports.
 - **ReportEmbedding** — rebuildable local vector row for related-products (no content egress).
 - **ProductFeedback** — stakeholder feedback on a delivered product (usefulness + RFI-satisfaction verdict).
-- **Feed / FeedItem** — admin-configured RSS/Atom source + fetched articles (inbound collection).
+- **Feed / FeedItem / FeedIndicatorCandidate** — admin-configured RSS/Atom collection; writers can explicitly review deterministic, evidence-linked IOC candidates before accepting them into a notebook.
 - **AuditEvent** — persisted security-relevant event (OWASP attributes); local forensic trail.
 - **AuditSettings** — single-row SIEM-emit config (`/admin/audit`); HTTP/HEC token env-only.
 - **ProxySettings** — single-row global outbound-proxy config (`/admin/proxy`); credentials env-only.

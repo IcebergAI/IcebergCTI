@@ -10,7 +10,7 @@ from datetime import timedelta
 from sqlmodel import Session, col, select
 
 from iceberg.config import get_settings
-from iceberg.models import AuditEvent, Feed, FeedItem, utcnow
+from iceberg.models import AuditEvent, Feed, FeedIndicatorCandidate, FeedItem, utcnow
 from iceberg.services import retention
 from iceberg.services.audit import prune_audit_events
 from iceberg.services.feeds import prune_feed_items
@@ -71,6 +71,26 @@ def test_prune_feed_items_spares_ingested_and_recent(engine, monkeypatch):
         assert prune_feed_items(session) == 1
         remaining = {i.guid for i in session.exec(select(FeedItem)).all()}
         assert remaining == {"b", "c"}
+
+
+def test_prune_feed_items_spares_candidate_evidence(engine, monkeypatch):
+    monkeypatch.setattr(get_settings(), "feed_item_retention_days", 30)
+    with Session(engine) as session:
+        feed = Feed(url="https://example.net/rss", title="Example")
+        session.add(feed)
+        session.commit()
+        item = FeedItem(feed_id=feed.id, guid="candidate", fetched_at=utcnow() - timedelta(days=60))
+        session.add(item)
+        session.commit()
+        session.add(
+            FeedIndicatorCandidate(
+                feed_item_id=item.id, content_sha256="digest", raw_value="evil.example",
+                start_offset=0, end_offset=12,
+            )
+        )
+        session.commit()
+        assert prune_feed_items(session) == 0
+        assert session.get(FeedItem, item.id) is not None
 
 
 def test_prune_feed_items_disabled_keeps_everything(engine, monkeypatch):

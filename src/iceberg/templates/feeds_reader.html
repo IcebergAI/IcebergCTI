@@ -56,6 +56,59 @@
 
       {% if item.summary %}<div class="md text-sm mt-3" style="color:var(--muted);">{{ item.summary | safe }}</div>{% endif %}
 
+      <details class="source-inline-editor mt-3">
+        <summary class="btn btn--ghost btn--sm">Review indicators{% if candidates_by_item.get(item.id) %} ({{ candidates_by_item[item.id] | length }}){% endif %}</summary>
+        <div class="source-inline-editor-panel">
+          <form method="post" action="/feeds/items/{{ item.id }}/indicators/extract">
+            <button class="btn btn--ghost btn--sm" type="submit">Extract candidates</button>
+            <span class="text-xs" style="color:var(--muted);">Local advisory scan; no indicator is created automatically.</span>
+          </form>
+          {% if item.indicator_extraction_error %}<p class="text-xs mt-2" style="color:var(--danger);">Extraction failed: {{ item.indicator_extraction_error }}</p>{% endif %}
+          {% for candidate in candidates_by_item.get(item.id, []) %}
+            <div class="mt-3 pt-3 border-t border-line">
+              <div class="flex gap-2 flex-wrap items-center">
+                <span class="tag">{{ candidate.ioc_type or 'untyped' }}</span>
+                <code class="mono break-all">{{ candidate.raw_value }}</code>
+                <span class="eyebrow">{{ candidate.status }}</span>
+              </div>
+              <p class="text-xs mt-1" style="color:var(--muted);">Evidence: {{ candidate.source_excerpt }}</p>
+              {% if candidate.normalized_value != candidate.raw_value %}<p class="text-xs" style="color:var(--muted);">Proposed value: <code>{{ candidate.normalized_value }}</code></p>{% endif %}
+              {% for warning in candidate.warnings %}<p class="text-xs" style="color:var(--warning);">{{ warning }}</p>{% endfor %}
+              {% if candidate.status == 'PENDING' %}
+                <form method="post" action="/feeds/items/{{ item.id }}/indicators/{{ candidate.id }}/decision" class="add-grid mt-2">
+                  <select name="notebook_id" class="field" required>
+                    <option value="">— Select notebook to accept —</option>
+                    {% for nb in notebooks %}<option value="{{ nb.id }}">{{ nb.title }}</option>{% endfor %}
+                  </select>
+                  <button class="btn btn--primary btn--sm" name="decision" value="ACCEPTED">Accept</button>
+                  <button class="btn btn--ghost btn--sm" name="decision" value="REJECTED" formnovalidate>Reject</button>
+                </form>
+                <details class="mt-2">
+                  <summary class="text-xs" style="cursor:pointer;color:var(--muted);">Mark as existing indicator</summary>
+                  <form method="post" action="/feeds/items/{{ item.id }}/indicators/{{ candidate.id }}/decision" class="add-grid mt-2">
+                    <select name="notebook_id" class="field" required>
+                      <option value="">— Notebook —</option>
+                      {% for nb in notebooks %}<option value="{{ nb.id }}">{{ nb.title }}</option>{% endfor %}
+                    </select>
+                    <select name="duplicate_ioc_id" class="field" required>
+                      <option value="">— Existing indicator —</option>
+                      {% for notebook_iocs in iocs_by_notebook.values() %}{% for ioc in notebook_iocs %}
+                        <option value="{{ ioc.id }}">{{ ioc.value }} ({{ ioc.notebook_id }})</option>
+                      {% endfor %}{% endfor %}
+                    </select>
+                    <button class="btn btn--ghost btn--sm" name="decision" value="DUPLICATE">Mark duplicate</button>
+                  </form>
+                </details>
+              {% else %}
+                <form method="post" action="/feeds/items/{{ item.id }}/indicators/{{ candidate.id }}/reopen" class="mt-2">
+                  <button class="btn btn--ghost btn--sm">Reopen decision</button>
+                </form>
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      </details>
+
       <details class="source-inline-editor mt-3" x-data="sendToNotebook">
         <summary class="btn btn--ghost btn--sm">Send to notebook</summary>
         <div class="source-inline-editor-panel">

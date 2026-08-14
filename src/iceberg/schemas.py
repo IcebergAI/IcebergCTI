@@ -9,6 +9,7 @@ from .models import (
     DiamondConfidence,
     IntelLevel,
     IOCType,
+    FeedCandidateStatus,
     Motivation,
     Priority,
     ProductFormat,
@@ -242,6 +243,12 @@ class IOCCitationsUpdate(BaseModel):
     """Set the notebook indicators a report cites (Indicators appendix + MISP)."""
 
     ioc_ids: list[int]
+
+
+class FeedIndicatorDecision(BaseModel):
+    decision: FeedCandidateStatus
+    notebook_id: int | None = None
+    duplicate_ioc_id: int | None = None
 
 
 class TransitionRequest(BaseModel):

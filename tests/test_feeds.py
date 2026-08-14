@@ -13,7 +13,15 @@ import httpx
 import pytest
 from sqlmodel import Session, select
 
-from iceberg.models import Feed, FeedItem, Notebook, Source, User
+from iceberg.models import (
+    Feed,
+    FeedItem,
+    IOC,
+    Notebook,
+    Source,
+    User,
+)
+from iceberg.services import feed_indicators
 from iceberg.services import feeds as feeds_service
 
 RSS_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
@@ -493,6 +501,96 @@ def test_send_item_to_notebook_creates_graded_source(engine):
         assert source.grading_origin.value != "UNGRADED"
         session.refresh(item)
         assert item.ingested_at is not None
+
+
+# --------------------------------------------------------------------------- #
+# Feed-item IOC candidate extraction and triage (#312)
+# --------------------------------------------------------------------------- #
+def test_feed_indicator_parser_preserves_raw_offsets_and_warnings(engine):
+    with _new_session(engine) as session:
+        item = _seed_feed_with_item(session)
+        item.content = "See hxxps://evil[.]example/a and 198.51.100.4; sha 0" + "a" * 64
+        session.add(item)
+        session.commit()
+        candidates = feed_indicators.extract(session, item)
+        assert {candidate.ioc_type.value for candidate in candidates} >= {"url", "ip-dst", "sha256"}
+        url = next(candidate for candidate in candidates if candidate.ioc_type.value == "url")
+        assert url.raw_value == "hxxps://evil[.]example/a"
+        assert url.normalized_value == "https://evil.example/a"
+        assert "defanging" in " ".join(url.warnings).lower()
+        assert item.content[url.start_offset : url.end_offset] == url.raw_value
+        assert url.content_sha256
+        # Same content/version is a no-op, rather than duplicating candidates.
+        assert len(feed_indicators.extract(session, item)) == len(candidates)
+
+
+def test_indicator_api_accepts_into_notebook_and_reopens(client, login, engine):
+    with Session(engine) as session:
+        item = _seed_feed_with_item(session)
+        item.content = "Contact ops@evil.example or 198.51.100.4"
+        session.add(item)
+        session.commit()
+        item_id = item.id
+    login("ANALYST", email="analyst@example.com")
+    notebook = client.post("/api/notebooks", json={"title": "Target"}).json()
+    extracted = client.post(f"/api/feeds/items/{item_id}/indicator-candidates/extract")
+    assert extracted.status_code == 200, extracted.text
+    candidate = extracted.json()["candidates"][0]
+    accepted = client.post(
+        f"/api/feeds/items/{item_id}/indicator-candidates/{candidate['id']}/decision",
+        json={"decision": "ACCEPTED", "notebook_id": notebook["id"]},
+    )
+    assert accepted.status_code == 200, accepted.text
+    accepted_row = accepted.json()
+    assert accepted_row["status"] == "ACCEPTED"
+    assert accepted_row["source_id"] and accepted_row["ioc_id"]
+    with Session(engine) as session:
+        assert len(session.exec(select(Source).where(Source.notebook_id == notebook["id"])).all()) == 1
+        assert len(session.exec(select(IOC).where(IOC.notebook_id == notebook["id"])).all()) == 1
+    reopened = client.post(
+        f"/api/feeds/items/{item_id}/indicator-candidates/{candidate['id']}/reopen"
+    )
+    assert reopened.status_code == 200, reopened.text
+    assert reopened.json()["status"] == "PENDING"
+    with Session(engine) as session:
+        assert session.exec(select(IOC).where(IOC.notebook_id == notebook["id"])).all() == []
+
+
+def test_indicator_duplicate_requires_same_notebook(client, login, engine):
+    with Session(engine) as session:
+        item = _seed_feed_with_item(session)
+        item.content = "evil.example"
+        session.add(item)
+        session.commit()
+        item_id = item.id
+    login("ANALYST", email="analyst@example.com")
+    first = client.post("/api/notebooks", json={"title": "First"}).json()
+    second = client.post("/api/notebooks", json={"title": "Second"}).json()
+    ioc = client.post(
+        f"/api/notebooks/{first['id']}/iocs", json={"ioc_type": "domain", "value": "evil.example"}
+    ).json()
+    candidate = client.post(
+        f"/api/feeds/items/{item_id}/indicator-candidates/extract"
+    ).json()["candidates"][0]
+    bad = client.post(
+        f"/api/feeds/items/{item_id}/indicator-candidates/{candidate['id']}/decision",
+        json={"decision": "DUPLICATE", "notebook_id": second["id"], "duplicate_ioc_id": ioc["id"]},
+    )
+    assert bad.status_code == 404
+    good = client.post(
+        f"/api/feeds/items/{item_id}/indicator-candidates/{candidate['id']}/decision",
+        json={"decision": "DUPLICATE", "notebook_id": first["id"], "duplicate_ioc_id": ioc["id"]},
+    )
+    assert good.status_code == 200
+    assert good.json()["status"] == "DUPLICATE"
+
+
+def test_indicator_api_is_writer_only(client, login, engine):
+    with Session(engine) as session:
+        item_id = _seed_feed_with_item(session).id
+    login("STAKEHOLDER", email="stakeholder@example.com")
+    assert client.get(f"/api/feeds/items/{item_id}/indicator-candidates").status_code == 403
+    assert client.post(f"/api/feeds/items/{item_id}/indicator-candidates/extract").status_code == 403
 
 
 # --------------------------------------------------------------------------- #

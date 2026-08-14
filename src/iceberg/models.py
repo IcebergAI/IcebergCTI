@@ -228,6 +228,15 @@ class IOCType(StrEnum):
     CVE = "vulnerability"
 
 
+class FeedCandidateStatus(StrEnum):
+    """Analyst disposition of a locally extracted feed indicator candidate."""
+
+    PENDING = "PENDING"
+    ACCEPTED = "ACCEPTED"
+    REJECTED = "REJECTED"
+    DUPLICATE = "DUPLICATE"
+
+
 _IOC_TYPE_LABELS = {
     IOCType.IP_SRC: "IP address (source)",
     IOCType.IP_DST: "IP address (destination)",
@@ -342,6 +351,12 @@ class AuditAction(StrEnum):
     IOC_CREATED = "IOC_CREATED"
     IOC_UPDATED = "IOC_UPDATED"
     IOC_DELETED = "IOC_DELETED"
+    # Feed-item IOC candidate review (the candidate itself is never published).
+    FEED_INDICATORS_EXTRACTED = "FEED_INDICATORS_EXTRACTED"
+    FEED_INDICATOR_ACCEPTED = "FEED_INDICATOR_ACCEPTED"
+    FEED_INDICATOR_REJECTED = "FEED_INDICATOR_REJECTED"
+    FEED_INDICATOR_DUPLICATE = "FEED_INDICATOR_DUPLICATE"
+    FEED_INDICATOR_REOPENED = "FEED_INDICATOR_REOPENED"
     # MISP push integration (admin config + report event push)
     MISP_SETTINGS_UPDATED = "MISP_SETTINGS_UPDATED"
     MISP_TEST = "MISP_TEST"
@@ -633,9 +648,19 @@ class Notebook(SQLModel, table=True):
 
 
 class Source(SQLModel, table=True):
+    __table_args__ = (
+        UniqueConstraint("notebook_id", "feed_item_id", name="uq_source_notebook_feed_item"),
+    )
+
     id: int | None = Field(default=None, primary_key=True)
     notebook_id: int = Field(
         foreign_key="notebook.id", ondelete="CASCADE", index=True
+    )
+    # Set only for a source captured from the inbound feed reader. Together
+    # with ``notebook_id`` this prevents an article being captured twice in one
+    # notebook when several reviewed candidates are accepted.
+    feed_item_id: int | None = Field(
+        default=None, foreign_key="feeditem.id", ondelete="SET NULL", index=True
     )
     title: str
     reference: str = ""  # URL or citation reference
@@ -1187,8 +1212,63 @@ class FeedItem(SQLModel, table=True):
     published_at: datetime | None = Field(default=None)
     fetched_at: datetime = Field(default_factory=utcnow)
     ingested_at: datetime | None = Field(default=None)  # set when sent to a notebook
+    indicator_content_sha256: str = ""
+    indicator_extractor_version: str = ""
+    indicator_extracted_at: datetime | None = Field(default=None)
+    indicator_extraction_error: str = ""
 
     feed: Feed = Relationship(back_populates="items")
+
+
+class FeedIndicatorCandidate(SQLModel, table=True):
+    """A deterministic, reviewable IOC-shaped match from one feed-item revision.
+
+    Candidates are evidence records, not indicators. Only an explicit analyst
+    acceptance creates a normal notebook ``IOC`` row.
+    """
+
+    __table_args__ = (
+        UniqueConstraint(
+            "feed_item_id", "content_sha256", "extractor_version", "start_offset",
+            "end_offset", "raw_value", name="uq_feed_indicator_candidate_match",
+        ),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    feed_item_id: int = Field(
+        foreign_key="feeditem.id", ondelete="CASCADE", index=True
+    )
+    content_sha256: str = Field(index=True)
+    extractor_version: str = "local-ioc-v1"
+    raw_value: str
+    normalized_value: str = ""
+    ioc_type: IOCType | None = Field(default=None)
+    start_offset: int
+    end_offset: int
+    source_excerpt: str = ""
+    confidence: str = "medium"
+    warnings: list[str] = Field(
+        default_factory=list, sa_column=Column(JSON, nullable=False, server_default="[]")
+    )
+    status: FeedCandidateStatus = Field(default=FeedCandidateStatus.PENDING, index=True)
+    extraction_error: str = ""
+    extracted_at: datetime = Field(default_factory=utcnow)
+    decided_at: datetime | None = Field(default=None)
+    decided_by_id: int | None = Field(
+        default=None, foreign_key="user.id", ondelete="SET NULL", index=True
+    )
+    notebook_id: int | None = Field(
+        default=None, foreign_key="notebook.id", ondelete="SET NULL", index=True
+    )
+    source_id: int | None = Field(
+        default=None, foreign_key="source.id", ondelete="SET NULL", index=True
+    )
+    ioc_id: int | None = Field(
+        default=None, foreign_key="ioc.id", ondelete="SET NULL", index=True
+    )
+    duplicate_ioc_id: int | None = Field(
+        default=None, foreign_key="ioc.id", ondelete="SET NULL", index=True
+    )
 
 
 class OutboxJob(SQLModel, table=True):

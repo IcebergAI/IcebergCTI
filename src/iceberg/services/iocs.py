@@ -53,6 +53,7 @@ def create_ioc(
     description: str = "",
     source_id: int | None = None,
     tlp: TLP | None = None,
+    commit: bool = True,
 ) -> IOC:
     """Create an indicator under a notebook.
 
@@ -74,8 +75,11 @@ def create_ioc(
         tlp=_resolve_tlp(session, scoped_source_id, tlp),
     )
     session.add(ioc)
-    session.commit()
-    session.refresh(ioc)
+    if commit:
+        session.commit()
+        session.refresh(ioc)
+    else:
+        session.flush()
     return ioc
 
 

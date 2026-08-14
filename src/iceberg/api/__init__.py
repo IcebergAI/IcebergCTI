@@ -8,6 +8,7 @@ from .attack import router as attack_router
 from .audience import router as audience_router
 from .feedback import router as feedback_router
 from .feed import router as feed_router
+from .feeds import router as feeds_router
 from .notebooks import router as notebooks_router
 from .preview import router as preview_router
 from .reports import router as reports_router
@@ -23,6 +24,7 @@ api_router.include_router(notebooks_router)
 api_router.include_router(reports_router)
 api_router.include_router(requirements_router)
 api_router.include_router(feed_router)
+api_router.include_router(feeds_router)
 api_router.include_router(feedback_router)
 api_router.include_router(account_router)
 api_router.include_router(preview_router)
