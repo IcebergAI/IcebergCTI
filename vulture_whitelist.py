@@ -124,6 +124,19 @@ _.connect_unix_socket  # unused attribute (httpcore backend protocol method)
 answers_requirement_id  # unused variable (src/iceberg/services/feed.py)
 context  # unused variable (src/iceberg/services/feed.py)
 
+# Feed indicator extraction/review state — SQLModel fields persisted by the ORM.
+indicator_extracted_at  # unused variable (src/iceberg/models.py)
+content_sha256  # unused variable (src/iceberg/models.py)
+extractor_version  # unused variable (src/iceberg/models.py)
+end_offset  # unused variable (src/iceberg/models.py)
+source_excerpt  # unused variable (src/iceberg/models.py)
+extracted_at  # unused variable (src/iceberg/models.py)
+decided_at  # unused variable (src/iceberg/models.py)
+decided_by_id  # unused variable (src/iceberg/models.py)
+_.indicator_extracted_at  # SQLModel persisted attribute (src/iceberg/services/feed_indicators.py)
+_.decided_at  # SQLModel persisted attribute (src/iceberg/services/feed_indicators.py)
+_.decided_by_id  # SQLModel persisted attribute (src/iceberg/services/feed_indicators.py)
+
 # /admin Settings-hub tile fields — read only in templates/admin_home.html.
 tone  # unused variable (src/iceberg/services/effective_config.py)
 meta  # unused variable (src/iceberg/services/effective_config.py)
