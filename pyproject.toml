@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=83.0.0"]
+requires = ["setuptools>=84.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -27,7 +27,7 @@ classifiers = [
 # uv.lock pins the tested transitive graph for CI and repeatable installs.
 dependencies = [
     "fastapi>=0.141.1",
-    "uvicorn>=0.52.1",
+    "uvicorn>=0.52.2",
     "sqlmodel>=0.0.39",
     "jinja2>=3.1.6",
     "python-multipart>=0.0.32",
@@ -36,15 +36,15 @@ dependencies = [
     # it. Starlette TestClient has moved to the maintained httpx2 package; keep
     # both explicit until Authlib completes that transition.
     "httpx>=0.28.1",
-    "httpx2>=2.9.1",
+    "httpx2>=2.10.0",
     "pyjwt>=2.13",
-    "pydantic-settings>=2.14.2",
+    "pydantic-settings>=2.15.0",
     "redis>=8.1.0",
     "itsdangerous>=2.2",
     "markdown-it-py>=4.2",
     "mdit-py-plugins>=0.6.1",
     "nh3>=0.3.6",
-    "alembic>=1.19.0",
+    "alembic>=1.19.1",
     "feedparser>=6.0.14",
 ]
 
@@ -65,21 +65,21 @@ postgres = [
 # `bedrock` backend additionally needs the SDK's AWS auth deps. See CLAUDE.md
 # *Governed AI assist*.
 anthropic = [
-    "anthropic>=0.120.2",
+    "anthropic>=0.121.0",
 ]
 bedrock = [
-    "anthropic[bedrock]>=0.120.2",
+    "anthropic[bedrock]>=0.121.0",
 ]
 dev = [
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
     "pytest-xdist>=3.8.0",
-    "ruff>=0.16.1",
+    "ruff>=0.16.2",
     "bandit>=1.9.4",
     "vulture>=2.16",
     "pip-audit>=2.10.1",
-    "pre-commit>=4.6.1",
-    "djlint>=1.44.0",
+    "pre-commit>=4.6.2",
+    "djlint>=1.44.2",
     "mypy>=2.3.0",
     # 3.3.1's published wheel omits the bundled OASIS JSON schemas, making
     # schema validation silently unusable. Pin the last complete release until
