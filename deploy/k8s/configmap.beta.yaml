@@ -29,7 +29,11 @@ data:
   # in the iceberg-secrets Secret). Run the migrate Job before/at rollout. SQLite
   # would now be accepted (prod guard off) but the image ships no SQLite fallback,
   # so keep pointing at Postgres. See deploy/k8s/README.md and postgres.yaml.
-  ICEBERG_ATTACHMENTS_DIR: "/data/attachments"
-  ICEBERG_FIGURES_DIR: "/data/figures"
-  ICEBERG_RENDER_OUTPUT_DIR: "/data/rendered"
+  ICEBERG_STORAGE_BACKEND: "s3"
+  ICEBERG_STORAGE_S3_BUCKET: "replace-with-private-bucket"
+  ICEBERG_STORAGE_S3_PREFIX: "iceberg-beta"
+  ICEBERG_STORAGE_S3_REGION: ""
+  ICEBERG_STORAGE_S3_FORCE_PATH_STYLE: "false"
+  ICEBERG_STORAGE_S3_VERIFY_TLS: "true"
+  ICEBERG_METRICS_ENABLED: "true"
   ICEBERG_PORTAL_BASE_URL: "https://iceberg.example.com"

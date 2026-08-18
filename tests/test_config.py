@@ -249,3 +249,55 @@ def test_no_console_email_warning_in_dev(caplog):
     with caplog.at_level("WARNING", logger="iceberg.email"):
         _warn_if_console_email_backend_in_prod(settings)
     assert not caplog.records
+
+
+def test_prod_s3_requires_bucket_and_secure_custom_endpoint_credentials():
+    base = {
+        "environment": "prod",
+        "secret_key": _STRONG_SECRET,
+        "database_url": _PG_URL,
+        "storage_backend": "s3",
+    }
+    with pytest.raises(ValidationError, match="STORAGE_S3_BUCKET"):
+        Settings(**base)
+    with pytest.raises(ValidationError, match="dedicated"):
+        Settings(
+            **base,
+            storage_s3_bucket="iceberg",
+            storage_s3_endpoint_url="https://storage.example",
+        )
+    with pytest.raises(ValidationError, match="HTTPS"):
+        Settings(
+            **base,
+            storage_s3_bucket="iceberg",
+            storage_s3_endpoint_url="http://storage.example",
+            storage_s3_access_key_id="dedicated",
+            storage_s3_secret_access_key="secret",
+        )
+    accepted = Settings(
+        **base,
+        storage_s3_bucket="iceberg",
+        storage_s3_endpoint_url="https://storage.example",
+        storage_s3_access_key_id="dedicated",
+        storage_s3_secret_access_key="secret",
+    )
+    assert accepted.storage_backend == "s3"
+
+
+def test_prod_metrics_require_long_bearer_token_when_enabled():
+    with pytest.raises(ValidationError, match="METRICS_TOKEN"):
+        Settings(
+            environment="prod",
+            secret_key=_STRONG_SECRET,
+            database_url=_PG_URL,
+            metrics_enabled=True,
+            metrics_token="short",
+        )
+    accepted = Settings(
+        environment="prod",
+        secret_key=_STRONG_SECRET,
+        database_url=_PG_URL,
+        metrics_enabled=True,
+        metrics_token="m" * 40,
+    )
+    assert accepted.metrics_enabled

@@ -1,7 +1,7 @@
 """Notebooks, sources, notes and attachments — the analyst collection workspace."""
 
-from pathlib import Path
 from typing import Annotated
+from urllib.parse import quote
 
 from fastapi import (
     APIRouter,
@@ -14,7 +14,7 @@ from fastapi import (
     UploadFile,
     status,
 )
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import Response
 from sqlmodel import Session, col, select
 
 from ..auth.dependencies import CurrentUser, require_role
@@ -61,6 +61,8 @@ from ..services import iocs as ioc_service
 from ..services import inbound
 from ..services import notebooks as notebook_service
 from ..services import source_grading
+from ..services import storage
+from ..services import storage_deletions
 from ..services.requirements import set_notebook_requirements
 
 router = APIRouter(prefix="/notebooks", tags=["notebooks"])
@@ -134,33 +136,26 @@ def delete_notebook(
     if nb.owner_id != user.id and user.role != Role.ADMIN:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the owner can delete")
     demo_service.ensure_not_reset_managed(nb)
-    # Capture attachment + figure file paths before the DB rows cascade away,
-    # then unlink them after the delete so no files are orphaned on disk.
-    paths = [attachment_service.attachment_path(a) for a in nb.attachments]
-    paths += [figure_service.figure_path(f) for f in nb.figures]
     report_ids = [report.id for report in nb.reports if report.id is not None]
     rendered = list(
         session.exec(
             select(RenderedProduct).where(col(RenderedProduct.report_id).in_(report_ids))
         ).all()
     ) if report_ids else []
-    paths += [Path(product.pdf_path) for product in rendered]
     detail = {
         "reports": len(report_ids),
         "attachments": len(nb.attachments),
         "figures": len(nb.figures),
         "rendered_products": len(rendered),
     }
-    session.delete(nb)
-    session.commit()
-    for path in paths:
-        try:
-            path.unlink(missing_ok=True)
-        except OSError:
-            pass
-    audit.record_and_emit(
+    for item in nb.attachments:
+        storage_deletions.enqueue(session, item, "attachment")
+    for item in nb.figures:
+        storage_deletions.enqueue(session, item, "figure")
+    for item in rendered:
+        storage_deletions.enqueue(session, item, "render")
+    event = audit.record(
         session,
-        background_tasks=background_tasks,
         action=AuditAction.NOTEBOOK_DELETED,
         category=AuditCategory.DATA_ACCESS,
         actor=user,
@@ -168,7 +163,12 @@ def delete_notebook(
         resource_type="notebook",
         resource_id=notebook_id,
         detail=detail,
+        commit=False,
     )
+    session.delete(nb)
+    session.commit()
+    storage_deletions.schedule_worker(background_tasks)
+    audit.schedule_emit(session, event, background_tasks)
 
 
 @router.post("/{notebook_id}/sources", status_code=status.HTTP_201_CREATED)
@@ -282,11 +282,19 @@ def import_misp(
     )
 
 
-def _audit_file(session, background_tasks, request, user, action, *, notebook_id, item):
+def _audit_file(
+    session,
+    background_tasks,
+    request,
+    user,
+    action,
+    *,
+    notebook_id,
+    item,
+    commit=True,
+):
     """Record a sensitive-file access (attachment / figure) audit event."""
-    audit.record_and_emit(
-        session,
-        background_tasks=background_tasks,
+    kwargs = dict(
         action=action,
         category=AuditCategory.DATA_ACCESS,
         actor=user,
@@ -299,6 +307,11 @@ def _audit_file(session, background_tasks, request, user, action, *, notebook_id
             "content_type": item.content_type,
         },
     )
+    if commit:
+        return audit.record_and_emit(
+            session, background_tasks=background_tasks, **kwargs
+        )
+    return audit.record(session, commit=False, **kwargs)
 
 
 @router.post("/{notebook_id}/attachments", status_code=status.HTTP_201_CREATED)
@@ -345,18 +358,27 @@ def download_attachment(
     background_tasks: BackgroundTasks,
 ):
     att = _get_attachment(session, notebook_id, attachment_id)
-    path = attachment_service.attachment_path(att)
-    if not path.exists():
+    try:
+        content = attachment_service.attachment_bytes(session, att)
+    except storage.ObjectMissing:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Stored file missing")
+    except storage.StorageError:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "Stored file verification failed"
+        )
     _audit_file(
         session, background_tasks, request, user,
         AuditAction.ATTACHMENT_DOWNLOADED, notebook_id=notebook_id, item=att,
     )
-    return FileResponse(
-        path,
+    return Response(
+        content,
         media_type="application/octet-stream",
-        filename=att.original_filename,
-        headers={"X-Content-Type-Options": "nosniff"},
+        headers={
+            "X-Content-Type-Options": "nosniff",
+            "Content-Disposition": (
+                "attachment; filename*=utf-8''" + quote(att.original_filename, safe="")
+            ),
+        },
     )
 
 
@@ -374,11 +396,15 @@ def delete_attachment(
     background_tasks: BackgroundTasks,
 ):
     att = _get_attachment(session, notebook_id, attachment_id)
-    _audit_file(
+    event = _audit_file(
         session, background_tasks, request, user,
         AuditAction.ATTACHMENT_DELETED, notebook_id=notebook_id, item=att,
+        commit=False,
     )
-    attachment_service.delete_attachment(session, att)
+    attachment_service.delete_attachment(
+        session, att, background_tasks=background_tasks
+    )
+    audit.schedule_emit(session, event, background_tasks)
 
 
 # --------------------------------------------------------------------------- #
@@ -420,15 +446,23 @@ def figure_raw(
 ):
     """Serve a figure's bytes inline (for the notebook + editor thumbnails)."""
     fig = _get_figure(session, notebook_id, figure_id)
-    path = figure_service.figure_path(fig)
-    if not path.exists():
+    try:
+        content = figure_service.figure_bytes(session, fig)
+    except storage.ObjectMissing:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Stored file missing")
-    return FileResponse(
-        path,
+    except storage.StorageError:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "Stored file verification failed"
+        )
+    return Response(
+        content,
         media_type=fig.content_type,
-        filename=fig.original_filename,
-        content_disposition_type="inline",
-        headers={"X-Content-Type-Options": "nosniff"},
+        headers={
+            "X-Content-Type-Options": "nosniff",
+            "Content-Disposition": (
+                "inline; filename*=utf-8''" + quote(fig.original_filename, safe="")
+            ),
+        },
     )
 
 
@@ -445,11 +479,13 @@ def delete_figure(
     background_tasks: BackgroundTasks,
 ):
     fig = _get_figure(session, notebook_id, figure_id)
-    _audit_file(
+    event = _audit_file(
         session, background_tasks, request, user,
         AuditAction.FIGURE_DELETED, notebook_id=notebook_id, item=fig,
+        commit=False,
     )
-    figure_service.delete_figure(session, fig)
+    figure_service.delete_figure(session, fig, background_tasks=background_tasks)
+    audit.schedule_emit(session, event, background_tasks)
 
 
 @router.put("/{notebook_id}/requirements")

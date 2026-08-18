@@ -8,7 +8,7 @@ core; Requirement drives stakeholder intake and the analyst tasking board.
 from datetime import date, datetime, timezone
 from enum import StrEnum
 
-from sqlalchemy import JSON, Column, Integer, UniqueConstraint
+from sqlalchemy import JSON, CheckConstraint, Column, Index, Integer, UniqueConstraint, text
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -833,6 +833,17 @@ class Attachment(SQLModel, table=True):
     a path on disk; ``original_filename`` is metadata for display/download.
     """
 
+    __table_args__ = (
+        Index(
+            "uq_attachment_storage_object",
+            "storage_backend",
+            "storage_key",
+            unique=True,
+            sqlite_where=text("storage_key <> ''"),
+            postgresql_where=text("storage_key <> ''"),
+        ),
+    )
+
     id: int | None = Field(default=None, primary_key=True)
     notebook_id: int = Field(
         foreign_key="notebook.id", ondelete="CASCADE", index=True
@@ -840,6 +851,13 @@ class Attachment(SQLModel, table=True):
     title: str = ""  # optional label; falls back to the filename in the UI
     original_filename: str
     stored_filename: str  # uuid4().hex + ext — the on-disk name
+    # Backend/key/digest describe the finalized immutable object. Legacy rows
+    # are migrated as ``local`` with ``storage_key == stored_filename``; an
+    # empty digest is accepted until the resumable storage migration verifies it.
+    storage_backend: str = Field(default="local", index=True)
+    storage_key: str = Field(default="", index=True)
+    content_sha256: str = Field(default="", index=True)
+    storage_finalized_at: datetime | None = Field(default=None)
     content_type: str
     file_size: int = 0
     summary: str = ""
@@ -863,6 +881,17 @@ class Figure(SQLModel, table=True):
     ``services/figures.py``.
     """
 
+    __table_args__ = (
+        Index(
+            "uq_figure_storage_object",
+            "storage_backend",
+            "storage_key",
+            unique=True,
+            sqlite_where=text("storage_key <> ''"),
+            postgresql_where=text("storage_key <> ''"),
+        ),
+    )
+
     id: int | None = Field(default=None, primary_key=True)
     notebook_id: int = Field(
         foreign_key="notebook.id", ondelete="CASCADE", index=True
@@ -870,6 +899,10 @@ class Figure(SQLModel, table=True):
     title: str = ""  # caption / alt text; falls back to the filename in the UI
     original_filename: str
     stored_filename: str  # uuid4().hex + ext — the on-disk name
+    storage_backend: str = Field(default="local", index=True)
+    storage_key: str = Field(default="", index=True)
+    content_sha256: str = Field(default="", index=True)
+    storage_finalized_at: datetime | None = Field(default=None)
     content_type: str  # image/png | image/jpeg | image/gif
     file_size: int = 0
     created_at: datetime = Field(default_factory=utcnow)
@@ -953,10 +986,26 @@ class Report(SQLModel, table=True):
 
 
 class RenderedProduct(SQLModel, table=True):
+    __table_args__ = (
+        Index(
+            "uq_renderedproduct_storage_object",
+            "storage_backend",
+            "storage_key",
+            unique=True,
+            sqlite_where=text("storage_key <> ''"),
+            postgresql_where=text("storage_key <> ''"),
+        ),
+    )
+
     id: int | None = Field(default=None, primary_key=True)
     report_id: int = Field(foreign_key="report.id", ondelete="CASCADE", index=True)
     format: ProductFormat
     pdf_path: str
+    storage_backend: str = Field(default="local", index=True)
+    storage_key: str = Field(default="", index=True)
+    content_sha256: str = Field(default="", index=True)
+    file_size: int = 0
+    storage_finalized_at: datetime | None = Field(default=None)
     # A stakeholder may only obtain a PDF built from the report's active
     # publication snapshot. Writer draft renders deliberately retain an empty
     # snapshot hash.
@@ -1339,6 +1388,86 @@ class OutboxJob(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
     started_at: datetime | None = Field(default=None)
     completed_at: datetime | None = Field(default=None)
+
+
+class StorageDeletion(SQLModel, table=True):
+    """Durable, lease-based tombstone for physical object deletion.
+
+    Domain rows disappear atomically with creation of this record. A worker
+    later re-checks that no live row references the exact object before removing
+    it. Status remains a validated string instead of a PostgreSQL enum so future
+    worker states do not require an enum migration.
+    """
+
+    __table_args__ = (
+        UniqueConstraint(
+            "kind", "backend", "object_key", name="uq_storage_deletion_object"
+        ),
+        CheckConstraint(
+            "kind IN ('attachment', 'figure', 'render')",
+            name="ck_storage_deletion_kind",
+        ),
+        CheckConstraint(
+            "backend IN ('local', 's3')", name="ck_storage_deletion_backend"
+        ),
+        CheckConstraint(
+            "status IN ('PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELLED')",
+            name="ck_storage_deletion_status",
+        ),
+        CheckConstraint(
+            "length(content_sha256) IN (0, 64)",
+            name="ck_storage_deletion_digest_length",
+        ),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    kind: str = Field(index=True)
+    backend: str = Field(index=True)
+    object_key: str
+    content_sha256: str = ""
+    status: str = Field(default="PENDING", index=True)
+    not_before: datetime = Field(default_factory=utcnow, index=True)
+    available_at: datetime = Field(default_factory=utcnow, index=True)
+    attempt_count: int = 0
+    max_attempts: int = 10
+    leased_at: datetime | None = None
+    lease_expires_at: datetime | None = Field(default=None, index=True)
+    lease_token: str = ""
+    leased_by: str = ""
+    last_error: str = ""
+    created_at: datetime = Field(default_factory=utcnow)
+    completed_at: datetime | None = None
+
+
+class StorageMaintenanceState(SQLModel, table=True):
+    """Durable progress and last-result state for storage maintenance roles.
+
+    Maintenance commands normally run in separate short-lived processes. The
+    database is therefore the source of truth for cursors and metrics rather
+    than a process-local registry that disappears when a command exits.
+    """
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('SUCCESS', 'FAILED')",
+            name="ck_storage_maintenance_status",
+        ),
+    )
+
+    key: str = Field(primary_key=True)
+    task: str = Field(index=True)
+    scope: str = "default"
+    cursor: dict = Field(
+        default_factory=dict,
+        sa_column=Column(JSON, nullable=False, server_default="{}"),
+    )
+    last_result: dict = Field(
+        default_factory=dict,
+        sa_column=Column(JSON, nullable=False, server_default="{}"),
+    )
+    status: str = "SUCCESS"
+    last_run_at: datetime = Field(default_factory=utcnow)
+    last_success_at: datetime | None = None
 
 
 class AuditEvent(SQLModel, table=True):

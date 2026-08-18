@@ -4,8 +4,10 @@ from sqlalchemy import and_, case, func, or_
 from sqlmodel import Session, col, select
 from datetime import timedelta
 from typing import Annotated
+from urllib.parse import quote
 
 from fastapi import (
+    BackgroundTasks,
     File,
     Form,
     HTTPException,
@@ -13,7 +15,7 @@ from fastapi import (
     UploadFile,
     status,
 )
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 
 from ..auth.dependencies import CurrentUser
 from ..models import (
@@ -46,6 +48,7 @@ from ..services import (
     notebooks as notebook_service,
     reports as report_service,
     source_grading,
+    storage,
 )
 from ..templating import templates
 from .common import (
@@ -507,24 +510,39 @@ def download_attachment(
 ):
     _require_writer(user)  # raw notebook material is writer-only
     att = _get_attachment(session, notebook_id, attachment_id)
-    path = attachment_service.attachment_path(att)
-    if not path.exists():
+    try:
+        content = attachment_service.attachment_bytes(session, att)
+    except storage.ObjectMissing:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Stored file missing")
-    return FileResponse(
-        path,
+    except storage.StorageError:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "Stored file verification failed"
+        )
+    return Response(
+        content,
         media_type="application/octet-stream",
-        filename=att.original_filename,
-        headers={"X-Content-Type-Options": "nosniff"},
+        headers={
+            "X-Content-Type-Options": "nosniff",
+            "Content-Disposition": (
+                "attachment; filename*=utf-8''" + quote(att.original_filename, safe="")
+            ),
+        },
     )
 
 
 @router.post("/notebooks/{notebook_id}/attachments/{attachment_id}/delete")
 def delete_attachment(
-    notebook_id: int, attachment_id: int, session: SessionDep, user: CurrentUser
+    notebook_id: int,
+    attachment_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+    background_tasks: BackgroundTasks,
 ):
     _require_writer(user)
     att = _get_attachment(session, notebook_id, attachment_id)
-    attachment_service.delete_attachment(session, att)
+    attachment_service.delete_attachment(
+        session, att, background_tasks=background_tasks
+    )
     return _redirect(f"/notebooks/{notebook_id}")
 
 
@@ -555,23 +573,35 @@ def figure_raw(
 ):
     _require_writer(user)  # raw notebook material is writer-only
     fig = _get_figure(session, notebook_id, figure_id)
-    path = figure_service.figure_path(fig)
-    if not path.exists():
+    try:
+        content = figure_service.figure_bytes(session, fig)
+    except storage.ObjectMissing:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Stored file missing")
-    return FileResponse(
-        path,
+    except storage.StorageError:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "Stored file verification failed"
+        )
+    return Response(
+        content,
         media_type=fig.content_type,
-        filename=fig.original_filename,
-        content_disposition_type="inline",
-        headers={"X-Content-Type-Options": "nosniff"},
+        headers={
+            "X-Content-Type-Options": "nosniff",
+            "Content-Disposition": (
+                "inline; filename*=utf-8''" + quote(fig.original_filename, safe="")
+            ),
+        },
     )
 
 
 @router.post("/notebooks/{notebook_id}/figures/{figure_id}/delete")
 def delete_figure(
-    notebook_id: int, figure_id: int, session: SessionDep, user: CurrentUser
+    notebook_id: int,
+    figure_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+    background_tasks: BackgroundTasks,
 ):
     _require_writer(user)
     fig = _get_figure(session, notebook_id, figure_id)
-    figure_service.delete_figure(session, fig)
+    figure_service.delete_figure(session, fig, background_tasks=background_tasks)
     return _redirect(f"/notebooks/{notebook_id}#figures")

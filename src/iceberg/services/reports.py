@@ -21,6 +21,7 @@ from ..models import (
     Source,
     TLP,
     User,
+    utcnow,
 )
 from ..rendering.typst import render_product
 from ..schemas import (
@@ -37,6 +38,7 @@ from . import ach as ach_service
 from . import attack as attack_service
 from . import diamond as diamond_service
 from . import figures as figure_service
+from . import storage, storage_deletions
 
 
 # --------------------------------------------------------------------------- #
@@ -306,15 +308,13 @@ def render_report(
         from . import publication
 
         path = publication.render_snapshot(session, report, fmt)
-        product = RenderedProduct(
-            report_id=report.id,
-            format=fmt,
-            pdf_path=str(path),
+        product = _persist_rendered_path(
+            session,
+            report,
+            fmt,
+            path,
             snapshot_hash=report.publication_snapshot_hash,
         )
-        session.add(product)
-        session.commit()
-        session.refresh(product)
         prune_rendered_products(session, report_id=report.id, fmt=fmt)
         return product
 
@@ -326,15 +326,20 @@ def render_report(
     ]
     # (id, caption, on-disk path, extension) for each embedded figure whose file
     # is present; a missing file degrades to "[figure unavailable]" in the PDF.
-    figures: list[tuple[int, str, str, str]] = []
+    figures: list[tuple[int, str, bytes, str]] = []
     for fig in figure_service.referenced_figures(session, report):
-        fig_path = figure_service.figure_path(fig)
-        if fig_path.exists():
+        try:
+            raw = figure_service.figure_bytes(session, fig)
+        except storage.StorageError:
+            # Draft rendering keeps the existing visible-degradation behavior;
+            # publication itself fails closed in services/publication.py.
+            continue
+        else:
             figures.append(
                 (
                     fig.id,
                     fig.title or fig.original_filename,
-                    str(fig_path),
+                    raw,
                     Path(fig.stored_filename).suffix,
                 )
             )
@@ -362,11 +367,55 @@ def render_report(
         iocs=list(report.cited_iocs),
         fmt=fmt,
     )
-    product = RenderedProduct(report_id=report.id, format=fmt, pdf_path=str(path))
+    product = _persist_rendered_path(session, report, fmt, path)
+    prune_rendered_products(session, report_id=report.id, fmt=fmt)
+    return product
+
+
+def _persist_rendered_path(
+    session: Session,
+    report: Report,
+    fmt: ProductFormat,
+    path: Path,
+    *,
+    snapshot_hash: str = "",
+) -> RenderedProduct:
+    """Finalize a Typst output before committing its database reference."""
+    digest = storage.file_sha256(path)
+    key = storage.new_key(".pdf", sha256=digest)
+    backend = storage.get_store(session=session)
+    info = backend.put_file(
+        "render",
+        key,
+        path,
+        sha256=digest,
+        content_type="application/pdf",
+    )
+    pdf_path = (
+        str(storage.LocalObjectStore().path("render", key))
+        if backend.backend == "local"
+        else ""
+    )
+    product = RenderedProduct(
+        report_id=report.id,
+        format=fmt,
+        pdf_path=pdf_path,
+        snapshot_hash=snapshot_hash,
+        storage_backend=backend.backend,
+        storage_key=key,
+        content_sha256=digest,
+        file_size=info.size,
+        storage_finalized_at=utcnow(),
+    )
     session.add(product)
     session.commit()
     session.refresh(product)
-    prune_rendered_products(session, report_id=report.id, fmt=fmt)
+    try:
+        should_delete_source = not pdf_path or path.resolve() != Path(pdf_path).resolve()
+        if should_delete_source:
+            path.unlink(missing_ok=True)
+    except OSError:
+        pass
     return product
 
 
@@ -423,23 +472,15 @@ def prune_rendered_products(
             stale.append(product)
 
     for product in stale:
-        path = Path(product.pdf_path)
+        storage_deletions.enqueue(session, product, "render")
         session.delete(product)
-        try:
-            path.unlink(missing_ok=True)
-        except OSError:
-            pass
     if stale:
         session.commit()
     return len(stale)
 
 
 def delete_rendered_product(session: Session, product: RenderedProduct) -> None:
-    """Delete a rendered product row, then best-effort remove the PDF."""
-    path = Path(product.pdf_path)
+    """Delete a rendered row with an atomic durable object tombstone."""
+    storage_deletions.enqueue(session, product, "render")
     session.delete(product)
     session.commit()
-    try:
-        path.unlink(missing_ok=True)
-    except OSError:
-        pass

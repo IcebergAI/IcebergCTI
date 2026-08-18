@@ -28,8 +28,28 @@ if ! kubectl wait --for=condition=complete --timeout="$MIGRATION_TIMEOUT" "job/$
   exit 1
 fi
 
-kubectl set image deployment/iceberg "iceberg=$IMAGE"
+check_job="iceberg-storage-check-$RELEASE"
+sed -e "s/name: iceberg-storage-check/name: $check_job/" \
+    -e "s|image: ghcr.io/icebergai/icebergcti:latest|image: $IMAGE|" \
+    "$(dirname "$0")/storage-check-job.yaml" | kubectl create -f -
+if ! kubectl wait --for=condition=complete --timeout=5m "job/$check_job"; then
+  kubectl logs "job/$check_job" --all-containers=true || true
+  exit 1
+fi
+
+# Apply a digest-pinned Deployment so the same path works for first install and
+# upgrade; no mutable placeholder is ever admitted to the cluster.
+sed -e "s|image: ghcr.io/icebergai/icebergcti:latest|image: $IMAGE|g" \
+    "$(dirname "$0")/deployment.yaml" | kubectl apply -f -
 kubectl rollout status deployment/iceberg --timeout=10m
+
+# Storage deletion workers and reconciliation use the same frozen revision.
+sed -e "s|image: ghcr.io/icebergai/icebergcti:latest|image: $IMAGE|g" \
+    "$(dirname "$0")/storage-worker.yaml" | kubectl apply -f -
+kubectl rollout status deployment/iceberg-storage-worker --timeout=10m
+
+sed -e "s|image: ghcr.io/icebergai/icebergcti:latest|image: $IMAGE|g" \
+    "$(dirname "$0")/storage-maintenance.yaml" | kubectl apply -f -
 
 # Retention CronJobs — pin to the same immutable digest as the app (the manifest
 # ships :latest for readability; the release owns the digest, like the Deployment

@@ -64,7 +64,7 @@ def _rewrite_diamond_tokens(body: str, diamonds: list[tuple[int, str, str]]) -> 
 
 
 def _rewrite_figure_tokens(
-    body: str, figures: list[tuple[int, str, str, str]]
+    body: str, figures: list[tuple[int, str, str | bytes, str]]
 ) -> str:
     captions = {fid: caption for fid, caption, _path, _ext in figures}
     exts = {fid: ext for fid, _caption, _path, ext in figures}
@@ -125,7 +125,7 @@ def _build_data(
     attachments: list[Attachment],
     tags: list[Tag],
     diamonds: list[tuple[int, str, str]],
-    figures: list[tuple[int, str, str, str]],
+    figures: list[tuple[int, str, str | bytes, str]],
     ach: list[tuple[int, str, str]],
     attack_svg: str | None,
     iocs: list[IOC],
@@ -195,7 +195,7 @@ def render_product(
     attachments: list[Attachment] | None = None,
     tags: list[Tag] | None = None,
     diamonds: list[tuple[int, str, str]] | None = None,
-    figures: list[tuple[int, str, str, str]] | None = None,
+    figures: list[tuple[int, str, str | bytes, str]] | None = None,
     ach: list[tuple[int, str, str]] | None = None,
     attack_svg: str | None = None,
     iocs: list[IOC] | None = None,

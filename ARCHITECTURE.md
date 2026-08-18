@@ -201,11 +201,27 @@ migrations don't drift, and the CI **`postgres-smoke`** job runs the suite's Pos
 a real Postgres service. New change → `alembic revision --autogenerate -m "..."`; pre-existing DBs
 built by the old `create_all` → `alembic stamp head` once.
 
-**Multi-replica caveat:** Postgres removes the database single-writer bottleneck, but
-attachments/figures/rendered PDFs are still written to a **local disk** path
-(`ICEBERG_ATTACHMENTS_DIR`/`FIGURES_DIR`/`RENDER_OUTPUT_DIR`), so horizontal scaling still needs
-shared file storage (RWX volume or object store) — a separate follow-on. The k8s Deployment stays
-`replicas: 1` + `Recreate` until then.
+### Persistent object storage and multi-replica operation
+
+Attachments, figures and retained PDFs use one `BlobStore` contract with local and S3-compatible
+adapters. Local storage is the zero-dependency development/single-node default; production uses a
+private bucket and deployment-owned prefix. Uploads are staged and magic-byte validated while
+SHA-256 and size are computed, conditionally written to an immutable internal key, then read/hash
+verified before the database reference commits. Reads are bounded and verified before bytes reach
+the browser or renderer. Publication snapshots keep embedded figure bytes, so later object changes
+cannot mutate an already-published product.
+
+Physical deletion is an idempotent durable tombstone committed with the domain change and claimed
+by leased workers after an independent deletion grace period. Reconciliation uses persistent
+object and row cursors so bounded runs cover the entire namespace; it distinguishes new uncommitted
+objects (orphan grace) from deletion recovery. Migration between backends is a separate bounded,
+resumable CLI—never Alembic file I/O—and retains source data for rollback. Maintenance state lives
+in PostgreSQL so `/metrics` can expose results produced by short-lived jobs.
+
+The Kubernetes shape is two one-process app pods with rolling updates, a PDB and topology spread,
+plus two storage workers and a reconciliation CronJob. `/healthz` is process liveness; `/readyz`
+checks DB/schema and cheap read-only storage reachability. Release and restore gates use the
+separate PUT → HEAD → GET/hash → DELETE active check.
 
 ## Scope / roadmap
 - **Milestone 1 (done)** — the authoring loop end-to-end: notebooks → sources/notes → report authoring with live preview → review/publish → Typst PDFs.

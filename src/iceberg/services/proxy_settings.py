@@ -13,21 +13,34 @@ from ..models import ProxyMode, ProxySettings, utcnow
 from .singleton import get_or_create
 
 
+def _defaults() -> dict:
+    cfg = get_settings()
+    try:
+        mode = ProxyMode(cfg.proxy_mode.upper())
+    except ValueError:
+        mode = ProxyMode.SYSTEM
+    return {
+        "mode": mode,
+        "proxy_url": cfg.proxy_url,
+        "no_proxy": cfg.proxy_no_proxy,
+    }
+
+
+def snapshot(session: Session) -> ProxySettings:
+    """Return routing config without ever committing the caller transaction.
+
+    Storage may be opened while publication or deletion mutations are pending.
+    A lazy singleton seed must not commit those unrelated domain changes, so
+    first use falls back to an in-memory environment-derived row.
+    """
+    row = session.get(ProxySettings, 1)
+    return row.model_copy() if row is not None else ProxySettings(id=1, **_defaults())
+
+
 def get(session: Session) -> ProxySettings:
     """Return the settings row, seeding it from env defaults on first read."""
-    def defaults() -> dict:
-        cfg = get_settings()
-        try:
-            mode = ProxyMode(cfg.proxy_mode.upper())
-        except ValueError:
-            mode = ProxyMode.SYSTEM
-        return {
-            "mode": mode,
-            "proxy_url": cfg.proxy_url,
-            "no_proxy": cfg.proxy_no_proxy,
-        }
 
-    return get_or_create(session, ProxySettings, defaults)
+    return get_or_create(session, ProxySettings, _defaults)
 
 
 def update(session: Session, **fields) -> ProxySettings:

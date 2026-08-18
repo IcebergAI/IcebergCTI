@@ -6,8 +6,8 @@ Single source of truth shared by the JSON API and the portal (like
 ``fastapi.HTTPException`` directly so the rules can't drift between the two
 presentation layers).
 
-Storage mirrors attachments — files live under ``settings.figures_dir`` with a
-server-generated UUID name; the client filename is metadata only. Figures are
+Storage mirrors attachments through the configured local/S3 backend with an
+opaque server-generated key; the client filename is metadata only. Figures are
 restricted to **PNG / JPEG / GIF**: the intersection of what a browser renders
 from a ``data:`` URI and what Typst's ``image()`` supports.
 
@@ -20,7 +20,6 @@ caption/alt text is HTML-escaped at render time so it can never inject markup.
 
 import base64
 import html
-import uuid
 from pathlib import Path
 
 from fastapi import HTTPException, UploadFile, status
@@ -29,6 +28,8 @@ from sqlmodel import Session, col, select
 from ..config import get_settings
 from ..embeds import FIGURE_TOKEN_RE  # noqa: F401 — re-exported for callers
 from ..models import Figure, Notebook, Report
+from ..models import utcnow
+from . import storage, storage_deletions
 from .upload_validation import validate_builtin_bytes
 
 # Canonical MIME -> allowed file extensions. PNG/JPEG/GIF only (browser data-URI
@@ -38,13 +39,6 @@ _FIGURE_TYPES: dict[str, set[str]] = {
     "image/jpeg": {".jpg", ".jpeg"},
     "image/gif": {".gif"},
 }
-
-_CHUNK = 1024 * 1024  # 1 MiB streaming reads
-
-
-class _TooLarge(Exception):
-    """Internal sentinel: upload exceeded the configured size cap mid-stream."""
-
 
 def referenced_ids(text: str) -> list[int]:
     """The figure ids referenced in a body, in first-appearance order."""
@@ -82,7 +76,7 @@ def save_upload(
     *,
     title: str = "",
 ) -> Figure:
-    """Validate, stream to disk and persist an uploaded image for a notebook."""
+    """Validate, checksum and persist an uploaded image for a notebook."""
     settings = get_settings()
     original = Path(upload.filename or "").name
     if not original:
@@ -90,40 +84,39 @@ def save_upload(
     ext = Path(original).suffix.lower()
     content_type = _validate_type(upload.content_type, ext)
 
-    out_dir = Path(settings.figures_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    stored = uuid.uuid4().hex + ext
-    dest = out_dir / stored
-
-    size = 0
-    max_bytes = settings.max_figure_bytes
     try:
-        with dest.open("wb") as fh:
-            while chunk := upload.file.read(_CHUNK):
-                size += len(chunk)
-                if size > max_bytes:
-                    raise _TooLarge()
-                fh.write(chunk)
-    except _TooLarge:
-        dest.unlink(missing_ok=True)
+        with storage.staged_stream(
+            upload.file, max_bytes=settings.max_figure_bytes
+        ) as (staged, size, digest):
+            validate_builtin_bytes(staged, content_type)
+            stored = storage.new_key(ext, sha256=digest)
+            backend = storage.get_store(session=session)
+            backend.put_file(
+                "figure",
+                stored,
+                staged,
+                sha256=digest,
+                content_type=content_type,
+            )
+    except ValueError as exc:
+        if str(exc) != "too-large":
+            raise
         raise HTTPException(
             status.HTTP_413_CONTENT_TOO_LARGE,
             f"Image exceeds the {settings.figure_max_mb} MB limit",
-        )
+        ) from exc
     finally:
         upload.file.close()
-
-    try:
-        validate_builtin_bytes(dest, content_type)
-    except HTTPException:
-        dest.unlink(missing_ok=True)
-        raise
 
     figure = Figure(
         notebook_id=notebook.id,
         title=title or original,
         original_filename=original,
         stored_filename=stored,
+        storage_backend=backend.backend,
+        storage_key=stored,
+        content_sha256=digest,
+        storage_finalized_at=utcnow(),
         content_type=content_type,
         file_size=size,
     )
@@ -133,25 +126,20 @@ def save_upload(
     return figure
 
 
-def figure_path(figure: Figure) -> Path:
-    """Resolve a figure's on-disk path, asserting it stays inside the configured
-    directory (defense in depth — stored names are UUIDs)."""
-    base = Path(get_settings().figures_dir).resolve()
-    path = (base / figure.stored_filename).resolve()
-    if path != base and base not in path.parents:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Figure not found")
-    return path
+def figure_bytes(session: Session, figure: Figure) -> bytes:
+    return storage.read_object(figure, "figure", session=session)
 
 
-def delete_figure(session: Session, figure: Figure) -> None:
-    """Delete the row, then best-effort remove the file from disk."""
-    path = Path(get_settings().figures_dir) / figure.stored_filename
+def figure_is_valid(session: Session, figure: Figure) -> bool:
+    return storage.verify_object(figure, "figure", session=session)
+
+
+def delete_figure(session: Session, figure: Figure, *, background_tasks=None) -> None:
+    """Delete the row and atomically retain a durable physical-delete tombstone."""
+    storage_deletions.enqueue(session, figure, "figure")
     session.delete(figure)
     session.commit()
-    try:
-        path.unlink(missing_ok=True)
-    except OSError:
-        pass
+    storage_deletions.schedule_worker(background_tasks)
 
 
 # --------------------------------------------------------------------------- #
@@ -183,19 +171,19 @@ def referenced_figures(session: Session, report: Report) -> list[Figure]:
 # Web rendering: token -> inline <figure> with a data-URI <img>, injected
 # post-sanitisation (the caption/alt is HTML-escaped, so this is safe).
 # --------------------------------------------------------------------------- #
-def data_uri(figure: Figure) -> str:
+def data_uri(session: Session, figure: Figure) -> str:
     """Base64 ``data:`` URI for a figure's bytes (read from disk)."""
-    raw = figure_path(figure).read_bytes()
+    raw = figure_bytes(session, figure)
     encoded = base64.b64encode(raw).decode("ascii")
     return f"data:{figure.content_type};base64,{encoded}"
 
 
-def render_figure_html(figure: Figure) -> str | None:
+def render_figure_html(session: Session, figure: Figure) -> str | None:
     """The inline ``<figure>`` fragment for the web view / live preview, or
     ``None`` if the stored file can't be read (caller degrades to 'unavailable')."""
     try:
-        uri = data_uri(figure)
-    except OSError:
+        uri = data_uri(session, figure)
+    except storage.StorageError:
         return None
     caption = html.escape(figure.title or figure.original_filename, quote=True)
     return (
@@ -214,7 +202,7 @@ def scoped_figure_html(
     degrade like an unknown id). Mirrors the diamond svg_by_id map."""
     out: dict[int, str] = {}
     for fid, figure in _scoped_figures(session, notebook_id, text).items():
-        fragment = render_figure_html(figure)
+        fragment = render_figure_html(session, figure)
         if fragment is not None:
             out[fid] = fragment
     return out

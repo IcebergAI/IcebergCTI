@@ -29,6 +29,7 @@ from . import db
 from .config import get_settings
 from .health import router as health_router
 from .logging_config import configure_logging
+from .services import storage
 from .web import web_router
 
 logger = logging.getLogger("iceberg.feeds")
@@ -126,6 +127,7 @@ async def lifespan(_app: FastAPI):
                 await poller
             except asyncio.CancelledError:
                 pass
+        storage.close_s3_clients()
 
 
 def create_app() -> FastAPI:

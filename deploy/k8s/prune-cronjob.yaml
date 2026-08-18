@@ -20,12 +20,9 @@
 #     one start, and `backoffLimit` bounds retries within a run.
 #   * `resources.requests` are set on both: a namespace with a ResourceQuota
 #     rejects pods that omit requests, which is another silent-stop path.
-#   * The audit prune no longer mounts `iceberg-data`. That PVC is ReadWriteOnce
-#     and permanently attached to the running app pod, so on a multi-node
-#     cluster a cron pod scheduled elsewhere hangs in ContainerCreating on volume
-#     attach. The audit/feed-item prune is DB-only, so it simply doesn't need it.
-#     `prune-renders` genuinely does (it deletes PDF files), so it is pinned to
-#     the app's node instead — see its affinity block.
+#   * Neither job mounts the legacy `iceberg-data` PVC. Render pruning creates
+#     durable deletion tombstones; the replica-safe storage workers remove the
+#     corresponding objects after the database transaction commits.
 ---
 apiVersion: batch/v1
 kind: CronJob
@@ -99,19 +96,6 @@ spec:
       template:
         spec:
           restartPolicy: OnFailure
-          # This job deletes rendered PDFs, so it must mount the same
-          # `iceberg-data` PVC as the app. That claim is ReadWriteOnce (pvc.yaml)
-          # and already attached to the running app pod, so the cron pod has to
-          # land on the SAME node or it will hang in ContainerCreating on attach.
-          # Co-locate it with the app pod. If you move to a ReadWriteMany storage
-          # class (or run single-node), this block is unnecessary — drop it.
-          affinity:
-            podAffinity:
-              requiredDuringSchedulingIgnoredDuringExecution:
-                - labelSelector:
-                    matchLabels:
-                      app: iceberg
-                  topologyKey: kubernetes.io/hostname
           securityContext:
             runAsNonRoot: true
             runAsUser: 10001
@@ -140,13 +124,8 @@ spec:
                   cpu: "1"
                   memory: "512Mi"
               volumeMounts:
-                - name: data
-                  mountPath: /data
                 - name: tmp
                   mountPath: /tmp
           volumes:
-            - name: data
-              persistentVolumeClaim:
-                claimName: iceberg-data
             - name: tmp
               emptyDir: {}

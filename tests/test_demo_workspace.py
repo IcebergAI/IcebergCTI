@@ -1,12 +1,15 @@
 """Guided demo: real lifecycle, strict isolation, and synthetic-data guarantees."""
 
 from datetime import timedelta
+from pathlib import Path
 
+import pytest
 from fastapi import BackgroundTasks
 from sqlmodel import Session, select
 from starlette.requests import Request
 
 from iceberg import demo_content
+from iceberg.config import get_settings
 from iceberg.models import (
     Attachment,
     DemoWorkspace,
@@ -27,7 +30,15 @@ from iceberg.models import (
     Source,
     User,
 )
-from iceberg.services import demo, feedback, lifecycle, maturity, publication
+from iceberg.services import (
+    demo,
+    feedback,
+    lifecycle,
+    maturity,
+    publication,
+    storage,
+    storage_deletions,
+)
 
 
 def _user(session: Session, email: str, role: Role) -> User:
@@ -239,47 +250,91 @@ def test_reset_replaces_only_demo_generation_and_rejects_stale_reset(engine):
 
 
 def test_reset_unlinks_only_demo_owned_files(engine, tmp_path, monkeypatch):
+    """Reset tombstones only demo-owned objects; the storage worker then removes
+    exactly those bytes and leaves an unrelated user-owned object intact."""
+    settings = get_settings()
+    monkeypatch.setattr(settings, "storage_backend", "local")
+    monkeypatch.setattr(settings, "attachments_dir", str(tmp_path / "attachments"))
+    monkeypatch.setattr(settings, "figures_dir", str(tmp_path / "figures"))
+    monkeypatch.setattr(settings, "render_output_dir", str(tmp_path / "renders"))
+    store = storage.get_store("local")
+
+    def _store(kind: str, name: str, payload: bytes) -> tuple[str, str, int]:
+        source = tmp_path / name
+        source.write_bytes(payload)
+        digest = storage.file_sha256(source)
+        key = storage.new_key(Path(name).suffix, sha256=digest)
+        store.put_file(kind, key, source, sha256=digest, content_type="application/octet-stream")
+        return key, digest, len(payload)
+
     with Session(engine) as session:
         workspace, analyst, _stakeholder = _joined_workspace(session)
         state = demo.progress(session, workspace)
-        attachment_file = tmp_path / "attachment.bin"
-        figure_file = tmp_path / "figure.png"
-        render_file = tmp_path / "report.pdf"
-        control_file = tmp_path / "user-owned.bin"
-        for path in (attachment_file, figure_file, render_file, control_file):
-            path.write_bytes(b"synthetic")
+        attachment_key, attachment_digest, attachment_size = _store(
+            "attachment", "attachment.bin", b"synthetic attachment"
+        )
+        figure_key, figure_digest, figure_size = _store(
+            "figure", "figure.png", b"synthetic figure"
+        )
+        render_key, render_digest, render_size = _store(
+            "render", "report.pdf", b"synthetic render"
+        )
+        # An unrelated user-owned attachment in the very same backend + prefix.
+        control_key, control_digest, control_size = _store(
+            "attachment", "user-owned.bin", b"user owned bytes"
+        )
+        control_notebook = Notebook(title="User work", topic="Keep", owner_id=analyst.id)
+        session.add(control_notebook)
+        session.commit()
+        session.refresh(control_notebook)
+        session.add(
+            Attachment(
+                notebook_id=control_notebook.id,
+                original_filename="user-owned.bin",
+                stored_filename=control_key,
+                storage_backend="local",
+                storage_key=control_key,
+                content_sha256=control_digest,
+                content_type="application/octet-stream",
+                file_size=control_size,
+            )
+        )
         session.add(
             Attachment(
                 notebook_id=state["notebook"].id,
                 original_filename="attachment.bin",
-                stored_filename=attachment_file.name,
+                stored_filename=attachment_key,
+                storage_backend="local",
+                storage_key=attachment_key,
+                content_sha256=attachment_digest,
                 content_type="application/octet-stream",
-                file_size=9,
+                file_size=attachment_size,
             )
         )
         session.add(
             Figure(
                 notebook_id=state["notebook"].id,
                 original_filename="figure.png",
-                stored_filename=figure_file.name,
+                stored_filename=figure_key,
+                storage_backend="local",
+                storage_key=figure_key,
+                content_sha256=figure_digest,
                 content_type="image/png",
-                file_size=9,
+                file_size=figure_size,
             )
         )
         session.add(
             RenderedProduct(
                 report_id=state["report"].id,
                 format=ProductFormat.FULL,
-                pdf_path=str(render_file),
+                pdf_path=str(storage.LocalObjectStore().path("render", render_key)),
+                storage_backend="local",
+                storage_key=render_key,
+                content_sha256=render_digest,
+                file_size=render_size,
             )
         )
         session.commit()
-        monkeypatch.setattr(
-            demo.attachment_service, "attachment_path", lambda _row: attachment_file
-        )
-        monkeypatch.setattr(
-            demo.figure_service, "figure_path", lambda _row: figure_file
-        )
 
         demo.reset(
             session,
@@ -288,10 +343,18 @@ def test_reset_unlinks_only_demo_owned_files(engine, tmp_path, monkeypatch):
             expected_generation=1,
         )
 
-        assert not attachment_file.exists()
-        assert not figure_file.exists()
-        assert not render_file.exists()
-        assert control_file.exists()
+    # The demo tombstones skip the backup grace window, so one bounded worker
+    # pass reclaims them immediately.
+    storage_deletions.process_due_deletions(bind=engine)
+
+    for kind, key in (
+        ("attachment", attachment_key),
+        ("figure", figure_key),
+        ("render", render_key),
+    ):
+        with pytest.raises(storage.ObjectMissing):
+            store.head(kind, key)
+    assert store.head("attachment", control_key).sha256 == control_digest
 
 
 def test_fixture_is_synthetic_and_contains_no_indicators(engine):

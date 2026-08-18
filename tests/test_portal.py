@@ -4,7 +4,9 @@ the HTML routes."""
 
 from sqlmodel import Session
 
+from iceberg.config import get_settings
 from iceberg.models import ProductFormat, RenderedProduct
+from iceberg.services import storage_deletions
 
 
 def _first_notebook_id(client) -> int:
@@ -318,7 +320,7 @@ def test_report_analytic_confidence_via_portal(client, login):
 
 
 def test_rendered_product_can_be_deleted_from_portal(
-    client, login, engine, tmp_path
+    client, login, engine, tmp_path, monkeypatch
 ):
     login("ANALYST", email="author@example.com")
     nb = client.post("/api/notebooks", json={"title": "Rendered trail"}).json()
@@ -331,6 +333,9 @@ def test_rendered_product_can_be_deleted_from_portal(
             "tlp": "AMBER",
         },
     ).json()
+    settings = get_settings()
+    monkeypatch.setattr(settings, "render_output_dir", str(tmp_path))
+    monkeypatch.setattr(settings, "storage_deletion_grace_seconds", 0)
     pdf = tmp_path / "report.pdf"
     pdf.write_bytes(b"%PDF-1.7\n%%EOF")
 
@@ -360,6 +365,8 @@ def test_rendered_product_can_be_deleted_from_portal(
     )
     saved = client.get(resp.headers["location"])
     assert "PDF product rendered." not in saved.text
+    result = storage_deletions.process_due_deletions(bind=engine)
+    assert result["succeeded"] == 1
     assert not pdf.exists()
     assert client.get(f"/api/reports/{report['id']}/products").json() == []
 

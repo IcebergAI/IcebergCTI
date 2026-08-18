@@ -60,6 +60,11 @@ Issues = "https://github.com/IcebergAI/IcebergCTI/issues"
 postgres = [
     "psycopg[binary]>=3.3.4",
 ]
+# S3-compatible shared object storage. Imported lazily so a source/local-dev
+# install can remain filesystem-only; the production image includes this extra.
+object-storage = [
+    "boto3>=1.43.68",
+]
 # Governed AI assist backends (off by default). Optional so the default/dev
 # install never pulls the SDK; the `claude` backend needs `anthropic`, and the
 # `bedrock` backend additionally needs the SDK's AWS auth deps. See CLAUDE.md
@@ -98,6 +103,10 @@ iceberg-prune-audit = "iceberg.maintenance:prune_audit_main"
 iceberg-rebuild-related = "iceberg.maintenance:rebuild_related_main"
 iceberg-worker = "iceberg.maintenance:worker_main"
 iceberg-verify-files = "iceberg.maintenance:verify_files_main"
+iceberg-storage-worker = "iceberg.maintenance:storage_worker_main"
+iceberg-storage-check = "iceberg.maintenance:storage_check_main"
+iceberg-migrate-storage = "iceberg.maintenance:migrate_storage_main"
+iceberg-reconcile-storage = "iceberg.maintenance:reconcile_storage_main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -216,6 +225,8 @@ module = [
     "iceberg.services.reports",
     "iceberg.services.search",
     "iceberg.services.singleton",
+    "iceberg.services.storage_deletions",
+    "iceberg.services.storage_maintenance",
     "iceberg.services.tags",
     "iceberg.services.taxii",
     "iceberg.services.upload_validation",

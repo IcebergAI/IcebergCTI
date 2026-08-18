@@ -1,11 +1,11 @@
 """Reports (intelligence products): authoring, lifecycle, citations, rendering."""
 
 import logging
-from pathlib import Path
 from typing import Annotated
+from urllib.parse import quote
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse, Response
 from sqlalchemy import update
 from sqlmodel import Session, select
 
@@ -42,6 +42,7 @@ from ..services import (
     publication,
     related,
     stix as stix_service,
+    storage,
 )
 from ..services.attachments import set_report_attachments
 from ..services.reports import (
@@ -366,11 +367,22 @@ def download_product(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Product not found")
     if user.role == Role.STAKEHOLDER and product.snapshot_hash != report.publication_snapshot_hash:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Product not found")
-    path = Path(product.pdf_path)
-    if not path.exists():
+    try:
+        content = storage.read_object(product, "render", session=session)
+    except storage.ObjectMissing:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Rendered file missing")
-    return FileResponse(
-        path, media_type="application/pdf", filename=path.name
+    except storage.StorageError:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "Rendered file verification failed"
+        )
+    filename = f"iceberg-report-{report_id}-{str(product.format).lower()}.pdf"
+    return Response(
+        content,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": "attachment; filename*=utf-8''"
+            + quote(filename, safe="")
+        },
     )
 
 

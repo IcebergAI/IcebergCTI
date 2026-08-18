@@ -165,7 +165,8 @@ def test_stakeholder_cannot_upload_or_download(client, login):
 # --------------------------------------------------------------------------- #
 # Deletion + cascade clean-up
 # --------------------------------------------------------------------------- #
-def test_delete_removes_row_and_file(client, login, _attachments_dir):
+def test_delete_removes_row_and_file(client, login, _attachments_dir, monkeypatch):
+    monkeypatch.setattr(get_settings(), "storage_deletion_grace_seconds", 0)
     login("ANALYST")
     nb = _notebook(client)
     att = _upload(client, nb["id"]).json()
@@ -181,7 +182,10 @@ def test_delete_removes_row_and_file(client, login, _attachments_dir):
     assert client.get(f"/api/notebooks/{nb['id']}").json()["attachments"] == []
 
 
-def test_notebook_delete_cascades_and_cleans_files(client, login, _attachments_dir):
+def test_notebook_delete_cascades_and_cleans_files(
+    client, login, _attachments_dir, monkeypatch
+):
+    monkeypatch.setattr(get_settings(), "storage_deletion_grace_seconds", 0)
     login("ANALYST")
     nb = _notebook(client)
     _upload(client, nb["id"])

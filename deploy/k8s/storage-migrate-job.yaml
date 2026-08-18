@@ -1,0 +1,65 @@
+# Optional one-time local-PVC to object-storage migration. Quiesce writers and
+# retain the legacy PVC until a successful restore drill and soak period.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: iceberg-storage-migrate
+spec:
+  activeDeadlineSeconds: 7200
+  backoffLimit: 1
+  template:
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: storage-migrate
+          image: ghcr.io/icebergai/icebergcti:latest
+          command:
+            - iceberg-migrate-storage
+            - --destination
+            - s3
+            - --execute
+            - --until-complete
+            - --limit
+            - "500"
+          envFrom:
+            - configMapRef:
+                name: iceberg-config
+            - secretRef:
+                name: iceberg-secrets
+          env:
+            - name: ICEBERG_ATTACHMENTS_DIR
+              value: /legacy-data/attachments
+            - name: ICEBERG_FIGURES_DIR
+              value: /legacy-data/figures
+            - name: ICEBERG_RENDER_OUTPUT_DIR
+              value: /legacy-data/rendered
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "2"
+              memory: "1Gi"
+          volumeMounts:
+            - name: legacy-data
+              mountPath: /legacy-data
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: legacy-data
+          persistentVolumeClaim:
+            claimName: iceberg-data
+        - name: tmp
+          emptyDir: {}

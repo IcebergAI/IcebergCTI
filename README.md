@@ -459,6 +459,12 @@ tiles; secrets show only a set/not-set status, never their value. Highlights:
 | `ICEBERG_ATTACHMENTS_DIR` / `ICEBERG_ATTACHMENT_MAX_MB` | Notebook attachment storage dir + size cap (default 25 MB) |
 | `ICEBERG_ATTACHMENT_ALLOWED_TYPES` | Comma-separated MIME whitelist for uploads (override the default set) |
 | `ICEBERG_FIGURES_DIR` / `ICEBERG_FIGURE_MAX_MB` | Notebook figure (embeddable image) storage dir + size cap (default 10 MB) |
+| `ICEBERG_STORAGE_BACKEND` | Persistent blob backend: `local` for development/single-node use (default) or `s3` for shared production storage |
+| `ICEBERG_STORAGE_S3_BUCKET` / `ICEBERG_STORAGE_S3_PREFIX` / `ICEBERG_STORAGE_S3_REGION` | Private S3 bucket, deployment-owned immutable key prefix, and region |
+| `ICEBERG_STORAGE_S3_ENDPOINT_URL` / `ICEBERG_STORAGE_S3_FORCE_PATH_STYLE` | Optional operator-pinned S3-compatible endpoint and addressing mode; custom endpoints are env-only trust anchors |
+| `ICEBERG_STORAGE_S3_ACCESS_KEY_ID` / `ICEBERG_STORAGE_S3_SECRET_ACCESS_KEY` / `ICEBERG_STORAGE_S3_SESSION_TOKEN` | **Secret** credentials for a custom endpoint (env-only). Native AWS deployments use the standard workload-identity credential chain |
+| `ICEBERG_STORAGE_ORPHAN_GRACE_SECONDS` / `ICEBERG_STORAGE_DELETION_GRACE_SECONDS` | Independent safety windows for unreferenced-object reconciliation and durable physical deletion |
+| `ICEBERG_METRICS_ENABLED` / `ICEBERG_METRICS_TOKEN` | Opt-in Prometheus-compatible `/metrics`; bearer token is env-only and required in production |
 | `ICEBERG_DISSEMINATION_MAX_TLP` | Broadcast ceiling (default `AMBER`; RED/AMBER_STRICT withheld) |
 | `ICEBERG_EMAIL_BACKEND` + `ICEBERG_SMTP_*` | `console` (dev) or `smtp`; SMTP server settings |
 | `ICEBERG_WEBHOOK_URL` / `ICEBERG_WEBHOOK_TOKEN` / `ICEBERG_WEBHOOK_FORMAT` | Optional report-publication webhook (seeds the row; URL/enabled/timeout/format editable live at `/admin/webhook`). Generic JSON is the compatibility default; Slack/Teams envelopes are opt-in. Token is env-only |
@@ -491,10 +497,10 @@ SQLite fallback. Point Iceberg at **PostgreSQL** (managed instance recommended):
    (`tsvector` + GIN) index are each dialect-guarded.
 
 Full-text search adapts automatically: SQLite uses FTS5 (bm25); PostgreSQL uses a generated
-`tsvector` column queried with `websearch_to_tsquery` + `ts_rank`. **Caveat:** uploads and
-rendered PDFs are still written to a local filesystem dir, so running more than one replica
-needs shared storage (RWX volume or object store) — a follow-on to the datastore work. Container
-+ Kubernetes manifests (including an optional self-hosted Postgres `StatefulSet`) are under
+`tsvector` column queried with `websearch_to_tsquery` + `ts_rank`. Production replicas share
+attachments, figures and retained PDFs through a private S3/S3-compatible bucket. The local
+backend remains available for development and deliberate single-node deployments. Container +
+Kubernetes manifests (including an optional self-hosted Postgres `StatefulSet`) are under
 [`deploy/k8s/`](deploy/k8s/) and [`docker-compose.yml`](docker-compose.yml). Compose runs a
 **single** app service always paired with its `postgres` database container. The default
 Compose path also includes Redis for rate-limit buckets shared across uvicorn workers
@@ -506,6 +512,23 @@ stays published on loopback only, as a local/debug side door:
 docker compose up                        # https://localhost via Caddy + PostgreSQL (no .env needed)
 cp .env.example .env                     # optional: customise settings, then re-run
 ```
+
+To exercise shared storage locally, set the S3 variables in `.env` to the documented
+development values and start the optional authenticated SeaweedFS service and storage worker:
+
+```bash
+export ICEBERG_STORAGE_BACKEND=s3
+export ICEBERG_STORAGE_S3_BUCKET=iceberg-dev
+export ICEBERG_STORAGE_S3_ENDPOINT_URL=http://object-storage:8333
+export ICEBERG_STORAGE_S3_ACCESS_KEY_ID=iceberg-dev-access
+export ICEBERG_STORAGE_S3_SECRET_ACCESS_KEY=iceberg-dev-secret
+export ICEBERG_STORAGE_S3_FORCE_PATH_STYLE=true
+export ICEBERG_STORAGE_S3_VERIFY_TLS=false
+docker compose --profile object-storage up
+```
+
+You may put those values in `.env` instead. They are fixed local-development credentials only;
+production endpoints require TLS and unique managed secrets.
 
 For the default `localhost` Caddy issues a certificate from its own local CA, so the browser
 shows a one-time trust warning (or import Caddy's root CA); plain <http://localhost:8000>
@@ -537,25 +560,17 @@ with a cert-manager note (edit the host + TLS secret and apply). An nginx sideca
 the ingress / Caddy covers TLS, and the app sets its own security headers.
 
 ### Backup & restore
-Persistent state lives in two places: **PostgreSQL** (all reports, requirements, tags, audit
-events, settings) and a **local filesystem dir** (uploaded attachments/figures + rendered PDFs,
-the `iceberg-data` volume in Compose / the `iceberg-data` PVC in k8s). Back up **both** while
-application writers are stopped — the PDFs regenerate, but attachments/figures are original material. For Compose:
+Persistent state spans **PostgreSQL** and the configured blob store. Back them up as one
+consistency set: quiesce application and background writers, wait for leases to expire or
+finish, dump PostgreSQL, snapshot/copy the deployment's object prefix, and record both artifacts
+in the same dated manifest. Use bucket versioning and retention appropriate to your recovery
+objectives; never expose the bucket or issue public/presigned object URLs.
 
-```bash
-docker compose stop iceberg
-docker compose exec postgres pg_dump -U iceberg -d iceberg -Fc > iceberg-$(date +%F).dump
-docker run --rm -v iceberg_iceberg-data:/data -v "$PWD":/out busybox \
-  tar cf /out/iceberg-data-$(date +%F).tar -C /data .
-docker compose start iceberg
-```
-
-Restore keeps the app stopped, restores PostgreSQL, clears the attachment, figure,
-and rendered-product directories before extracting the archive, applies required
-migrations, and runs `iceberg-verify-files` before restart. Do not restart if any
-step fails; extraction over existing data is not a valid restore.
-Full copy-pasteable k8s steps (`VolumeSnapshot` / `kubectl`-piped tar + `pg_dump`/`pg_restore`)
-are in [`deploy/k8s/README.md`](deploy/k8s/README.md#backup--restore).
+Restore into a fresh database and fresh object prefix. Apply migrations, then run
+`iceberg-verify-files`, `iceberg-storage-check`, and a reconciliation dry-run before starting
+workers or application replicas. Treat any missing object, digest mismatch, or active-check
+failure as a failed restore. The full quiesce, backup, restore, verification, migration and
+rollback runbook is in [`deploy/k8s/README.md`](deploy/k8s/README.md#backup--restore).
 
 ### Source reliability grading
 Notebook sources carry Admiralty/NATO-style grades: source reliability (`A-F`) plus
@@ -648,8 +663,8 @@ Reproduce the local gates with `uv sync --extra dev` then the commands above thr
 The repo includes a production-oriented `Dockerfile`, `docker-compose.yml`, and starter
 Kubernetes manifests under `deploy/k8s/`. Deployments run on **PostgreSQL** (SQLite is local
 dev/test only — the prod app refuses to boot on it). Production deployments should set
-`ICEBERG_AUTO_MIGRATE=false`, run `alembic upgrade head` as a separate job, use persistent
-volumes for `/data`, and provide a unique 32+ byte `ICEBERG_SECRET_KEY`. Outbound work
+`ICEBERG_AUTO_MIGRATE=false`, run `alembic upgrade head` as a separate job, configure private
+shared object storage, and provide a unique 32+ byte `ICEBERG_SECRET_KEY`. Outbound work
 (dissemination emails, publication webhooks, RSS polls) lands in a durable database outbox and
 is normally delivered by an in-process pass right after commit; schedule **`iceberg-worker`**
 (a bounded single pass suitable for cron/a Kubernetes CronJob, or `--forever` under a process
@@ -657,8 +672,8 @@ manager) to retry anything a crashed process left behind, and use `iceberg-worke
 to review job state.
 
 ### Application layers
-A single FastAPI process serves both the JSON API and the server-rendered portal; the same
-service layer fronts the datastore, local file storage and (proxy-aware) outbound integrations.
+A FastAPI process serves both the JSON API and the server-rendered portal; the same service layer
+fronts the datastore, local-or-S3 blob storage and proxy-aware outbound integrations.
 
 ```mermaid
 flowchart TB
@@ -678,7 +693,7 @@ flowchart TB
 
   Routers --> Static["Static assets<br/>self-hosted Tailwind / Alpine / fonts (SRI)"]
   ORM --> DB[("Datastore<br/>SQLite (dev) / PostgreSQL (prod)")]
-  Render --> FS["File storage /data<br/>attachments · figures · rendered PDFs"]
+  Render --> Blob["Blob store<br/>local (dev) / S3-compatible (prod)<br/>attachments · figures · rendered PDFs"]
   Services -. "outbound via proxy.resolve" .-> Ext["External<br/>Entra OIDC · SMTP · RSS · SIEM · MISP · webhook · AI"]
 ```
 
@@ -696,12 +711,13 @@ flowchart LR
   App --> FS["Local dirs<br/>./attachments · ./figures · ./rendered"]
 ```
 
-**2. Docker Compose (default)** — a Caddy reverse proxy terminates TLS (Let's Encrypt for a real
+**2. Docker Compose** — a Caddy reverse proxy terminates TLS (Let's Encrypt for a real
 `ICEBERG_DOMAIN`, a local-CA cert for the default `localhost`) and forwards `X-Forwarded-*`; the
 app trusts those headers (`--proxy-headers`) so the scheme and client IP are correct. Caddy
 publishes `:80`/`:443` — the only public ports; the app service pairs with its own PostgreSQL
 container on the compose network and keeps a loopback-only plain-HTTP publish
-(`localhost:8000`) as a local/debug side door. Each service has its own named volume.
+(`localhost:8000`) as a local/debug side door. Local blob storage is the default; the
+`object-storage` profile adds authenticated SeaweedFS and the durable storage-deletion worker.
 
 ```mermaid
 flowchart TB
@@ -717,15 +733,17 @@ flowchart TB
   end
 
   Caddy --- CV[("caddy-data · caddy-config<br/>certificates")]
-  App --- V1[("iceberg-data volume<br/>/data: attachments · figures · rendered")]
+  App -->|"optional S3 profile"| S3[("SeaweedFS S3-compatible store<br/>private object prefix")]
+  App --- V1[("iceberg-data volume<br/>local-backend development only")]
   PG --- V2[("iceberg-pg-data volume<br/>/var/lib/postgresql")]
 ```
 
-**3. Kubernetes** — an Ingress terminates TLS to a ClusterIP Service and the single-replica
-Deployment (`Recreate`, non-root, read-only rootfs). A migrate Job runs `alembic upgrade head` out
-of band; config comes from a ConfigMap (non-secret) and the `ICEBERG_DATABASE_URL`/secrets from a
-Secret. PostgreSQL is a managed instance or the optional StatefulSet; uploads/renders live on a
-`ReadWriteOnce` `/data` PVC (the reason replicas stays at 1 until shared storage lands).
+**3. Kubernetes** — an Ingress terminates TLS to a ClusterIP Service and a two-replica rolling
+Deployment (non-root, read-only rootfs, PDB and topology spread). A migrate Job runs
+`alembic upgrade head` out of band; config comes from a ConfigMap and secrets from a Secret.
+PostgreSQL and the private S3-compatible store are managed services or operator-provided
+equivalents. Two leased storage workers process durable physical deletions; reconciliation is a
+bounded CronJob. A separate active-check Job proves PUT → HEAD → GET/digest → DELETE before rollout.
 
 ```mermaid
 flowchart TB
@@ -733,14 +751,23 @@ flowchart TB
 
   subgraph ns["Kubernetes namespace"]
     Ingress --> Svc["Service (ClusterIP)<br/>iceberg · :8000"]
-    Svc --> Pod["Deployment (replicas: 1 · Recreate)<br/>iceberg pod · uvicorn --proxy-headers :8000<br/>non-root · read-only rootfs · dropped caps"]
+    Svc --> Pod["Deployment (replicas: 2 · RollingUpdate)<br/>one uvicorn worker/pod · non-root · read-only rootfs"]
+    Worker["Storage workers (replicas: 2)<br/>leased durable deletes"]
+    Reconcile["Reconcile CronJob<br/>bounded + cursor-backed"]
+    Check["Storage check Job<br/>PUT · HEAD · GET/hash · DELETE"]
     Job["migrate Job<br/>iceberg-migrate → alembic upgrade head"]
     CM["ConfigMap<br/>iceberg-config (non-secret env)"]
     Sec["Secret<br/>iceberg-secrets<br/>ICEBERG_DATABASE_URL · SECRET_KEY · tokens"]
     PG[("PostgreSQL<br/>managed service or StatefulSet")]
+    S3[("Private S3-compatible store<br/>versioned deployment prefix")]
 
-    Pod --- PVC[("/data PVC (RWO)<br/>attachments · figures · rendered")]
     Pod -->|"psycopg"| PG
+    Pod -->|"SigV4 + TLS"| S3
+    Worker --> PG
+    Worker --> S3
+    Reconcile --> PG
+    Reconcile --> S3
+    Check --> S3
     Job -->|"psycopg"| PG
     CM -. "envFrom" .-> Pod
     Sec -. "envFrom" .-> Pod
