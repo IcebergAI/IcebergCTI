@@ -26,6 +26,10 @@ COLLECTION_TITLE = "Published Reports"
 TAXII_MEDIA_TYPE = "application/taxii+json;version=2.1"
 STIX_MEDIA_TYPE = "application/stix+json;version=2.1"
 MAX_LIMIT = 500
+STIX_SPEC_VERSION = "2.1"
+# TAXII's version keywords. Every one of them resolves to the same single
+# version here (see ``TaxiiQuery.match_versions``).
+VERSION_KEYWORDS = frozenset({"first", "last", "all"})
 
 # Per-report STIX bundle cache. Building a bundle is an O(tags) serialisation and
 # was repeated for *every* visible report on each manifest/objects/object_by_id
@@ -71,6 +75,12 @@ class TaxiiQuery:
     next_token: str | None = None
     match_types: tuple[str, ...] = field(default_factory=tuple)
     match_ids: tuple[str, ...] = field(default_factory=tuple)
+    # TAXII 2.1 version filtering. Iceberg publishes immutable products, so each
+    # served object has exactly one version — "first", "last" and "all" therefore
+    # select the same object, and an explicit timestamp selects it only when it
+    # is that version. Saying so plainly beats pretending to hold a history.
+    match_versions: tuple[str, ...] = field(default_factory=tuple)
+    match_spec_versions: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -84,6 +94,21 @@ class _ObjectRecord:
     @property
     def object_id(self) -> str:
         return self.obj["id"]
+
+    @property
+    def version(self) -> str:
+        """The object's TAXII version. Marking definitions have no ``modified``
+        — they are immutable by definition — so fall back to ``created``."""
+
+        return str(
+            self.obj.get("modified")
+            or self.obj.get("created")
+            or self.report_obj["modified"]
+        )
+
+    @property
+    def spec_version(self) -> str:
+        return str(self.obj.get("spec_version", STIX_SPEC_VERSION))
 
 
 def _collection() -> dict:
@@ -124,6 +149,8 @@ def build_query(
     next_token: str | None = None,
     match_types: list[str] | None = None,
     match_ids: list[str] | None = None,
+    match_versions: list[str] | None = None,
+    match_spec_versions: list[str] | None = None,
 ) -> TaxiiQuery:
     return TaxiiQuery(
         added_after=added_after,
@@ -131,6 +158,8 @@ def build_query(
         next_token=next_token,
         match_types=_split_match_values(match_types),
         match_ids=_split_match_values(match_ids),
+        match_versions=_split_match_values(match_versions),
+        match_spec_versions=_split_match_values(match_spec_versions),
     )
 
 
@@ -262,6 +291,8 @@ def _query_records(
         if (added_after is None or record.date_added > added_after)
         and (not match_types or record.obj.get("type") in match_types)
         and (not match_ids or record.object_id in match_ids)
+        and _matches_version(record, query.match_versions)
+        and _matches_spec_version(record, query.match_spec_versions)
         and (cursor is None or (record.date_added_text, record.object_id) > cursor)
     ]
     if query.limit is None:
@@ -275,6 +306,36 @@ def _query_records(
         else None
     )
     return page, more, next_token
+
+
+def _matches_version(record: _ObjectRecord, wanted: tuple[str, ...]) -> bool:
+    """Each served object has exactly one version, so a keyword always matches
+    and an explicit timestamp matches only that version."""
+
+    if not wanted:
+        return True
+    for value in wanted:
+        if value.lower() in VERSION_KEYWORDS:
+            return True
+        if value == record.version:
+            return True
+    return False
+
+
+def _matches_spec_version(record: _ObjectRecord, wanted: tuple[str, ...]) -> bool:
+    return not wanted or record.spec_version in wanted
+
+
+def object_versions(
+    session: Session, user: User, collection_id: str, object_id: str
+) -> dict:
+    """TAXII ``/objects/{id}/versions/`` — the versions held for one object."""
+
+    _ensure_collection(collection_id)
+    for record in _visible_object_records(session, user):
+        if record.object_id == object_id:
+            return {"versions": [record.version], "more": False}
+    raise HTTPException(status.HTTP_404_NOT_FOUND, "STIX object not found")
 
 
 def _envelope(objects: list[dict], *, more: bool, next_token: str | None) -> dict:

@@ -391,10 +391,44 @@ def download_product(
 @router.get("/{report_id}/stix")
 def export_stix(report_id: int, session: SessionDep, user: CurrentUser):
     report = ensure_visible(_get_report(session, report_id), user)
-    bundle = stix_service.report_bundle(report)
+    export = stix_service.report_export(report)
     filename = f"iceberg-report-{report_id}-stix.json"
+    # A STIX bundle admits no extra top-level properties, so the lossy-mapping
+    # notes ride beside it: a count here, and the full machine-readable list at
+    # the conformance endpoint the Link header points to (#309).
     return JSONResponse(
-        bundle,
+        export.bundle,
         media_type="application/stix+json",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Iceberg-Stix-Warning-Count": str(len(export.warnings)),
+            "Link": (
+                f'</api/reports/{report_id}/stix/conformance>; rel="describedby"'
+            ),
+        },
     )
+
+
+@router.get("/{report_id}/stix/conformance")
+def stix_conformance(report_id: int, session: SessionDep, user: CurrentUser) -> dict:
+    """What the STIX export of this product contains, and what it cannot carry.
+
+    Every warning is both machine-readable (``code``/``field``) and readable by
+    a person (``message``), so an operator can see exactly which parts of a
+    mapping are lossy instead of discovering it by diffing bundles.
+    """
+
+    report = ensure_visible(_get_report(session, report_id), user)
+    export = stix_service.report_export(report)
+    objects = export.bundle["objects"]
+    counts: dict[str, int] = {}
+    for obj in objects:
+        counts[obj["type"]] = counts.get(obj["type"], 0) + 1
+    return {
+        "report_id": report.id,
+        "spec_version": "2.1",
+        "object_count": len(objects),
+        "object_counts": counts,
+        "warnings": export.warning_payload,
+        "round_trip_safe": stix_service.ROUND_TRIP_SAFE,
+    }

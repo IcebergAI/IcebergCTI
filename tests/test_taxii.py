@@ -112,7 +112,10 @@ def test_taxii_manifest_and_objects_include_published_stix_only(client, login):
     manifest = client.get("/api/taxii2/collections/published-reports/manifest/")
     assert manifest.status_code == 200
     entries = manifest.json()["objects"]
-    assert len(entries) == 2
+    # The report SDO, its taxonomy term, the producer identity and the TLP
+    # marking every object carries — everything a consumer needs to resolve the
+    # bundle's references without a second fetch.
+    assert len(entries) == 4
     assert {
         entry["metadata"]["report_title"] for entry in entries
     } == {"Visible TAXII product"}
@@ -253,36 +256,30 @@ def test_taxii_paginates_objects_and_manifest(client, login, engine):
     all_objects = client.get("/api/taxii2/collections/published-reports/objects/")
     expected_ids = [obj["id"] for obj in all_objects.json()["objects"]]
 
-    page_one = client.get(
-        "/api/taxii2/collections/published-reports/objects/",
-        params={"limit": "1"},
-    )
-    assert page_one.status_code == 200
-    assert page_one.json()["more"] is True
-    assert len(page_one.json()["objects"]) == 1
-    assert page_one.json()["next"]
+    def _walk(path):
+        """Page one object at a time until the server says there is no more."""
 
-    page_two = client.get(
-        "/api/taxii2/collections/published-reports/objects/",
-        params={"limit": "1", "next": page_one.json()["next"]},
-    )
-    assert page_two.status_code == 200
-    assert page_two.json()["more"] is False
-    page_ids = [obj["id"] for obj in page_one.json()["objects"]]
-    page_ids += [obj["id"] for obj in page_two.json()["objects"]]
-    assert page_ids == expected_ids
+        ids, token, pages = [], None, 0
+        while True:
+            params = {"limit": "1"}
+            if token:
+                params["next"] = token
+            page = client.get(path, params=params)
+            assert page.status_code == 200, page.text
+            body = page.json()
+            assert len(body["objects"]) == 1
+            ids += [obj["id"] for obj in body["objects"]]
+            pages += 1
+            if not body["more"]:
+                assert "next" not in body
+                break
+            assert body["next"]
+            token = body["next"]
+            assert pages < 20, "pagination did not terminate"
+        return ids
 
-    manifest_page_one = client.get(
-        "/api/taxii2/collections/published-reports/manifest/",
-        params={"limit": "1"},
-    )
-    manifest_page_two = client.get(
-        "/api/taxii2/collections/published-reports/manifest/",
-        params={"limit": "1", "next": manifest_page_one.json()["next"]},
-    )
-    manifest_ids = [entry["id"] for entry in manifest_page_one.json()["objects"]]
-    manifest_ids += [entry["id"] for entry in manifest_page_two.json()["objects"]]
-    assert manifest_ids == expected_ids
+    assert _walk("/api/taxii2/collections/published-reports/objects/") == expected_ids
+    assert _walk("/api/taxii2/collections/published-reports/manifest/") == expected_ids
 
 
 def test_taxii_keyset_cursor_is_stable_across_inserts(client, login, engine):
