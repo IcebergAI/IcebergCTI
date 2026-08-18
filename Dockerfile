@@ -3,7 +3,7 @@
 # Builder: resolve the *locked* dependency graph (uv.lock) into a venv and fetch
 # the Typst binary. Build-only tooling (uv, curl, xz) stays out of the runtime.
 # ---------------------------------------------------------------------------- #
-FROM python:3.14-slim@sha256:a7fb1e634c4a578f9e0bd6327f11a3cde11b7a9395f48e24360c0988bcc5c2bc AS builder
+FROM python:3.14-slim@sha256:ce40764625a4ff50df3548277632e7f96c4e77fe75fa848aae9885476e7df5a4 AS builder
 
 # Bumping TYPST_VERSION requires updating the per-arch typst_sha checksums below
 # (the build verifies the tarball and fails closed on a mismatch).
@@ -53,7 +53,7 @@ RUN set -eux; \
 # Base pinned by digest (tag + @sha256) so the build is reproducible and the exact
 # bytes are auditable; Dependabot (docker ecosystem) bumps the digest as PRs.
 # ---------------------------------------------------------------------------- #
-FROM python:3.14-slim@sha256:a7fb1e634c4a578f9e0bd6327f11a3cde11b7a9395f48e24360c0988bcc5c2bc AS runtime
+FROM python:3.14-slim@sha256:ce40764625a4ff50df3548277632e7f96c4e77fe75fa848aae9885476e7df5a4 AS runtime
 
 # No ICEBERG_DATABASE_URL default: the container datastore is PostgreSQL and the
 # prod app refuses to boot on SQLite (config._guard_production), so the operator
@@ -78,7 +78,16 @@ ENV FORWARDED_ALLOW_IPS="127.0.0.1"
 # pkg_resources, ...), whose CVEs the Trivy gate would otherwise fail on even
 # though pip is never executed here — same "build-only tooling stays out of the
 # runtime" rule as uv/curl/xz above.
+#
+# `apt-get upgrade` applies Debian security updates that the pinned base predates.
+# The digest pin is what makes the build reproducible and auditable, but it also
+# freezes the base's package versions until docker-library rebuilds it — and the
+# Trivy gate fails on *fixable* HIGH/CRITICAL, i.e. exactly the window between
+# Debian publishing a fix and that rebuild landing. CVE-2026-53615 (util-linux,
+# 9 fixable HIGH) sat in that window and turned every PR red. Upgrading here
+# closes it without waiting on upstream cadence; Dependabot still bumps the pin.
 RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
     && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     && rm -rf /usr/local/lib/python3.14/site-packages/pip* \
