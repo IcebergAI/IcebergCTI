@@ -250,6 +250,10 @@ class Settings(BaseSettings):
     # off; retrieval then falls back to lexical overlap over the same
     # permission-filtered candidate set, so the feature never disappears.
     related_backend: str = "local"
+    # Minimum number of distinct responding stakeholders behind a programme
+    # breakdown before it is shown. 0 disables suppression (single-team
+    # deployments); the default keeps one person's feedback out of an aggregate.
+    measures_min_group: int = 5
     # Operator-approved Ollama base URL. The DB-editable AISettings.base_url for
     # the ``ollama`` provider must match this exact value — so a DB edit can't
     # redirect a real key to an attacker host (anti-SSRF; base-URL pinning).

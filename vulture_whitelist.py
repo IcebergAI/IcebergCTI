@@ -153,3 +153,7 @@ created_by_id  # unused variable (src/iceberg/models.py)
 approved_by_id  # unused variable (src/iceberg/models.py)
 _.approved_by_id  # SQLModel persisted attribute (src/iceberg/services/audience_policy.py)
 organisation  # unused variable (src/iceberg/services/audience_policy.py)
+
+# Programme-measure catalogue fields — rendered in templates/measures.html and
+# exported to CSV rather than referenced by name in Python (#310).
+definition  # unused variable (src/iceberg/services/program_measures.py)

@@ -457,6 +457,21 @@ curl -G -H "Authorization: Bearer $ICEBERG_TOKEN" \
    four capability dimensions scored CTI0 (Pre-foundational) → CTI3 (Leading) by thresholds.
    It is evidence to inform a self-assessment, **not a substitute** for a formal one.
 
+### Measure requirement coverage, gaps and usefulness
+1. Open **Measures** (left rail, `/measures`) — a writer-only view of how the programme is
+   operating: requirement age and status, tasked/sourced coverage, the **neglected** requirements
+   nothing is collecting against or producing for, declared collection gaps, product linkage,
+   audience reach, and stakeholder usefulness over time. It is aggregate by design — there is no
+   per-analyst breakdown anywhere in it.
+2. Filter by window (30/90/365 days or all time) and requirement kind, and take the same numbers
+   away with **Export CSV**.
+3. Every figure has a published definition and the records it comes from, listed at the foot of the
+   page. Two rules are worth knowing: a delivery that drew **no** response is never counted as a
+   poor rating (the response rate is reported separately), and any breakdown resting on fewer than
+   `ICEBERG_MEASURES_MIN_GROUP` responding stakeholders (default 5) is **suppressed** — in the
+   export too — so an aggregate cannot identify one person's answer. Set it to `0` on a
+   single-team deployment.
+
 ### Forward security events to your SIEM
 1. Sign in as **ADMIN** and open **Audit log** (left rail, `/admin/audit`). Security-relevant
    events — logins/logouts, authorization denials and CSRF blocks, report lifecycle transitions,
@@ -525,6 +540,7 @@ tiles; secrets show only a set/not-set status, never their value. Highlights:
 | `ICEBERG_AI_BACKEND` + `ICEBERG_AI_*` | Governed AI assist backend (`none`/`openai`/`openai-compatible`/`ollama`/`gemini`/`claude`/`bedrock`), model, key/`ICEBERG_AI_AWS_REGION`, TLP egress ceiling and timeout — **seeds** the `AISettings` row, then edit live at `/admin/ai` (off by default) |
 | `ICEBERG_AI_OLLAMA_BASE_URL` | Operator-approved Ollama base URL; the DB-editable base URL for the `ollama` provider must match it exactly (anti-SSRF base-URL pinning) |
 | `ICEBERG_AI_OPENAI_COMPATIBLE_BASE_URL` | Operator-approved base URL for the generic `openai-compatible` backend, enforced identically. Blank (the default) refuses that backend — without an env trust anchor a DB edit could ship the API key and TLP-gated content to any host |
+| `ICEBERG_MEASURES_MIN_GROUP` | Minimum distinct responding stakeholders behind a `/measures` breakdown before it is shown (default 5; `0` disables suppression) |
 | `ICEBERG_RELATED_BACKEND` | Related-product index provider: `local` (default — deterministic, non-egress hash embedding) or `none` (no vector index; related products are served by the lexical fallback) |
 | `ICEBERG_RSS_POLL_ENABLED` / `ICEBERG_RSS_POLL_INTERVAL_MINUTES` | Opt-in RSS poller switch and interval |
 | `ICEBERG_RSS_FETCH_TIMEOUT` / `ICEBERG_RSS_MAX_RESPONSE_BYTES` / `ICEBERG_RSS_MAX_ITEMS_PER_FEED` | RSS/Atom fetch timeout, response byte cap, and per-feed item cap |

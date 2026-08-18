@@ -85,6 +85,7 @@
       {'label': 'Entities', 'href': '/tags', 'group': 'Discover'},
       {'label': 'ATT&CK coverage', 'href': '/matrix', 'group': 'Discover'},
       {'label': 'Program maturity', 'href': '/maturity', 'group': 'Discover'},
+      {'label': 'Program measures', 'href': '/measures', 'group': 'Discover'},
       {'label': 'Settings & integrations', 'href': '/admin', 'group': 'Administration'},
       {'label': 'Taxonomy', 'href': '/admin/tags', 'group': 'Administration'},
       {'label': 'Audience groups', 'href': '/admin/audience', 'group': 'Administration'},
@@ -111,6 +112,7 @@
       {'label': 'Entities', 'href': '/tags', 'group': 'Discover'},
       {'label': 'ATT&CK coverage', 'href': '/matrix', 'group': 'Discover'},
       {'label': 'Program maturity', 'href': '/maturity', 'group': 'Discover'},
+      {'label': 'Program measures', 'href': '/measures', 'group': 'Discover'},
       {'label': 'Guided demo', 'href': '/demo', 'group': 'Help'},
       {'label': 'Help', 'href': '/help', 'group': 'Help'}
     ] %}
@@ -164,6 +166,7 @@
             {{ rail_link('/tags', 'ic-entity', 'Entities', path.startswith('/tags')) }}
             {{ rail_link('/matrix', 'ic-matrix', 'ATT&CK coverage', path.startswith('/matrix')) }}
             {{ rail_link('/maturity', 'ic-maturity', 'Maturity', path.startswith('/maturity')) }}
+            {{ rail_link('/measures', 'ic-matrix', 'Measures', path.startswith('/measures')) }}
           </div>
           {# The six integration + governance consoles live behind the /admin hub,
              which stays lit while you are inside any of them; every one of them
@@ -199,6 +202,7 @@
             {{ rail_link('/tags', 'ic-entity', 'Entities', path.startswith('/tags')) }}
             {{ rail_link('/matrix', 'ic-matrix', 'ATT&CK coverage', path.startswith('/matrix')) }}
             {{ rail_link('/maturity', 'ic-maturity', 'Maturity', path.startswith('/maturity')) }}
+            {{ rail_link('/measures', 'ic-matrix', 'Measures', path.startswith('/measures')) }}
           </div>
         {% endif %}
       </nav>
