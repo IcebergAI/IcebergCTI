@@ -15,7 +15,10 @@
   <div>
     <div class="eyebrow eyebrow-accent">Workspace</div>
     <h1 class="page-title mt-2">Good to see you, {{ user.display_name.split(' ')[0] }}</h1>
-    <a href="/help" class="help-hint mt-2">New here? Read your role guide →</a>
+    <div class="flex gap-3 flex-wrap mt-2">
+      <a href="/help" class="help-hint">Read your role guide →</a>
+      <a href="/demo" class="help-hint">Try the synthetic guided demo →</a>
+    </div>
   </div>
   {% if user.role != 'STAKEHOLDER' %}
     {% if next_report %}

@@ -13,6 +13,8 @@
 {% block canvas_class %}canvas--flush{% endblock %}
 {% block content %}
 
+{% if report.demo_workspace_id %}<div class="banner demo-banner" role="note"><strong>DEMO · SYNTHETIC</strong><span>This disposable assessment uses fictional demo material only.</span></div>{% endif %}
+
 {# A transition navigates away, which would drop a pending autosave debounce —
    and publishing freezes the snapshot, so those edits would be lost for good.
    submitTransition() flushes first and only then submits (#278). Without Alpine

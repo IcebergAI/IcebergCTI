@@ -72,7 +72,12 @@ def set_report_requirements(
     session: Session, report: Report, requirement_ids: list[int]
 ) -> list[Requirement]:
     """Replace the set of requirements a report satisfies."""
-    report.requirements = _requirements_by_id(session, requirement_ids)
+    requirements = _requirements_by_id(session, requirement_ids)
+    if any(r.demo_workspace_id != report.demo_workspace_id for r in requirements):
+        raise HTTPException(
+            422, "Demo requirements can only be linked inside their demo workspace"
+        )
+    report.requirements = requirements
     report.updated_at = utcnow()
     session.add(report)
     session.commit()
@@ -84,7 +89,12 @@ def set_notebook_requirements(
     session: Session, notebook: Notebook, requirement_ids: list[int]
 ) -> list[Requirement]:
     """Replace the set of requirements a notebook addresses."""
-    notebook.requirements = _requirements_by_id(session, requirement_ids)
+    requirements = _requirements_by_id(session, requirement_ids)
+    if any(r.demo_workspace_id != notebook.demo_workspace_id for r in requirements):
+        raise HTTPException(
+            422, "Demo requirements can only be linked inside their demo workspace"
+        )
+    notebook.requirements = requirements
     notebook.updated_at = utcnow()
     session.add(notebook)
     session.commit()

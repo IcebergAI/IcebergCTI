@@ -17,6 +17,7 @@ from . import (  # noqa: F401 — imported for their @router route registrations
     admin_webhook,
     analytics,
     discovery,
+    demo,
     feed,
     feeds,
     notebooks,

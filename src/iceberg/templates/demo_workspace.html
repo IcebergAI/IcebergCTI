@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Guided demo · {{ app_name }}{% endblock %}
+{% block content %}
+<div class="demo-shell">
+  <div class="eyebrow eyebrow-accent">Guided intelligence cycle</div>
+  <h1 class="page-title mt-2" tabindex="-1">Demo workspace</h1>
+  <div class="banner demo-banner mt-4" role="note">
+    <strong>DEMO · SYNTHETIC</strong>
+    <span>{{ notice }}</span>
+  </div>
+
+  {% if started %}
+    <div class="inline-notice mt-4" role="status" aria-live="polite">
+      <strong>Workspace created.</strong> Share this one-time join code privately with a stakeholder:
+      <code>{{ join_code }}</code>. It will not be shown again.
+    </div>
+  {% elif joined %}
+    <div class="inline-notice mt-4" role="status" aria-live="polite">Demo workspace joined. The synthetic cycle is ready.</div>
+  {% elif reset_done %}
+    <div class="inline-notice mt-4" role="status" aria-live="polite">Demo workspace reset. Start again with the stakeholder requirement.</div>
+  {% endif %}
+
+  {% if not workspace %}
+    <div class="grid md:grid-cols-2 gap-5 mt-6">
+      {% if user.role in ['ANALYST', 'ADMIN'] %}
+      <section class="card card-pad">
+        <h2 class="section-title">Start a workspace</h2>
+        <p class="muted mt-2">Creates a private handoff code. Synthetic records are created only after a stakeholder joins.</p>
+        <form method="post" action="/demo/start">
+          <button class="btn btn--primary demo-action mt-4">Start guided demo</button>
+        </form>
+      </section>
+      {% endif %}
+      {% if user.role == 'STAKEHOLDER' %}
+      <section class="card card-pad">
+        <h2 class="section-title">Join a workspace</h2>
+        <form method="post" action="/demo/join" class="mt-4">
+          <label class="field-label" for="demo-public-id">Workspace ID</label>
+          <input class="field" id="demo-public-id" name="public_id" required autocomplete="off">
+          <label class="field-label mt-3" for="demo-join-code">One-time join code</label>
+          <input class="field" id="demo-join-code" name="join_code" required autocomplete="off">
+          <button class="btn btn--primary demo-action mt-4">Join guided demo</button>
+        </form>
+      </section>
+      {% endif %}
+      {% if user.role == 'REVIEWER' %}
+      <section class="card card-pad">
+        <h2 class="section-title">Review a shared demo</h2>
+        <p class="muted mt-2">Open the non-enumerable workspace link shared by its analyst owner. Review and publication use the ordinary report controls.</p>
+      </section>
+      {% endif %}
+    </div>
+  {% else %}
+    <div class="demo-layout mt-6">
+      <aside class="card card-pad demo-overview">
+        <h2 class="section-title">Cycle progress</h2>
+        <p class="muted mt-2">Workspace {{ workspace.public_id }} · generation {{ workspace.generation }}</p>
+        <ol class="demo-progress mt-4">
+          <li class="{{ 'is-complete' if state.joined else 'is-current' }}"><span>1</span> Stakeholder requirement</li>
+          <li class="{{ 'is-complete' if state.submitted else ('is-current' if state.joined else '') }}"><span>2</span> Analyst assessment</li>
+          <li class="{{ 'is-complete' if state.published else ('is-current' if state.submitted else '') }}"><span>3</span> Review and publication</li>
+          <li class="{{ 'is-complete' if state.complete else ('is-current' if state.delivered else '') }}"><span>4</span> Stakeholder feedback</li>
+        </ol>
+      </aside>
+      <section class="card card-pad">
+        <h2 class="section-title">Your next step</h2>
+        {% if not state.joined %}
+          <p class="mt-3">Waiting for a stakeholder. Share the workspace ID and the one-time code shown when this workspace was created.</p>
+        {% elif user.role == 'ANALYST' or user.role == 'ADMIN' %}
+          <ol class="demo-checklist mt-4">
+            <li><strong>Inspect the requirement</strong><span>Confirm the fictional question and move it into progress. <a href="/help?role={{ user.role.value }}#requirements">Requirement guide</a></span><a class="btn demo-action" href="/requirements/{{ state.requirement.id }}">Open requirement →</a></li>
+            <li><strong>Trace the collection</strong><span>The supplied source is synthetic and already linked. <a href="/help?role={{ user.role.value }}#source-grading">Source-grading guide</a></span><a class="btn demo-action" href="/notebooks/{{ state.notebook.id }}">Open notebook →</a></li>
+            <li><strong>Submit the assessment</strong><span>Review citations and key judgements, then use the ordinary lifecycle control. <a href="/help?role={{ user.role.value }}#icd-203">Judgement guide</a></span><a class="btn btn--primary demo-action" href="/reports/{{ state.report.id }}/edit">Open report editor →</a></li>
+          </ol>
+        {% elif user.role == 'REVIEWER' %}
+          <ol class="demo-checklist mt-4">
+            <li><strong>Review the assessment</strong><span>Approve and publish only when the report is in review. Publication must create an immutable snapshot. <a href="/help?role={{ user.role.value }}#lifecycle">Lifecycle guide</a></span><a class="btn btn--primary demo-action" href="/reports/{{ state.report.id }}/edit">Review report →</a></li>
+          </ol>
+        {% elif user.role == 'STAKEHOLDER' %}
+          <ol class="demo-checklist mt-4">
+            <li><strong>Review your requirement</strong><span>This fictional PIR drives the shared assessment. <a href="/help?role={{ user.role.value }}#requirements">Requirement guide</a></span><a class="btn demo-action" href="/requirements/{{ state.requirement.id }}">Open requirement →</a></li>
+            <li><strong>Close the feedback loop</strong><span>{{ 'The published product is ready in your feed. Record an honest usefulness and satisfaction verdict.' if state.delivered else 'Waiting for analyst review and publication.' }} <a href="/help?role={{ user.role.value }}#dissemination">Dissemination guide</a></span>{% if state.delivered %}<a class="btn btn--primary demo-action" href="/feed">Open feed →</a>{% endif %}</li>
+          </ol>
+        {% endif %}
+        {% if state.complete %}<div class="inline-notice mt-5" role="status">Cycle complete: immutable publication and stakeholder feedback are recorded.</div>{% endif %}
+      </section>
+    </div>
+
+    {% if user.id == workspace.owner_id or user.role == 'ADMIN' %}
+      <form method="post" action="/demo/{{ workspace.public_id }}/reset" class="card card-pad mt-5"
+            x-data="confirmSubmit('Reset the synthetic demo workspace? This replaces demo records only. Your other work will not change.')" @submit="check($event)">
+        <input type="hidden" name="expected_generation" value="{{ workspace.generation }}">
+        <h2 class="section-title">Reset synthetic records</h2>
+        <p class="muted mt-2">Replaces only rows owned by this demo boundary. Other requirements, notebooks, reports, files, and feedback are untouched.</p>
+        <button class="btn btn--ghost demo-action mt-4">Reset demo workspace</button>
+      </form>
+    {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

@@ -18,7 +18,7 @@ evidence to inform a self-assessment, **not a substitute** for one — hence the
 from datetime import date, timedelta
 from statistics import median
 
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from ..config import get_settings
 from ..models import (
@@ -36,7 +36,6 @@ from ..models import (
     tlp_label,
 )
 from . import feedback as feedback_service
-from . import requirements as req_service
 
 # CTI-CMM maturity-level names (CTI0..CTI3). Derived, indicative only.
 _LEVEL_LABELS = ("Pre-foundational", "Foundational", "Advanced", "Leading")
@@ -130,7 +129,11 @@ def _production(reports: list[Report]) -> dict:
 
 
 def _requirements(session: Session) -> dict:
-    reqs = list(session.exec(select(Requirement)).all())
+    reqs = list(
+        session.exec(
+            select(Requirement).where(col(Requirement.demo_workspace_id).is_(None))
+        ).all()
+    )
     active = {RequirementStatus.OPEN, RequirementStatus.IN_PROGRESS}
 
     by_kind = {k: 0 for k in RequirementKind}
@@ -149,7 +152,11 @@ def _requirements(session: Session) -> dict:
     active_reqs = [r for r in reqs if r.status in active]
     linked = [r for r in active_reqs if r.reports or r.notebooks]
 
-    pir = req_service.pir_coverage(session)
+    active_pirs = [r for r in active_reqs if r.kind == RequirementKind.PIR]
+    pir_gaps = [r for r in active_pirs if not r.reports and not r.notebooks]
+    pir_overdue = [
+        r for r in active_pirs if r.review_by is not None and r.review_by < date.today()
+    ]
     return {
         "total": len(reqs),
         "by_kind": [{"kind": k.value, "count": by_kind[k]} for k in RequirementKind],
@@ -160,13 +167,20 @@ def _requirements(session: Session) -> dict:
         "active_total": len(active_reqs),
         "linked_active": len(linked),
         "coverage_rate": _pct(len(linked), len(active_reqs)),
-        "pir_gaps": len(pir["gaps"]),
-        "pir_overdue": len(pir["overdue"]),
+        "pir_gaps": len(pir_gaps),
+        "pir_overdue": len(pir_overdue),
     }
 
 
 def _dissemination(session: Session, reports: list[Report]) -> dict:
-    events = list(session.exec(select(DisseminationEvent)).all())
+    report_ids = {report.id for report in reports}
+    events = list(
+        session.exec(
+            select(DisseminationEvent).where(
+                col(DisseminationEvent.report_id).in_(report_ids or {-1})
+            )
+        ).all()
+    )
     total = len(events)
     read = sum(1 for e in events if e.read_at is not None)
     reached = {e.stakeholder_id for e in events}
@@ -194,7 +208,7 @@ def _dissemination(session: Session, reports: list[Report]) -> dict:
         "withheld_rate": _pct(withheld, len(published)),
         "max_tlp_label": tlp_label(max_tlp),
         # Intelligence-cycle feedback loop (backlog D): the return signal.
-        "feedback": feedback_service.feedback_effectiveness(session),
+        "feedback": feedback_service.feedback_effectiveness(session, exclude_demo=True),
     }
 
 
@@ -293,7 +307,11 @@ def program_maturity(session: Session) -> dict:
     ``dissemination`` / ``tradecraft`` groups plus an indicative ``maturity``
     rollup.
     """
-    reports = list(session.exec(select(Report)).all())
+    reports = list(
+        session.exec(
+            select(Report).where(col(Report.demo_workspace_id).is_(None))
+        ).all()
+    )
 
     production = _production(reports)
     requirements = _requirements(session)

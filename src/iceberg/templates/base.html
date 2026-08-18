@@ -56,7 +56,7 @@
     '': 'Dashboard', 'reports': 'Reports', 'notebooks': 'Notebooks',
     'search': 'Search', 'tags': 'Entities', 'matrix': 'ATT&CK coverage',
     'requirements': 'Tasking', 'feed': 'Feed', 'feeds': 'Feed reader', 'preferences': 'Preferences',
-    'maturity': 'Program maturity', 'help': 'Help', 'admin': 'Settings & integrations'
+    'maturity': 'Program maturity', 'demo': 'Guided demo', 'help': 'Help', 'admin': 'Settings & integrations'
   } %}
   {% set crumb_default = _crumbs.get(_seg, _seg | replace('-', ' ') | title) %}
   {% set role = (user.role.value if user.role is not string else user.role) if (user is defined and user) else none %}
@@ -70,6 +70,7 @@
       {'label': 'ATT&CK coverage', 'href': '/matrix', 'group': 'Intelligence'},
       {'label': 'My requirements', 'href': '/requirements', 'group': 'My inputs'},
       {'label': 'Preferences', 'href': '/preferences', 'group': 'My inputs'},
+      {'label': 'Guided demo', 'href': '/demo', 'group': 'Help'},
       {'label': 'Help', 'href': '/help', 'group': 'Help'}
     ] %}
   {% elif role == 'ADMIN' %}
@@ -95,6 +96,7 @@
       {'label': 'AI provider', 'href': '/admin/ai', 'group': 'Administration'},
       {'label': 'MISP push', 'href': '/admin/misp', 'group': 'Administration'},
       {'label': 'Publication webhook', 'href': '/admin/webhook', 'group': 'Administration'},
+      {'label': 'Guided demo', 'href': '/demo', 'group': 'Help'},
       {'label': 'Help', 'href': '/help', 'group': 'Help'}
     ] %}
   {% elif role %}
@@ -108,6 +110,7 @@
       {'label': 'Entities', 'href': '/tags', 'group': 'Discover'},
       {'label': 'ATT&CK coverage', 'href': '/matrix', 'group': 'Discover'},
       {'label': 'Program maturity', 'href': '/maturity', 'group': 'Discover'},
+      {'label': 'Guided demo', 'href': '/demo', 'group': 'Help'},
       {'label': 'Help', 'href': '/help', 'group': 'Help'}
     ] %}
   {% else %}

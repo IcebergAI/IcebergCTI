@@ -184,6 +184,12 @@ a cheap query against a core table, `200` when the database is reachable **and**
 a browsable look at what the other roles do, and a glossary of the intelligence concepts
 (TLP, intel levels, source grading, the Diamond Model, ACH, ICD 203 judgements, dissemination).
 
+### Try the guided synthetic demo
+
+Open **Guided demo** from the dashboard. An analyst starts a workspace and shares the one-time code with an ordinary stakeholder; a reviewer opens the shared workspace link. The checklist then drives all three roles through the existing requirement, notebook, review, immutable publication, feed, and feedback screens. Every demo record is visibly synthetic, external notifications are suppressed, operational metrics exclude it, and the owner can reset only that isolated workspace.
+
+The isolation and reproducible browser/accessibility acceptance contract is documented in [docs/demo-workspace.md](docs/demo-workspace.md).
+
 ### Try the authoring loop
 1. Create a **notebook** from the dashboard.
 2. Add a couple of **sources**, a **note**, and upload an **attachment** (e.g. a PDF).

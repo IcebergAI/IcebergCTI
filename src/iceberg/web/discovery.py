@@ -274,6 +274,8 @@ def admin_audience_update(
 ):
     _require_admin(user)
     group = _audience_group_or_404(session, group_id)
+    if group.demo_workspace_id is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Demo audiences are reset-managed")
     slug = tag_service.slugify(name)
     if not slug:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Group name is required")

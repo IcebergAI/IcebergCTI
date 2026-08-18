@@ -55,6 +55,7 @@ from ..services import ach as ach_service
 from ..services import attachments as attachment_service
 from ..services import audit
 from ..services import diamond as diamond_service
+from ..services import demo as demo_service
 from ..services import figures as figure_service
 from ..services import iocs as ioc_service
 from ..services import inbound
@@ -132,6 +133,7 @@ def delete_notebook(
     nb = _get_notebook(session, notebook_id)
     if nb.owner_id != user.id and user.role != Role.ADMIN:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the owner can delete")
+    demo_service.ensure_not_reset_managed(nb)
     # Capture attachment + figure file paths before the DB rows cascade away,
     # then unlink them after the delete so no files are orphaned on disk.
     paths = [attachment_service.attachment_path(a) for a in nb.attachments]

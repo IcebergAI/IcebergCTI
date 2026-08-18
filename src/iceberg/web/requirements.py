@@ -24,6 +24,7 @@ from ..models import (
     utcnow,
 )
 from ..services import (
+    demo as demo_service,
     feedback as feedback_service,
     requirements as req_service,
     reports as report_service,
@@ -224,7 +225,7 @@ def requirement_delete(
     req = _get_requirement(session, requirement_id)
     if user.role != Role.ADMIN and req.stakeholder_id != user.id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Cannot delete this requirement")
+    demo_service.ensure_not_reset_managed(req)
     session.delete(req)
     session.commit()
     return _redirect("/requirements")
-
