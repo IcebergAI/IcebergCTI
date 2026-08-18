@@ -165,6 +165,41 @@
               <button class="icon-action icon-action--danger" type="submit" aria-label="Delete term" title="Delete term"></button>
             </form>
           </div>
+
+          {# Rename is separate from Save: it previews its impact first, and keeps
+             the old name resolvable as an alias (#307). #}
+          <div class="tax-row" style="padding-top:0;">
+            <form method="post" action="/admin/tags/{{ t.id }}/rename" class="tax-edit">
+              <input name="new_label" value="{{ rename.to if rename.tag_id == t.id | string else '' }}"
+                     placeholder="Rename to…" class="field" style="flex:1.4;min-width:160px;"
+                     aria-label="New name for {{ t.label }}">
+              <button class="btn btn--quiet btn--sm" type="submit">Preview rename</button>
+              {% if rename.tag_id == t.id | string and rename.to and not rename.error %}
+                <input type="hidden" name="confirm" value="true">
+                <button class="btn btn--primary btn--sm" type="submit">Rename to “{{ rename.to }}”</button>
+              {% endif %}
+            </form>
+            {% if rename.tag_id == t.id | string %}
+              {% if rename.error %}
+                <p class="inline-notice" role="alert">{{ rename.error }}</p>
+              {% elif rename.to %}
+                <p class="text-xs" style="color:var(--muted);">
+                  Renaming to “{{ rename.to }}” affects {{ rename.drafts }} draft and
+                  {{ rename.published }} published report(s), {{ rename.subs }} subscription(s) and
+                  {{ rename.rules }} dissemination rule(s). {{ rename.frozen }} published snapshot(s)
+                  keep the name they froze. “{{ t.label }}” stays resolvable as an alias; no stored
+                  record is rewritten.
+                </p>
+              {% endif %}
+            {% endif %}
+            {% if rename.renamed == t.id | string and rename['from'] %}
+              <form method="post" action="/admin/tags/{{ t.id }}/rename/undo" class="tax-edit">
+                <input type="hidden" name="previous_label" value="{{ rename['from'] }}">
+                <span class="text-xs" style="color:var(--c-ok);">Renamed from “{{ rename['from'] }}”.</span>
+                <button class="btn btn--quiet btn--sm" type="submit">Undo rename</button>
+              </form>
+            {% endif %}
+          </div>
         {% endfor %}
       </div>
       {% endif %}

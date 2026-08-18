@@ -8,7 +8,13 @@ from sqlmodel import Session
 from ..auth.dependencies import CurrentUser, require_role
 from ..db import get_session
 from ..models import AuditAction, AuditCategory, Role, Tag, TagKind, User
-from ..schemas import TagCreate, TagMergeRequest, TagUpdate
+from ..schemas import (
+    TagCreate,
+    TagMergeRequest,
+    TagRenameRequest,
+    TagRenameUndoRequest,
+    TagUpdate,
+)
 from ..services import audit
 from ..services import tags as tag_service
 
@@ -110,6 +116,102 @@ def update_tag(
     )
     _audit_tag(session, background_tasks, request, admin, AuditAction.TAG_UPDATED, tag)
     session.refresh(tag)  # the audit commit expires the instance before serialisation
+    return tag
+
+
+def _impact_json(impact) -> dict:
+    return {
+        "tag_id": impact.tag.id,
+        "current_label": impact.tag.label,
+        "new_label": impact.new_label,
+        "new_slug": impact.new_slug,
+        "conflicts": impact.conflicts,
+        "blocked": impact.blocked,
+        "unchanged": impact.unchanged,
+        "alias_added": impact.alias_added,
+        "draft_reports": impact.draft_reports,
+        "published_reports": impact.published_reports,
+        "frozen_snapshots": impact.frozen_snapshots,
+        "subscriptions": impact.subscriptions,
+        "policy_rules": impact.policy_rules,
+        "records_to_rewrite": impact.records_to_rewrite,
+    }
+
+
+@router.post("/{tag_id}/rename/preview")
+def preview_rename(
+    tag_id: int, body: TagRenameRequest, session: SessionDep, _a: Admin
+) -> dict:
+    """Dry-run a rename: what references the term, and what would block it."""
+
+    return _impact_json(
+        tag_service.rename_impact(session, _get_tag(session, tag_id), body.new_label)
+    )
+
+
+@router.post("/{tag_id}/rename")
+def rename_tag(
+    tag_id: int,
+    body: TagRenameRequest,
+    session: SessionDep,
+    admin: Admin,
+    request: Request,
+    background_tasks: BackgroundTasks,
+) -> dict:
+    """Rename a term. Its previous name stays resolvable as an audited alias."""
+
+    tag = _get_tag(session, tag_id)
+    previous = tag.label
+    impact = tag_service.rename_tag(session, tag, body.new_label)
+    if not impact.unchanged:
+        audit.record_and_emit(
+            session,
+            background_tasks=background_tasks,
+            action=AuditAction.TAG_RENAMED,
+            category=AuditCategory.ADMIN,
+            actor=admin,
+            request=request,
+            resource_type="tag",
+            resource_id=tag.id,
+            detail={
+                "previous_label": previous,
+                "new_label": impact.new_label,
+                "alias_added": previous,
+                "published_reports": impact.published_reports,
+                "frozen_snapshots": impact.frozen_snapshots,
+                "subscriptions": impact.subscriptions,
+            },
+        )
+        session.refresh(tag)
+    return _impact_json(impact)
+
+
+@router.post("/{tag_id}/rename/undo")
+def undo_rename(
+    tag_id: int,
+    body: TagRenameUndoRequest,
+    session: SessionDep,
+    admin: Admin,
+    request: Request,
+    background_tasks: BackgroundTasks,
+) -> Tag:
+    """Reverse a rename that has not yet been relied on."""
+
+    tag = _get_tag(session, tag_id)
+    superseded = tag.label
+    tag = tag_service.undo_rename(session, tag, body.previous_label)
+    audit.record_and_emit(
+        session,
+        background_tasks=background_tasks,
+        action=AuditAction.TAG_RENAME_REVERTED,
+        category=AuditCategory.ADMIN,
+        actor=admin,
+        request=request,
+        resource_type="tag",
+        resource_id=tag.id,
+        detail={"reverted_from": superseded, "restored_label": tag.label},
+    )
+    session.refresh(tag)
     return tag
 
 

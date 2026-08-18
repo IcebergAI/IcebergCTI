@@ -10,7 +10,7 @@ no longer offered for new classification.
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from importlib.resources import files
 
 from fastapi import HTTPException, status
@@ -18,7 +18,7 @@ from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
 
-from ..models import Motivation, Report, ReportTag, Tag, TagKind, utcnow
+from ..models import Motivation, Report, ReportStatus, ReportTag, Tag, TagKind, utcnow
 from ..models import User, UserTagSubscription
 from . import attack as attack_service
 
@@ -384,6 +384,211 @@ def merge_tags(session: Session, *, source: Tag, target: Tag) -> TagMergeResult:
 # --------------------------------------------------------------------------- #
 # Listing
 # --------------------------------------------------------------------------- #
+@dataclass(frozen=True)
+class RenameImpact:
+    """What a proposed rename would touch, and what would stop it (#307).
+
+    Nothing here writes: a rename is previewed first precisely because a term
+    that is widely used is the one you least want to rename by accident.
+    """
+
+    tag: Tag
+    new_label: str
+    new_slug: str
+    conflicts: list[str]
+    draft_reports: int
+    published_reports: int
+    frozen_snapshots: int
+    subscriptions: int
+    policy_rules: list[str]
+    alias_added: str
+    unchanged: bool
+
+    @property
+    def blocked(self) -> bool:
+        return bool(self.conflicts)
+
+    @property
+    def records_to_rewrite(self) -> int:
+        """Records whose stored text a rename would have to change.
+
+        Zero, by design: every reference to a term is by **id**, and a published
+        snapshot deliberately keeps the label it froze. There is therefore no
+        background migration to run, resume or leave half-applied.
+        """
+
+        return 0
+
+
+def rename_impact(session: Session, tag: Tag, new_label: str) -> RenameImpact:
+    """Dry-run a rename: what references the term, and what would block it."""
+
+    label = (new_label or "").strip()
+    slug = slugify(label)
+    conflicts: list[str] = []
+    if not label or not slug:
+        conflicts.append("A new name is required")
+    if tag.merged_into_tag_id is not None:
+        conflicts.append(
+            "This term was merged into another; rename its canonical term instead"
+        )
+    unchanged = bool(label) and label == tag.label
+
+    if slug and not unchanged:
+        clash = session.exec(
+            select(Tag).where(
+                Tag.kind == tag.kind, Tag.slug == slug, col(Tag.id) != tag.id
+            )
+        ).first()
+        if clash is not None:
+            conflicts.append(
+                f"A {tag.kind.value} term named '{clash.label}' already exists "
+                f"(#{clash.id}) — merge into it instead of renaming onto it"
+            )
+        for other in session.exec(
+            select(Tag).where(Tag.kind == tag.kind, col(Tag.id) != tag.id)
+        ).all():
+            if any(slugify(alias) == slug for alias in other.aliases):
+                conflicts.append(
+                    f"'{label}' is already an alias of '{other.label}' (#{other.id}), "
+                    "so the new name would resolve to two entities in search"
+                )
+                break
+
+    report_ids = [
+        row
+        for row in session.exec(
+            select(ReportTag.report_id).where(ReportTag.tag_id == tag.id)
+        ).all()
+        if row is not None
+    ]
+    published = 0
+    frozen = 0
+    if report_ids:
+        for report in session.exec(
+            select(Report).where(col(Report.id).in_(report_ids))
+        ).all():
+            if ReportStatus(report.status) is ReportStatus.PUBLISHED:
+                published += 1
+                if report.publication_snapshot_hash:
+                    frozen += 1
+    subscriptions = len(
+        list(
+            session.exec(
+                select(UserTagSubscription).where(UserTagSubscription.tag_id == tag.id)
+            ).all()
+        )
+    )
+    return RenameImpact(
+        tag=tag,
+        new_label=label,
+        new_slug=slug,
+        conflicts=conflicts,
+        draft_reports=len(report_ids) - published,
+        published_reports=published,
+        frozen_snapshots=frozen,
+        subscriptions=subscriptions,
+        policy_rules=_policy_rules_referencing(session, tag),
+        alias_added=tag.label,
+        unchanged=unchanged,
+    )
+
+
+def _policy_rules_referencing(session: Session, tag: Tag) -> list[str]:
+    """Dissemination-policy rules that select on this term, by ``slug@vN:rule``."""
+
+    from ..models import DisseminationPolicyVersion
+
+    labels: list[str] = []
+    for version in session.exec(select(DisseminationPolicyVersion)).all():
+        for rule in version.rules:
+            if tag.id in (rule.get("when") or {}).get("tag_ids", []):
+                labels.append(f"{version.label}:{rule['id']}")
+    return labels
+
+
+def rename_tag(session: Session, tag: Tag, new_label: str) -> RenameImpact:
+    """Rename a term, keeping its old name resolvable as an audited alias.
+
+    One row changes and nothing is denormalised, so this is a single atomic
+    write — there is no partial state to resume — and renaming to the name a
+    term already has is a no-op. The previous label is added to ``aliases``, so
+    the old identifier keeps resolving in search and through
+    :func:`find_by_identifier` rather than 404-ing.
+    """
+
+    impact = rename_impact(session, tag, new_label)
+    if impact.blocked:
+        raise HTTPException(status.HTTP_409_CONFLICT, "; ".join(impact.conflicts))
+    if impact.unchanged:
+        return impact
+
+    previous = tag.label
+    changed_at = utcnow()
+    tag.label = impact.new_label
+    tag.slug = impact.new_slug
+    tag.aliases = normalise_aliases(impact.new_label, [*tag.aliases, previous])
+    tag.updated_at = changed_at
+    _touch_tagged_reports(session, [tag.id], changed_at)
+    session.add(tag)
+    session.commit()
+    session.refresh(tag)
+    # Report the completed rename: the post-state counts, but still flagged as a
+    # change (re-previewing the *new* name would read as "unchanged").
+    return replace(
+        rename_impact(session, tag, tag.label),
+        unchanged=False,
+        alias_added=previous,
+    )
+
+
+def undo_rename(session: Session, tag: Tag, previous_label: str) -> Tag:
+    """Rename back, dropping the alias the rename added.
+
+    A rename is reversible right up until someone starts relying on the new
+    name; this is that reversal, not a general history mechanism.
+    """
+
+    previous = (previous_label or "").strip()
+    if not previous:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "The previous name is required")
+    if not any(alias.lower() == previous.lower() for alias in tag.aliases):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"'{previous}' is not an alias of this term, so it is not a rename to undo",
+        )
+    superseded = tag.label
+    rename_tag(session, tag, previous)
+    tag.aliases = [
+        alias for alias in tag.aliases if alias.lower() != superseded.lower()
+    ]
+    tag.updated_at = utcnow()
+    session.add(tag)
+    session.commit()
+    session.refresh(tag)
+    return tag
+
+
+def find_by_identifier(session: Session, identifier: str) -> Tag | None:
+    """Resolve a term by its current slug **or** by a slug it used to have.
+
+    This is what makes an old link keep working after a rename: the previous
+    name lives on as an alias, so ``/tags/by-name/{old-slug}`` still lands on
+    the entity rather than 404-ing.
+    """
+
+    slug = slugify(identifier)
+    if not slug:
+        return None
+    current = session.exec(select(Tag).where(Tag.slug == slug)).first()
+    if current is not None:
+        return current
+    for tag in session.exec(select(Tag)).all():
+        if any(slugify(alias) == slug for alias in tag.aliases):
+            return tag
+    return None
+
+
 def list_tags(
     session: Session,
     *,

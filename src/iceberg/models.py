@@ -359,6 +359,8 @@ class AuditAction(StrEnum):
     TAG_UPDATED = "TAG_UPDATED"
     TAG_DELETED = "TAG_DELETED"
     TAG_MERGED = "TAG_MERGED"
+    TAG_RENAMED = "TAG_RENAMED"
+    TAG_RENAME_REVERTED = "TAG_RENAME_REVERTED"
     # Governed analyst-assist calls (prompt/response bodies are never audited).
     AI_ASSIST = "AI_ASSIST"
     # AI provider configuration (admin)
