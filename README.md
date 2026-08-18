@@ -367,8 +367,17 @@ filters (`added_after`, `limit`, `next`, `match[type]`, `match[id]`, `match[vers
 `match[spec_version]`). Published products are immutable, so each served object has exactly
 one version: `first`, `last` and `all` all select it, and an explicit timestamp selects it
 only when it is that version. `GET /api/reports/{id}/related`
-returns access-scoped related products from a rebuildable local vector table; rebuild it with
-`iceberg-rebuild-related`. The report view exposes both the STIX download and related-product
+returns access-scoped related products from a rebuildable local index. Access is filtered in SQL
+**before** anything is ranked, so a product a reader cannot see never changes their result count,
+ranking or scores, and a permission change takes effect on their next request without a reindex.
+
+Each index entry records the provider, model, model version, the report revision and a digest of the
+indexed text, so an edited product or a model change reads as *stale* and is skipped rather than
+served from a superseded revision. Maintain it with `iceberg-rebuild-related` (`--batch N` for a
+bounded, repeatable pass — it is resumable because staleness lives on the row; `--status` for index
+health, also available to admins at `GET /api/reports/index-health/related` and on the `/admin` hub).
+Set `ICEBERG_RELATED_BACKEND=none` to switch the vector index off entirely: related products are then
+served by deterministic lexical overlap over the same permission-filtered candidates. The report view exposes both the STIX download and related-product
 panel when related products exist.
 
 Example TAXII pulls using `curl` for quick smoke tests; production integrations can use
@@ -516,6 +525,7 @@ tiles; secrets show only a set/not-set status, never their value. Highlights:
 | `ICEBERG_AI_BACKEND` + `ICEBERG_AI_*` | Governed AI assist backend (`none`/`openai`/`openai-compatible`/`ollama`/`gemini`/`claude`/`bedrock`), model, key/`ICEBERG_AI_AWS_REGION`, TLP egress ceiling and timeout — **seeds** the `AISettings` row, then edit live at `/admin/ai` (off by default) |
 | `ICEBERG_AI_OLLAMA_BASE_URL` | Operator-approved Ollama base URL; the DB-editable base URL for the `ollama` provider must match it exactly (anti-SSRF base-URL pinning) |
 | `ICEBERG_AI_OPENAI_COMPATIBLE_BASE_URL` | Operator-approved base URL for the generic `openai-compatible` backend, enforced identically. Blank (the default) refuses that backend — without an env trust anchor a DB edit could ship the API key and TLP-gated content to any host |
+| `ICEBERG_RELATED_BACKEND` | Related-product index provider: `local` (default — deterministic, non-egress hash embedding) or `none` (no vector index; related products are served by the lexical fallback) |
 | `ICEBERG_RSS_POLL_ENABLED` / `ICEBERG_RSS_POLL_INTERVAL_MINUTES` | Opt-in RSS poller switch and interval |
 | `ICEBERG_RSS_FETCH_TIMEOUT` / `ICEBERG_RSS_MAX_RESPONSE_BYTES` / `ICEBERG_RSS_MAX_ITEMS_PER_FEED` | RSS/Atom fetch timeout, response byte cap, and per-feed item cap |
 | `ICEBERG_RSS_ALLOW_PRIVATE_HOSTS` | Allow private/internal feed hosts for trusted deployments |

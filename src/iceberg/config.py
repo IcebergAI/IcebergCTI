@@ -24,6 +24,10 @@ _LOG_FORMATS = {"auto", "text", "json"}
 _RATE_LIMIT_STORES = {"auto", "redis", "memory"}
 _ENVIRONMENTS = {"dev", "test", "prod"}
 _EMAIL_BACKENDS = {"console", "smtp"}
+# Related-product index providers. "local" is a deterministic, non-egress
+# hash embedding; "none" disables the vector index entirely and leaves the
+# lexical fallback serving related products (#311).
+_RELATED_BACKENDS = {"local", "none"}
 _STORAGE_BACKENDS = {"local", "s3"}
 _TLP_VALUES = {"CLEAR", "GREEN", "AMBER", "AMBER_STRICT", "RED"}
 
@@ -242,6 +246,10 @@ class Settings(BaseSettings):
     ai_max_tlp: str = "AMBER"
     ai_embeddings_enabled: bool = False
     ai_embedding_model: str = ""
+    # Related-product index provider. Selecting "none" turns the vector index
+    # off; retrieval then falls back to lexical overlap over the same
+    # permission-filtered candidate set, so the feature never disappears.
+    related_backend: str = "local"
     # Operator-approved Ollama base URL. The DB-editable AISettings.base_url for
     # the ``ollama`` provider must match this exact value — so a DB edit can't
     # redirect a real key to an attacker host (anti-SSRF; base-URL pinning).
@@ -395,6 +403,17 @@ class Settings(BaseSettings):
         if backend not in _EMAIL_BACKENDS:
             raise ValueError(
                 f"ICEBERG_EMAIL_BACKEND must be one of {sorted(_EMAIL_BACKENDS)}; got {value!r}."
+            )
+        return backend
+
+    @field_validator("related_backend")
+    @classmethod
+    def _validate_related_backend(cls, value: str) -> str:
+        backend = (value or "").strip().lower()
+        if backend not in _RELATED_BACKENDS:
+            raise ValueError(
+                f"ICEBERG_RELATED_BACKEND must be one of {sorted(_RELATED_BACKENDS)}; "
+                f"got {value!r}."
             )
         return backend
 

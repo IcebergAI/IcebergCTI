@@ -46,10 +46,18 @@ def _add_report(
 
 
 def _add_embedding(session: Session, report: Report, vector: list[float]) -> None:
+    """Stamp a fresh index entry with the provenance the retriever checks."""
+
+    provider = related.get_provider()
     session.add(
         ReportEmbedding(
             report_id=report.id,
-            backend="local:hash-v1",
+            backend=provider.name,
+            model=provider.model,
+            model_version=provider.version,
+            dimensions=len(vector),
+            source_version=report.version,
+            content_sha256=related.content_digest(report),
             vector=vector,
         )
     )

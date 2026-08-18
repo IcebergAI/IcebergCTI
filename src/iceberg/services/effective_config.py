@@ -36,6 +36,7 @@ from . import (
     misp_settings,
     oidc_settings,
     proxy_settings,
+    related,
     webhook_settings,
 )
 
@@ -427,6 +428,7 @@ def admin_hub_tiles(session) -> list[dict]:
     )
     issues = len(_validation(s)["errors"])
     live_policy_versions = audience_policy.applicable_versions(session)
+    related_index = related.index_health(session)
 
     tiles = [
         HubTile(
@@ -568,6 +570,34 @@ def admin_hub_tiles(session) -> list[dict]:
                 else audit_broken
                 if audit_broken
                 else "Forensic trail forwarded off-box"
+            ),
+        ),
+        HubTile(
+            group="Governance",
+            title="Related products",
+            href="/admin/config",
+            status=(
+                "LEXICAL"
+                if not related_index["enabled"]
+                else f"{related_index['pending']} PENDING"
+                if related_index["pending"]
+                else "INDEXED"
+            ),
+            tone=(
+                "is-neutral"
+                if not related_index["enabled"]
+                else "is-warn"
+                if related_index["pending"]
+                else "is-ok"
+            ),
+            meta=(
+                "Vector index off · related products served by lexical overlap"
+                if not related_index["enabled"]
+                else (
+                    f"{related_index['model']} v{related_index['model_version']} · "
+                    f"{related_index['indexed']}/{related_index['published']} published "
+                    "products indexed"
+                )
             ),
         ),
         HubTile(

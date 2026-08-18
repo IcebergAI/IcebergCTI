@@ -51,9 +51,44 @@ def prune_audit_main() -> None:
 
 
 def rebuild_related_main() -> None:
-    """Rebuild the local related-report vector index for published reports."""
+    """Maintain the related-product index for published reports.
+
+    Default: rebuild everything that is missing or stale. ``--batch N`` does one
+    bounded pass instead, which an operator can repeat against a large corpus —
+    staleness lives on the row, so an interrupted run simply leaves fewer stale
+    entries and the next pass continues from there. ``--status`` reports the
+    index's health without changing anything.
+    """
+
+    parser = argparse.ArgumentParser(
+        prog="iceberg-rebuild-related",
+        description="Rebuild or inspect the related-product index.",
+    )
+    parser.add_argument(
+        "--batch",
+        type=int,
+        default=0,
+        help="Index at most N stale entries in one pass (0 = until nothing is pending).",
+    )
+    parser.add_argument(
+        "--status", action="store_true", help="Report index health and exit."
+    )
+    args = parser.parse_args()
+
     init_db()
     with Session(engine) as session:
+        if args.status:
+            health = related.index_health(session)
+            for name, value in health.items():
+                print(f"{name}: {value}")
+            return
+        if args.batch > 0:
+            result = related.reindex(session, batch=args.batch)
+            print(
+                f"Indexed {result['indexed']} report(s), removed {result['removed']}, "
+                f"{result['pending']} still pending, {result['up_to_date']} up to date"
+            )
+            return
         count = related.rebuild(session)
     print(f"Indexed {count} published report(s)")
 

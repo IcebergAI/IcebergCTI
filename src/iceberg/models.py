@@ -1172,12 +1172,25 @@ class Tag(SQLModel, table=True):
 
 
 class ReportEmbedding(SQLModel, table=True):
-    """Optional semantic-search vector for a published report."""
+    """Optional semantic-search vector for a published report.
+
+    The row records *what produced it* — provider, model, model version,
+    dimensions — and *what it was produced from* — the report revision and a
+    digest of the indexed text. An operator can therefore tell at a glance which
+    entries a provider or model change invalidated, and the reindex pass can
+    find exactly the stale ones without a cursor (#311).
+    """
 
     report_id: int | None = Field(
         default=None, foreign_key="report.id", ondelete="CASCADE", primary_key=True
     )
     backend: str = ""
+    model: str = ""
+    model_version: str = ""
+    dimensions: int = Field(default=0)
+    # ``Report.version`` and a digest of the indexed text at generation time.
+    source_version: int = Field(default=0)
+    content_sha256: str = Field(default="")
     vector: list[float] = Field(
         default_factory=list,
         sa_column=Column(JSON, nullable=False, server_default="[]"),
