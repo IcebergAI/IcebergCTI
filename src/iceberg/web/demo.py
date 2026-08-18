@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import Form, Request
+from fastapi import BackgroundTasks, Form, Request
 from sqlmodel import select
 
 from .. import demo_content
@@ -59,11 +59,16 @@ def demo_start(request: Request, session: SessionDep, user: CurrentUser):
 def demo_join(
     session: SessionDep,
     user: CurrentUser,
+    background_tasks: BackgroundTasks,
     public_id: Annotated[str, Form()],
     join_code: Annotated[str, Form()],
 ):
     workspace = demo_service.join(
-        session, public_id=public_id, join_code=join_code, stakeholder=user
+        session,
+        public_id=public_id,
+        join_code=join_code,
+        stakeholder=user,
+        background_tasks=background_tasks,
     )
     return _redirect(f"/demo/{workspace.public_id}?joined=1")
 
@@ -89,6 +94,7 @@ def demo_reset(
     public_id: str,
     session: SessionDep,
     user: CurrentUser,
+    background_tasks: BackgroundTasks,
     expected_generation: Annotated[int, Form()],
 ):
     demo_service.reset(
@@ -96,5 +102,6 @@ def demo_reset(
         workspace=demo_service.get(session, public_id),
         actor=user,
         expected_generation=expected_generation,
+        background_tasks=background_tasks,
     )
     return _redirect(f"/demo/{public_id}?reset=1")

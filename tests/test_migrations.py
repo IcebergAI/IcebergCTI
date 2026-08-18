@@ -112,6 +112,6 @@ def test_object_storage_downgrade_refuses_unfinished_deletion(migrated_db):
                 )
             )
         with pytest.raises(RuntimeError, match="Cannot downgrade object-storage"):
-            command.downgrade(cfg, "c3d4e5f6a7b8")
+            command.downgrade(cfg, "e5f6a7b8c9d0")
     finally:
         engine.dispose()

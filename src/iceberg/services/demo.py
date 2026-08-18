@@ -7,7 +7,6 @@ import hmac
 import secrets
 from dataclasses import dataclass
 from datetime import timedelta, timezone
-from pathlib import Path
 from typing import Any, cast
 
 from fastapi import HTTPException, status
@@ -44,8 +43,7 @@ from ..models import (
     UserAudienceGroup,
     utcnow,
 )
-from . import attachments as attachment_service
-from . import figures as figure_service
+from . import storage_deletions
 
 
 @dataclass(frozen=True)
@@ -139,7 +137,12 @@ def start(session: Session, owner: User) -> StartedWorkspace:
 
 
 def join(
-    session: Session, *, public_id: str, join_code: str, stakeholder: User
+    session: Session,
+    *,
+    public_id: str,
+    join_code: str,
+    stakeholder: User,
+    background_tasks=None,
 ) -> DemoWorkspace:
     if stakeholder.role != Role.STAKEHOLDER:
         raise HTTPException(
@@ -175,9 +178,9 @@ def join(
         raise HTTPException(status.HTTP_409_CONFLICT, "Demo workspace already joined")
     session.expire(workspace)
     session.refresh(workspace)
-    files = _replace_scenario(session, workspace)
+    _replace_scenario(session, workspace)
     session.commit()
-    _unlink_files(files)
+    storage_deletions.schedule_worker(background_tasks)
     session.refresh(workspace)
     return workspace
 
@@ -201,16 +204,23 @@ def _roots(
     )
 
 
-def _delete_scenario(session: Session, workspace: DemoWorkspace) -> list[Path]:
+def _delete_scenario(session: Session, workspace: DemoWorkspace) -> None:
+    """Drop the workspace-owned rows, tombstoning their objects in the same
+    transaction so a reset can never strand or over-delete stored bytes.
+
+    A demo object is disposable synthetic material, so its tombstone skips the
+    operator backup grace window that protects real user uploads.
+    """
+
     notebook, requirement, report, audience = _roots(session, _id(workspace))
-    files: list[Path] = []
     if notebook is not None:
-        files.extend(
-            attachment_service.attachment_path(row) for row in notebook.attachments
-        )
-        files.extend(figure_service.figure_path(row) for row in notebook.figures)
+        for attachment in notebook.attachments:
+            storage_deletions.enqueue(session, attachment, "attachment", grace_seconds=0)
+        for figure in notebook.figures:
+            storage_deletions.enqueue(session, figure, "figure", grace_seconds=0)
     if report is not None:
-        files.extend(Path(row.pdf_path) for row in report.rendered_products)
+        for rendered in report.rendered_products:
+            storage_deletions.enqueue(session, rendered, "render", grace_seconds=0)
     # The notebook owns the report; explicit report deletion keeps ordering clear
     # for databases that defer relationship-cascade bookkeeping until flush.
     if report is not None:
@@ -220,23 +230,12 @@ def _delete_scenario(session: Session, workspace: DemoWorkspace) -> list[Path]:
         if row is not None:
             session.delete(row)
     session.flush()
-    return files
 
 
-def _unlink_files(files: list[Path]) -> None:
-    """Best-effort cleanup only after the database transaction has committed."""
-
-    for path in files:
-        try:
-            path.unlink(missing_ok=True)
-        except OSError:
-            pass
-
-
-def _replace_scenario(session: Session, workspace: DemoWorkspace) -> list[Path]:
+def _replace_scenario(session: Session, workspace: DemoWorkspace) -> None:
     if workspace.stakeholder_id is None:
-        return []
-    files = _delete_scenario(session, workspace)
+        return
+    _delete_scenario(session, workspace)
     notebook = Notebook(
         title=content.NOTEBOOK_TITLE,
         topic=content.NOTEBOOK_TOPIC,
@@ -300,7 +299,6 @@ def _replace_scenario(session: Session, workspace: DemoWorkspace) -> list[Path]:
         UserAudienceGroup(user_id=workspace.stakeholder_id, group_id=audience.id)
     )
     session.flush()
-    return files
 
 
 def reset(
@@ -309,6 +307,7 @@ def reset(
     workspace: DemoWorkspace,
     actor: User,
     expected_generation: int,
+    background_tasks=None,
 ) -> DemoWorkspace:
     if actor.role != Role.ADMIN and actor.id != workspace.owner_id:
         raise HTTPException(
@@ -337,9 +336,9 @@ def reset(
         )
     session.expire(workspace)
     session.refresh(workspace)
-    files = _replace_scenario(session, workspace)
+    _replace_scenario(session, workspace)
     session.commit()
-    _unlink_files(files)
+    storage_deletions.schedule_worker(background_tasks)
     session.refresh(workspace)
     return workspace
 

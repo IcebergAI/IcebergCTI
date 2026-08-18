@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
@@ -59,13 +59,17 @@ def start_demo(session: SessionDep, user: CurrentUser) -> dict[str, object]:
 
 @router.post("/join")
 def join_demo(
-    body: DemoJoin, session: SessionDep, user: CurrentUser
+    body: DemoJoin,
+    session: SessionDep,
+    user: CurrentUser,
+    background_tasks: BackgroundTasks,
 ) -> dict[str, object]:
     workspace = demo_service.join(
         session,
         public_id=body.public_id,
         join_code=body.join_code,
         stakeholder=user,
+        background_tasks=background_tasks,
     )
     return _response(session, workspace)
 
@@ -85,12 +89,14 @@ def reset_demo(
     body: DemoReset,
     session: SessionDep,
     user: CurrentUser,
+    background_tasks: BackgroundTasks,
 ) -> dict[str, object]:
     workspace = demo_service.reset(
         session,
         workspace=demo_service.get(session, public_id),
         actor=user,
         expected_generation=body.expected_generation,
+        background_tasks=background_tasks,
     )
     return _response(session, workspace)
 
