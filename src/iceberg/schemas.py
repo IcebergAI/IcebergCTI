@@ -251,8 +251,30 @@ class FeedIndicatorDecision(BaseModel):
     duplicate_ioc_id: int | None = None
 
 
+class PolicyCreate(BaseModel):
+    name: str
+    description: str = ""
+
+
+class PolicyVersionWrite(BaseModel):
+    """A policy rule set. Validation of ``rules`` lives in the service so the
+    API and the portal form reject exactly the same input."""
+
+    rules: list = []
+    note: str = ""
+    effective_from: datetime | None = None
+    effective_to: datetime | None = None
+
+
 class TransitionRequest(BaseModel):
     target: ReportStatus
+    # Publication only: the digest of the recipient resolution the publisher
+    # reviewed. When supplied it must still match, so a membership or policy
+    # change between preview and send is refused rather than sent blind (#308).
+    audience_fingerprint: str = ""
+    # Stakeholders the publisher explicitly withholds this product from. An
+    # exception can only ever remove a recipient, never add one.
+    audience_exceptions: list[int] = []
 
 
 class RenderRequest(BaseModel):

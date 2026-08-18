@@ -31,6 +31,7 @@ from ..config import get_settings, production_guard_errors
 from ..models import Feed, ProxyMode
 from . import (
     ai_settings,
+    audience_policy,
     audit_settings,
     misp_settings,
     oidc_settings,
@@ -425,6 +426,7 @@ def admin_hub_tiles(session) -> list[dict]:
         else ""
     )
     issues = len(_validation(s)["errors"])
+    live_policy_versions = audience_policy.applicable_versions(session)
 
     tiles = [
         HubTile(
@@ -566,6 +568,21 @@ def admin_hub_tiles(session) -> list[dict]:
                 else audit_broken
                 if audit_broken
                 else "Forensic trail forwarded off-box"
+            ),
+        ),
+        HubTile(
+            group="Governance",
+            title="Dissemination policy",
+            href="/admin/dissemination-policy",
+            status=(
+                f"{len(live_policy_versions)} IN FORCE" if live_policy_versions else "NONE"
+            ),
+            tone="is-ok" if live_policy_versions else "is-neutral",
+            meta=(
+                "Recipient routing · "
+                + ", ".join(version.label for version in live_policy_versions)
+                if live_policy_versions
+                else "Recipient routing · report marking and audience scope only"
             ),
         ),
         HubTile(

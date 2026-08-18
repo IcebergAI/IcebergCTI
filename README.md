@@ -281,6 +281,25 @@ members, and scope reports to one or more groups from the report editor's **Audi
 Stakeholders outside a scoped report's groups cannot see it in search, feeds, direct report
 reads, or dissemination. Unscoped published reports remain visible to authenticated stakeholders.
 
+### Dissemination policy & audience preview
+Repeated routing decisions can be captured as a reviewed, versioned **dissemination policy**
+(`ADMIN`s, at `/admin/dissemination-policy`). A policy version holds JSON rules of the form
+`{"effect": "LIMIT_TO" | "EXCLUDE", "when": {…which products…}, "audience": {…which stakeholders…}}`,
+has an optional effective window, and becomes **immutable once approved** — editing means drafting
+the next version, because a publication records the exact version that decided its recipients.
+
+Rules can only **narrow**: resolution starts from what the product's own marking and audience scope
+already allow, and every rule (and every publisher exception) removes recipients from there. No rule
+set can widen access to a product or release one above the TLP ceiling.
+
+Before publishing, a `REVIEWER`/`ADMIN` opens **Review audience & publish** on an approved report
+(`/reports/{id}/audience`) and sees exactly who receives it, who does not and which rule withheld
+them, and can tick individual stakeholders to withhold. Publishing carries a fingerprint of that
+resolution: if group membership, the policy or the report changes in between, the send is refused
+with a 409 and the audience must be reviewed again. The resolved audience — policy versions,
+exceptions and per-recipient decisions — is frozen into the publication snapshot, and the page then
+shows the delivery receipts (feed delivery and read state) for the published product.
+
 ### Governed AI assist
 AI assist is off by default (`ICEBERG_AI_BACKEND=none`). The provider is **admin-editable** at
 `/admin/ai` (the `ICEBERG_AI_*` env values seed the `AISettings` row on first read, then the row is

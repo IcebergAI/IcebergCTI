@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+{% block title %}Dissemination policy · {{ app_name }}{% endblock %}
+{% block crumb %}Dissemination policy{% endblock %}
+{% block page_class %}page-wide{% endblock %}
+{% block content %}
+
+<div class="head-row mb-7">
+  <div>
+    <div class="eyebrow eyebrow-accent">Administration</div>
+    <h1 class="page-title mt-2">Dissemination policy</h1>
+    <div class="title-rule"></div>
+    <p class="text-sm mt-3" style="color:var(--muted);max-width:74ch;">
+      Reviewed, versioned routing rules applied to every publication. A rule can only
+      <strong>narrow</strong> the recipients a product's own marking and audience scope already
+      allow — no rule can widen access or weaken a marking. Approved versions are immutable
+      because a publication records the exact version that decided its recipients.
+    </p>
+  </div>
+</div>
+
+{% if error %}<div class="inline-notice mb-4" role="alert">{{ error }}</div>{% endif %}
+{% if notice %}<div class="inline-notice mb-4">{{ notice }}</div>{% endif %}
+
+<section class="card card-pad-lg mb-5">
+  <h2 class="section-title mb-2">In force right now</h2>
+  {% if live_versions %}
+    <div class="flow" style="flex-wrap:wrap;gap:6px;">
+      {% for v in live_versions %}
+        <span class="tag tag--c is-ok"><span class="dot"></span>{{ v.label }}</span>
+      {% endfor %}
+    </div>
+    <p class="text-xs mt-3" style="color:var(--muted);">
+      Rules only subtract recipients, so several policies apply together as an intersection —
+      the order they are evaluated in cannot change the outcome.
+    </p>
+  {% else %}
+    <p class="empty">No approved version is in its effective window. Recipients come from each
+      report's own marking and audience scope alone.</p>
+  {% endif %}
+</section>
+
+<div class="grid lg:grid-cols-3 gap-6">
+  <section class="lg:col-span-2 space-y-5">
+    {% for policy, policy_versions in policies %}
+      <div class="card card-pad-lg">
+        <div class="head-row mb-3">
+          <div>
+            <h2 class="section-title">{{ policy.name }}</h2>
+            <span class="mono text-xs" style="color:var(--faint);">{{ policy.slug }}</span>
+          </div>
+        </div>
+        {% if policy.description %}<p class="text-sm mb-4" style="color:var(--muted);">{{ policy.description }}</p>{% endif %}
+
+        <div class="space-y-4">
+          {% for v in policy_versions %}
+            <div class="well card-pad">
+              <div class="head-row mb-2">
+                <div class="flow" style="gap:8px;flex-wrap:wrap;">
+                  <span class="mono text-xs">{{ v.label }}</span>
+                  {% if v.approved_at %}
+                    <span class="tag tag--c is-ok"><span class="dot"></span>Approved</span>
+                  {% else %}
+                    <span class="tag tag--c is-warn"><span class="dot"></span>Draft</span>
+                  {% endif %}
+                  <span class="text-xs" style="color:var(--muted);">
+                    {{ v.effective_from and v.effective_from.strftime('%Y-%m-%d %H:%M') or 'from now' }}
+                    →
+                    {{ v.effective_to and v.effective_to.strftime('%Y-%m-%d %H:%M') or 'open-ended' }}
+                  </span>
+                </div>
+              </div>
+              {% if v.note %}<p class="text-xs mb-2" style="color:var(--muted);">{{ v.note }}</p>{% endif %}
+
+              {% if v.approved_at %}
+                <pre class="mono text-xs" style="overflow-x:auto;">{{ v.rules | tojson(indent=2) }}</pre>
+                <form method="post" action="/admin/dissemination-policy/versions/{{ v.id }}/retire" class="mt-3"
+                      x-data="confirmSubmit('Retire {{ v.label }}? Publications already made keep their record.')"
+                      @submit="check($event)">
+                  <button class="btn btn--quiet btn--sm">Retire version</button>
+                </form>
+              {% else %}
+                <form method="post" action="/admin/dissemination-policy/versions/{{ v.id }}" class="add-form">
+                  <label class="field-wrap">
+                    <span class="field-label">Rules <span class="opt">JSON list</span></span>
+                    <textarea name="rules" rows="10" class="field mono">{{ v.rules | tojson(indent=2) }}</textarea>
+                  </label>
+                  <label class="field-wrap">
+                    <span class="field-label">Note <span class="opt">why this version exists</span></span>
+                    <input name="note" class="field" value="{{ v.note }}">
+                  </label>
+                  <div class="grid md:grid-cols-2 gap-3">
+                    <label class="field-wrap">
+                      <span class="field-label">Effective from <span class="opt">optional</span></span>
+                      <input type="datetime-local" name="effective_from" class="field"
+                             value="{{ v.effective_from and v.effective_from.strftime('%Y-%m-%dT%H:%M') or '' }}">
+                    </label>
+                    <label class="field-wrap">
+                      <span class="field-label">Effective to <span class="opt">optional</span></span>
+                      <input type="datetime-local" name="effective_to" class="field"
+                             value="{{ v.effective_to and v.effective_to.strftime('%Y-%m-%dT%H:%M') or '' }}">
+                    </label>
+                  </div>
+                  <div class="flex gap-2 items-center">
+                    <button class="btn btn--ghost btn--sm">Save draft</button>
+                  </div>
+                </form>
+                <div class="flex gap-2 items-center mt-2">
+                  <form method="post" action="/admin/dissemination-policy/versions/{{ v.id }}/approve"
+                        x-data="confirmSubmit('Approve {{ v.label }}? It becomes immutable and starts routing publications.')"
+                        @submit="check($event)">
+                    <button class="btn btn--primary btn--sm">Approve version</button>
+                  </form>
+                  <form method="post" action="/admin/dissemination-policy/versions/{{ v.id }}/delete"
+                        x-data="confirmSubmit('Delete this draft?')" @submit="check($event)">
+                    <button class="btn btn--quiet btn--sm">Delete draft</button>
+                  </form>
+                </div>
+              {% endif %}
+            </div>
+          {% else %}
+            <p class="empty">No versions yet — draft the first rule set below.</p>
+          {% endfor %}
+        </div>
+
+        <form method="post" action="/admin/dissemination-policy/{{ policy.id }}/versions" class="add-form mt-4">
+          <span class="field-label">Draft the next version</span>
+          <label class="field-wrap">
+            <span class="field-label">Rules <span class="opt">JSON list — blank means no restriction</span></span>
+            <textarea name="rules" rows="6" class="field mono" placeholder="[]"></textarea>
+          </label>
+          <label class="field-wrap">
+            <span class="field-label">Note</span>
+            <input name="note" class="field" placeholder="What changed and why">
+          </label>
+          <div class="grid md:grid-cols-2 gap-3">
+            <label class="field-wrap">
+              <span class="field-label">Effective from <span class="opt">optional</span></span>
+              <input type="datetime-local" name="effective_from" class="field">
+            </label>
+            <label class="field-wrap">
+              <span class="field-label">Effective to <span class="opt">optional</span></span>
+              <input type="datetime-local" name="effective_to" class="field">
+            </label>
+          </div>
+          <button class="btn btn--ghost btn--sm">Draft version</button>
+        </form>
+      </div>
+    {% else %}
+      <div class="card card-pad-lg">
+        <p class="empty">No dissemination policy exists yet. Publications route on each report's own
+          marking and audience scope until one is approved.</p>
+      </div>
+    {% endfor %}
+  </section>
+
+  <aside class="space-y-5">
+    <section class="card card-pad-lg">
+      <h2 class="section-title mb-4">Create policy</h2>
+      <form method="post" action="/admin/dissemination-policy" class="add-form">
+        <label class="field-wrap">
+          <span class="field-label">Name</span>
+          <input name="name" class="field" required placeholder="Executive routing">
+        </label>
+        <label class="field-wrap">
+          <span class="field-label">Description</span>
+          <textarea name="description" rows="3" class="field" placeholder="What this policy governs"></textarea>
+        </label>
+        <button class="btn btn--primary btn--sm">Create policy</button>
+      </form>
+    </section>
+
+    <section class="card card-pad-lg">
+      <h2 class="section-title mb-3">Rule shape</h2>
+      <p class="text-xs mb-2" style="color:var(--muted);">
+        <code class="mono">when</code> selects the products a rule speaks about (omit it for all of them);
+        <code class="mono">audience</code> selects stakeholders.
+        <code class="mono">LIMIT_TO</code> keeps only that audience; <code class="mono">EXCLUDE</code> withholds from it.
+      </p>
+      <pre class="mono text-xs" style="overflow-x:auto;">[
+  {
+    "id": "exec-only",
+    "description": "Strategic products go to the exec cohort",
+    "effect": "LIMIT_TO",
+    "when": {"intel_level": ["STRATEGIC"]},
+    "audience": {"audience_group_ids": [1]}
+  }
+]</pre>
+      <div class="mt-3">
+        <div class="field-label mb-1">Audience group ids</div>
+        <div class="flow" style="flex-wrap:wrap;gap:6px;">
+          {% for g in groups %}
+            <span class="tag mono">{{ g.id }} · {{ g.name }}</span>
+          {% else %}
+            <span class="empty">No audience groups yet.</span>
+          {% endfor %}
+        </div>
+      </div>
+      <p class="text-xs mt-3" style="color:var(--muted);">
+        <code class="mono">when.tlp</code>: {{ tlps | map(attribute='value') | join(', ') }} ·
+        <code class="mono">when.intel_level</code>: {{ levels | map(attribute='value') | join(', ') }} ·
+        <code class="mono">when.requirement_kinds</code>: {{ kinds | map(attribute='value') | join(', ') }}
+      </p>
+    </section>
+
+    <section class="card card-pad-lg">
+      <h2 class="section-title mb-3">Simulate</h2>
+      <p class="text-xs mb-3" style="color:var(--muted);">
+        Preview exactly who would receive an approved product under the rules in force.
+      </p>
+      <div class="space-y-2">
+        {% for r in approved_reports %}
+          <a class="btn-link block" href="/reports/{{ r.id }}/audience">{{ r.title }} →</a>
+        {% else %}
+          <p class="empty">No approved product is waiting to be published.</p>
+        {% endfor %}
+      </div>
+    </section>
+  </aside>
+</div>
+
+{% endblock %}

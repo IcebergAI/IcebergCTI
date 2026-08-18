@@ -666,7 +666,13 @@
           {{ transition_btn('APPROVED', 'Approve →', 'btn--primary', block=true) }}
           {{ transition_btn('DRAFT', 'Send back', 'btn--quiet', block=true) }}
         {% elif report.status.value == 'APPROVED' and can_review %}
-          {{ transition_btn('PUBLISHED', 'Publish & disseminate →', 'btn--ink', block=true) }}
+          {# Publication routes through the audience preview: the publisher sees who
+             receives it (and who does not, and why) before anything is sent. The GET
+             form flushes a pending autosave first, like every other transition. #}
+          <form method="get" action="/reports/{{ report.id }}/audience" class="w-full"
+                @submit.prevent="submitTransition($event)">
+            <button class="btn btn--ink" style="width:100%;">Review audience &amp; publish →</button>
+          </form>
           {{ transition_btn('IN_REVIEW', 'Back to review', 'btn--quiet', block=true) }}
         {% elif report.status.value == 'PUBLISHED' %}
           <span class="eyebrow" style="color:var(--c-ok);">Published {{ report.published_at and report.published_at.strftime('%Y-%m-%d %H:%M') }}</span>

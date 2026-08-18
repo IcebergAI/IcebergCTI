@@ -118,8 +118,15 @@ def _payload(session: Session, report: Report) -> dict:
     }
 
 
-def create_snapshot(session: Session, report: Report) -> PublicationSnapshot:
-    """Create the single immutable snapshot for a report without committing."""
+def create_snapshot(
+    session: Session, report: Report, *, audience: dict | None = None
+) -> PublicationSnapshot:
+    """Create the single immutable snapshot for a report without committing.
+
+    ``audience`` is the resolved recipient record (policy versions, inclusions,
+    exclusions and their reasons) so the finished product carries the routing
+    decision that produced it, not just its content.
+    """
 
     existing = session.exec(
         select(PublicationSnapshot).where(PublicationSnapshot.report_id == report.id)
@@ -130,6 +137,8 @@ def create_snapshot(session: Session, report: Report) -> PublicationSnapshot:
         return existing
 
     payload = _payload(session, report)
+    if audience is not None:
+        payload["audience"] = audience
     digest = hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
@@ -214,7 +223,26 @@ def misp_inputs(session: Session, report: Report) -> SnapshotMispInputs | None:
     )
 
 
-def publish(session: Session, report: Report, *, actor, request, background_tasks) -> tuple[Report, int]:
+def audience_record(session: Session, report: Report) -> dict | None:
+    """The frozen audience record of a published report, when it has one."""
+
+    snapshot = get_snapshot(session, report)
+    if snapshot is None:
+        return None
+    record = (snapshot.payload or {}).get("audience")
+    return record if isinstance(record, dict) else None
+
+
+def publish(
+    session: Session,
+    report: Report,
+    *,
+    actor,
+    request,
+    background_tasks,
+    audience_fingerprint: str | None = None,
+    exceptions: list[int] | None = None,
+) -> tuple[Report, int]:
     """Atomically publish a reviewed report and its synchronous feed state.
 
     ``Report`` mapper versioning makes the final commit fail if another request
@@ -224,25 +252,36 @@ def publish(session: Session, report: Report, *, actor, request, background_task
     """
 
     from ..models import AuditCategory, AuditSeverity, Role, utcnow
-    from . import audit, dissemination, jobs, storage
+    from . import audience_policy, audit, dissemination, jobs, storage
 
     if ReportStatus(report.status) is not ReportStatus.APPROVED:
         raise PublicationConflict("Report must be approved before publication")
     if actor.role not in {Role.REVIEWER, Role.ADMIN}:
         raise PermissionError("Reviewer or admin role required for publication")
 
+    # Resolve recipients before anything is written, so a stale preview is
+    # refused rather than half-applied.
+    resolution = audience_policy.resolve(session, report, exceptions=exceptions)
+    if audience_fingerprint and audience_fingerprint != resolution.fingerprint:
+        raise PublicationConflict(
+            "The recipient list changed since it was previewed — review the "
+            "audience again before publishing"
+        )
+
     report.status = ReportStatus.PUBLISHED
     report.published_at = utcnow()
     report.updated_at = utcnow()
     session.add(report)
     try:
-        create_snapshot(session, report)
+        create_snapshot(session, report, audience=resolution.as_record())
     except storage.StorageError as exc:
         session.rollback()
         raise PublicationConflict(
             "Referenced figure storage failed integrity verification"
         ) from exc
-    recipients = dissemination.disseminate(session, report, commit=False)
+    recipients = dissemination.disseminate(
+        session, report, commit=False, recipient_ids=resolution.recipients_ids
+    )
     # External egress is represented by durable rows in this same transaction.
     # The synchronous DisseminationEvent feed records above remain the source of
     # stakeholder visibility; a worker runs only after the commit below.
@@ -267,6 +306,10 @@ def publish(session: Session, report: Report, *, actor, request, background_task
             "tlp": str(report.tlp),
             "status": str(report.status),
             "recipients": len(recipients),
+            "audience_fingerprint": resolution.fingerprint,
+            "policy_versions": resolution.applied_versions,
+            "exceptions": resolution.exceptions,
+            "withheld": len(resolution.excluded),
         },
         commit=False,
     )
