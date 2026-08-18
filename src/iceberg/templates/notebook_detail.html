@@ -421,6 +421,76 @@
 <div x-show="phase === 'analyze'" x-cloak>
 
 <!-- Diamond models -->
+{# Evidence offered by adjacent Iceberg systems, awaiting an analyst decision
+   (#305). Nothing here is collection material until it is accepted. #}
+<section id="evidence" class="card card-pad-lg mb-6">
+  <div class="head-row mb-2">
+    <div>
+      <h2 class="section-title">External evidence</h2>
+      <p class="text-xs mt-1" style="color:var(--muted);">
+        Items offered by IcebergOSINT, ASM or CM. Check the origin, revision and marking before
+        accepting one as a source.
+      </p>
+    </div>
+  </div>
+
+  {% if evidence_error %}
+    <div class="inline-notice mb-4" role="alert">{{ evidence_error }}</div>
+  {% endif %}
+
+  <div class="space-y-3">
+    {% for item in evidence_references %}
+      {% set e = item.reference %}
+      <div class="well card-pad">
+        <div class="flow mb-1" style="gap:8px;flex-wrap:wrap;">
+          <span class="font-medium">{{ e.title }}</span>
+          <span class="tag mono">{{ e.source_system }}</span>
+          <span class="tag mono">{{ e.external_id }}@{{ e.revision }}</span>
+          <span class="tag tag--c {{ 'is-ok' if e.state.value == 'ACCEPTED' else ('is-warn' if e.state.value in ['REVOKED', 'SUPERSEDED'] else '') }}">
+            <span class="dot"></span>{{ e.state.value | lower }}
+          </span>
+          <span class="tag mono">TLP:{{ e.tlp.value.replace('_', '+') }}</span>
+        </div>
+        {% if e.summary %}<p class="text-sm">{{ e.summary }}</p>{% endif %}
+        <p class="mono text-xs mt-1" style="color:var(--muted);">
+          schema {{ e.schema_version }}
+          {%- if item.verification.digest_declared %} · digest declared{% else %} · no digest declared{% endif %}
+          {%- if item.verification.marking_strengthened %} · marking strengthened on intake{% endif %}
+        </p>
+        {% if e.deep_link %}
+          <a class="btn-link text-xs" href="{{ e.deep_link }}" target="_blank" rel="noopener noreferrer">Open in {{ e.source_system }} →</a>
+        {% endif %}
+        {% if e.state.value == 'REVOKED' %}
+          <p class="text-xs mt-1" style="color:var(--c-crit);">
+            Withdrawn at source{% if e.revoked_reason %}: {{ e.revoked_reason }}{% endif %}.
+            Anything already cited from it keeps its citation.
+          </p>
+        {% endif %}
+        <div class="flex gap-2 items-center mt-3" style="flex-wrap:wrap;">
+          {% if e.state.value == 'PENDING' %}
+            <form method="post" action="/notebooks/{{ notebook.id }}/evidence/{{ e.id }}/accept">
+              <button class="btn btn--primary btn--sm">Accept as source</button>
+            </form>
+            <form method="post" action="/notebooks/{{ notebook.id }}/evidence/{{ e.id }}/reject">
+              <button class="btn btn--quiet btn--sm">Reject</button>
+            </form>
+          {% elif e.state.value == 'ACCEPTED' and e.source_id %}
+            <a class="btn-link text-xs" href="#source-{{ e.source_id }}">Collected as source #{{ e.source_id }}</a>
+          {% endif %}
+          {% if e.state.value != 'REVOKED' %}
+            <form method="post" action="/notebooks/{{ notebook.id }}/evidence/{{ e.id }}/revoke" class="flex gap-2">
+              <input name="reason" class="field" placeholder="Withdrawn at source because…" aria-label="Revocation reason">
+              <button class="btn btn--quiet btn--sm">Record revocation</button>
+            </form>
+          {% endif %}
+        </div>
+      </div>
+    {% else %}
+      <p class="empty">No adjacent system has offered evidence to this notebook.</p>
+    {% endfor %}
+  </div>
+</section>
+
 <section id="diamonds" class="card card-pad-lg mb-6">
   <div class="head-row mb-4">
     <h2 class="section-title">Diamond models</h2>

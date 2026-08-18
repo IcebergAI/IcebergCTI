@@ -97,10 +97,16 @@ def _payload(session: Session, report: Report) -> dict:
         attack_svg,
         list(report.cited_iocs),
     )
+    from . import evidence as evidence_service
+
     return {
         "html": product_html.render_report_product_html(session, report),
         "typst_data": typst_data,
         "figures": figures,
+        # Where this product's cited material came from, at which revision and
+        # under whose marking — kept with the finished product so the record
+        # survives a later revocation or an unreachable producer (#305).
+        "evidence": evidence_service.manifest(session, report),
         "misp": {
             "title": report.title,
             "tlp": report.tlp.value,

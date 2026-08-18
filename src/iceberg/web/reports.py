@@ -48,6 +48,7 @@ from ..services import (
     audience as audience_service,
     audience_policy as audience_policy_service,
     comments as comment_service,
+    evidence as evidence_service,
     audit,
     diamond as diamond_service,
     feedback as feedback_service,
@@ -196,6 +197,11 @@ def report_view(
             "review_sections": list(ReportSection) if is_writer else [],
             "review_blocking_open": (
                 len(comment_service.open_blocking(session, report)) if is_writer else 0
+            ),
+            # Evidence behind this product that its producing system has since
+            # withdrawn — the citation stands, the withdrawal is shown (#305).
+            "revoked_evidence": (
+                evidence_service.revoked_for_report(session, report) if is_writer else []
             ),
             "review_authors": (
                 {u.id: u.display_name for u in session.exec(select(User)).all()}

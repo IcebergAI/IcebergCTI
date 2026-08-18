@@ -252,6 +252,12 @@ class FeedIndicatorDecision(BaseModel):
     duplicate_ioc_id: int | None = None
 
 
+class EvidenceRevoke(BaseModel):
+    """Record that a producing system withdrew an evidence item."""
+
+    reason: str = ""
+
+
 class CommentCreate(BaseModel):
     """Open an editorial thread against one section of a product."""
 

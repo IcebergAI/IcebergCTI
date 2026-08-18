@@ -20,6 +20,9 @@ from fastapi.responses import Response
 from ..auth.dependencies import CurrentUser
 from ..models import (
     Attachment,
+    AuditAction,
+    AuditCategory,
+    AuditSeverity,
     DiamondConfidence,
     Figure,
     IOCType,
@@ -41,7 +44,9 @@ from ..services import (
     ai as ai_service,
     ai_settings as ai_settings_service,
     attachments as attachment_service,
+    audit,
     diamond as diamond_service,
+    evidence,
     feed as feed_service,
     figures as figure_service,
     iocs as ioc_service,
@@ -316,8 +321,71 @@ def notebook_detail(
             "updated": updated,
             "source_notice_id": source_notice_id,
             "source_edit_id": source_edit_id,
+            # Evidence offered by adjacent systems, awaiting an analyst decision
+            # (#305). Writer-only, like the rest of this page.
+            "evidence_references": [
+                {"reference": reference, "verification": evidence.verification(reference)}
+                for reference in evidence.list_for_notebook(session, nb)
+            ],
+            "evidence_error": request.query_params.get("evidence_error", ""),
         },
     )
+
+
+@router.post("/notebooks/{notebook_id}/evidence/{reference_id}/{action}")
+def notebook_evidence_action(
+    notebook_id: int,
+    reference_id: int,
+    action: str,
+    request: Request,
+    session: SessionDep,
+    user: CurrentUser,
+    background_tasks: BackgroundTasks,
+    reason: Annotated[str, Form()] = "",
+):
+    """Accept, reject or record the revocation of one offered evidence item."""
+
+    _require_writer(user)
+    nb = _get_notebook(session, notebook_id)
+    reference = evidence.get_or_404(session, nb, reference_id)
+    actions = {
+        "accept": AuditAction.EVIDENCE_ACCEPTED,
+        "reject": AuditAction.EVIDENCE_REJECTED,
+        "revoke": AuditAction.EVIDENCE_REVOKED,
+    }
+    if action not in actions:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown evidence action")
+    try:
+        if action == "accept":
+            reference = evidence.accept(session, nb, reference, actor=user)
+        elif action == "reject":
+            reference = evidence.reject(session, reference, actor=user)
+        else:
+            reference = evidence.revoke(session, reference, reason=reason)
+    except evidence.EvidenceError as exc:
+        return _redirect(
+            f"/notebooks/{notebook_id}?evidence_error={quote(str(exc.detail))}#evidence"
+        )
+    audit.record_and_emit(
+        session,
+        background_tasks=background_tasks,
+        action=actions[action],
+        category=AuditCategory.ADMIN,
+        severity=(
+            AuditSeverity.WARNING if action == "revoke" else AuditSeverity.INFO
+        ),
+        actor=user,
+        request=request,
+        resource_type="notebook",
+        resource_id=nb.id,
+        detail={
+            "source_system": reference.source_system,
+            "external_id": reference.external_id,
+            "revision": reference.revision,
+            "source_id": reference.source_id,
+        },
+    )
+    return _redirect(f"/notebooks/{notebook_id}#evidence")
 
 
 @router.post("/notebooks/{notebook_id}/sources")

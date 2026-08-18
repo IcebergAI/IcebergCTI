@@ -1,0 +1,18 @@
+{
+  "$comment": "Contract fixture for the Iceberg evidence intake envelope (#305). Producers (IcebergOSINT, ASM, CM) POST one of these to /api/notebooks/{id}/evidence as an authenticated Iceberg writer. See ARCHITECTURE.md, 'Governed evidence intake'.",
+  "schema_version": "iceberg.evidence/1",
+  "source_system": "iceberg-osint",
+  "external_id": "osint-2026-000412",
+  "revision": "3",
+  "evidence_type": "forum-post",
+  "title": "Access broker advertising healthcare VPN credentials",
+  "summary": "A known access broker advertised VPN credentials for an unnamed healthcare provider, priced in the usual range for that seller.",
+  "deep_link": "https://osint.example.org/items/osint-2026-000412?rev=3",
+  "tlp": "AMBER",
+  "content_sha256": "8f9e2a1b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f",
+  "provenance": {
+    "collected_at": "2026-08-17T09:14:00Z",
+    "collection_method": "monitored forum feed",
+    "producer_confidence": "moderate"
+  }
+}
