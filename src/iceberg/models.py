@@ -83,6 +83,33 @@ class ReportStatus(StrEnum):
     PUBLISHED = "PUBLISHED"
 
 
+class ReportSection(StrEnum):
+    """Stable anchor points an editorial comment can attach to.
+
+    Deliberately coarse: a section is a *field* of the product, so an anchor
+    survives ordinary editing of the surrounding text and degrades predictably
+    when the section it names is rewritten.
+    """
+
+    BODY = "BODY"
+    KEY_JUDGEMENTS = "KEY_JUDGEMENTS"
+    KEY_ASSUMPTIONS = "KEY_ASSUMPTIONS"
+    INTELLIGENCE_GAPS = "INTELLIGENCE_GAPS"
+    SOURCES = "SOURCES"
+    ATTACHMENTS = "ATTACHMENTS"
+    INDICATORS = "INDICATORS"
+    FIGURES = "FIGURES"
+
+
+class CommentStatus(StrEnum):
+    """Where an editorial thread has got to."""
+
+    OPEN = "OPEN"
+    RESOLVED = "RESOLVED"
+    ACCEPTED = "ACCEPTED"
+    REJECTED = "REJECTED"
+
+
 class ProductFormat(StrEnum):
     FULL = "FULL"
     EXEC_BRIEF = "EXEC_BRIEF"
@@ -95,6 +122,7 @@ class JobKind(StrEnum):
     DISSEMINATION_EMAIL = "DISSEMINATION_EMAIL"
     DISSEMINATION_WEBHOOK = "DISSEMINATION_WEBHOOK"
     RSS_POLL = "RSS_POLL"
+    EDITORIAL_MENTION = "EDITORIAL_MENTION"
 
 
 class JobStatus(StrEnum):
@@ -361,6 +389,11 @@ class AuditAction(StrEnum):
     MISP_SETTINGS_UPDATED = "MISP_SETTINGS_UPDATED"
     MISP_TEST = "MISP_TEST"
     MISP_PUSHED = "MISP_PUSHED"
+    # Editorial review threads on a report (metadata only — never the text)
+    REPORT_COMMENT_CREATED = "REPORT_COMMENT_CREATED"
+    REPORT_COMMENT_RESOLVED = "REPORT_COMMENT_RESOLVED"
+    REPORT_COMMENT_REJECTED = "REPORT_COMMENT_REJECTED"
+    REPORT_SUGGESTION_ACCEPTED = "REPORT_SUGGESTION_ACCEPTED"
     # Audience scope + dissemination policy (admin / publisher)
     AUDIENCE_SCOPE_UPDATED = "AUDIENCE_SCOPE_UPDATED"
     AUDIENCE_POLICY_CREATED = "AUDIENCE_POLICY_CREATED"
@@ -1212,6 +1245,56 @@ class DisseminationEvent(SQLModel, table=True):
     read_at: datetime | None = Field(default=None)
 
     report: Report = Relationship(back_populates="dissemination_events")
+
+
+class ReportComment(SQLModel, table=True):
+    """One editorial message on a report — a thread root or a reply (#306).
+
+    A root comment anchors to a :class:`ReportSection` *and* to the revision it
+    was written against: ``anchor_version`` records ``Report.version`` and
+    ``anchor_sha256`` digests that section's text at the time. Together with the
+    quoted ``anchor_text`` this makes an anchor honest — the thread can say
+    whether the passage it refers to still exists rather than silently pointing
+    at whatever now occupies the same place.
+
+    ``suggestion`` turns a comment into a bounded proposed change: replace
+    exactly ``anchor_text`` with this. Applying it is an ordinary optimistic
+    write, so it is refused rather than clobbering a concurrent edit.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    report_id: int = Field(foreign_key="report.id", ondelete="CASCADE", index=True)
+    # Set on a reply, NULL on the thread root.
+    thread_id: int | None = Field(
+        default=None, foreign_key="reportcomment.id", ondelete="CASCADE", index=True
+    )
+    author_id: int | None = Field(
+        default=None, foreign_key="user.id", ondelete="SET NULL", index=True
+    )
+    section: ReportSection = Field(default=ReportSection.BODY, index=True)
+    anchor_version: int = Field(default=0)
+    anchor_text: str = ""
+    anchor_sha256: str = ""
+    body: str = ""
+    # A proposed replacement for ``anchor_text``; empty for a plain comment.
+    suggestion: str = ""
+    # A blocking thread must be resolved before the product can be published
+    # (when the deployment enables that policy).
+    blocking: bool = Field(default=False)
+    status: CommentStatus = Field(default=CommentStatus.OPEN, index=True)
+    # Writers named in the body, resolved at creation and notified once.
+    mentions: list[int] = Field(
+        default_factory=list,
+        sa_column=Column(JSON, nullable=False, server_default="[]"),
+    )
+    resolved_at: datetime | None = Field(default=None)
+    resolved_by_id: int | None = Field(
+        default=None, foreign_key="user.id", ondelete="SET NULL"
+    )
+    # The report revision an accepted suggestion was written into.
+    applied_version: int | None = Field(default=None)
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
 
 
 class DisseminationPolicy(SQLModel, table=True):

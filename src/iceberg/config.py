@@ -254,6 +254,9 @@ class Settings(BaseSettings):
     # breakdown before it is shown. 0 disables suppression (single-team
     # deployments); the default keeps one person's feedback out of an aggregate.
     measures_min_group: int = 5
+    # Publication policy: refuse to publish while a blocking editorial thread is
+    # still open. Set false for a deployment that treats threads as advisory.
+    publish_requires_resolved_threads: bool = True
     # Operator-approved Ollama base URL. The DB-editable AISettings.base_url for
     # the ``ollama`` provider must match this exact value — so a DB edit can't
     # redirect a real key to an attacker host (anti-SSRF; base-URL pinning).

@@ -385,6 +385,39 @@ def _run_webhook_job(payload: Mapping[str, object], bind: Engine) -> None:
     )
 
 
+def _run_mention_job(payload: Mapping[str, object], bind: Engine) -> None:
+    """Tell one writer they were named in an editorial thread.
+
+    The mail carries a link, never the comment text: a thread can discuss a
+    restricted product, and email is outside the product's access control.
+    """
+    from ..models import ReportComment
+    from ..config import get_settings
+    from . import email as email_service
+
+    comment_id = _required_int(payload, "comment_id")
+    report_id = _required_int(payload, "report_id")
+    user_id = _required_int(payload, "user_id")
+    with Session(bind) as session:
+        comment = session.get(ReportComment, comment_id)
+        report = session.get(Report, report_id)
+        recipient = session.get(User, user_id)
+        # A deleted comment, product or user is not a delivery failure.
+        if comment is None or report is None or recipient is None:
+            return
+        title = report.title
+        name = recipient.display_name
+        address = recipient.email
+
+    url = f"{get_settings().portal_base_url.rstrip('/')}/reports/{report_id}#comment-{comment_id}"
+    email_service.send_email(
+        address,
+        f"[Iceberg] You were mentioned in a review of: {title}",
+        f"Hello {name},\n\nYou were mentioned in an editorial thread on:\n\n"
+        f"  {title}\n  {url}\n\n— Iceberg",
+    )
+
+
 def _run_rss_poll_job(bind: Engine) -> None:
     from . import feeds
 
@@ -400,6 +433,8 @@ def _execute(claim: ClaimedJob, bind: Engine) -> None:
         _run_webhook_job(payload, bind)
     elif claim.kind is JobKind.RSS_POLL:
         _run_rss_poll_job(bind)
+    elif claim.kind is JobKind.EDITORIAL_MENTION:
+        _run_mention_job(payload, bind)
     else:  # pragma: no cover - enum protects this; defensive for a hand-edited DB
         raise ValueError(f"Unsupported outbox job kind: {claim.kind}")
 

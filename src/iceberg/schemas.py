@@ -14,6 +14,7 @@ from .models import (
     Priority,
     ProductFormat,
     ProductUsefulness,
+    ReportSection,
     ReportStatus,
     RequirementKind,
     RequirementStatus,
@@ -249,6 +250,27 @@ class FeedIndicatorDecision(BaseModel):
     decision: FeedCandidateStatus
     notebook_id: int | None = None
     duplicate_ioc_id: int | None = None
+
+
+class CommentCreate(BaseModel):
+    """Open an editorial thread against one section of a product."""
+
+    section: ReportSection = ReportSection.BODY
+    body: str = ""
+    # The exact passage the comment refers to; required for a suggested edit.
+    anchor_text: str = ""
+    suggestion: str = ""
+    blocking: bool = False
+
+
+class CommentReply(BaseModel):
+    body: str
+
+
+class SuggestionAccept(BaseModel):
+    """The report revision the accepting writer reviewed the suggestion against."""
+
+    version: int
 
 
 class PolicyCreate(BaseModel):

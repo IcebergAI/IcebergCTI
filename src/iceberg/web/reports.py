@@ -29,6 +29,7 @@ from ..models import (
     Notebook,
     ProductFormat,
     ProductUsefulness,
+    ReportSection,
     AudienceGroup,
     DisseminationEvent,
     RenderedProduct,
@@ -46,6 +47,7 @@ from ..services import (
     attachments as attachment_service,
     audience as audience_service,
     audience_policy as audience_policy_service,
+    comments as comment_service,
     audit,
     diamond as diamond_service,
     feedback as feedback_service,
@@ -189,6 +191,149 @@ def report_view(
             "usefulness_options": list(ProductUsefulness),
             "satisfaction_options": list(RfiSatisfaction),
             "related_reports": related.related_reports(session, report=report, user=user),
+            # Editorial review threads are internal: writers only (#306).
+            "review_threads": comment_service.threads(session, report) if is_writer else [],
+            "review_sections": list(ReportSection) if is_writer else [],
+            "review_blocking_open": (
+                len(comment_service.open_blocking(session, report)) if is_writer else 0
+            ),
+            "review_authors": (
+                {u.id: u.display_name for u in session.exec(select(User)).all()}
+                if is_writer
+                else {}
+            ),
+        },
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Editorial review threads (#306)
+# --------------------------------------------------------------------------- #
+def _review_redirect(report_id: int, error: str = "") -> object:
+    suffix = f"?review_error={quote(error)}" if error else ""
+    return _redirect(f"/reports/{report_id}{suffix}#review")
+
+
+@router.post("/reports/{report_id}/comments")
+def report_comment_create(
+    report_id: int,
+    request: Request,
+    session: SessionDep,
+    user: CurrentUser,
+    background_tasks: BackgroundTasks,
+    section: Annotated[ReportSection, Form()] = ReportSection.BODY,
+    body: Annotated[str, Form()] = "",
+    anchor_text: Annotated[str, Form()] = "",
+    suggestion: Annotated[str, Form()] = "",
+    blocking: Annotated[bool, Form()] = False,
+):
+    _require_writer(user)
+    report = ensure_visible(_get_report(session, report_id), user)
+    try:
+        comment = comment_service.create_thread(
+            session,
+            report,
+            author=user,
+            section=section,
+            body=body,
+            anchor_text=anchor_text,
+            suggestion=suggestion,
+            blocking=blocking,
+        )
+    except comment_service.CommentError as exc:
+        return _review_redirect(report_id, str(exc.detail))
+    _audit_comment(
+        session, background_tasks, request, user,
+        AuditAction.REPORT_COMMENT_CREATED, report, comment,
+        {"suggests_edit": bool(comment.suggestion), "mentions": len(comment.mentions)},
+    )
+    return _review_redirect(report_id)
+
+
+@router.post("/reports/{report_id}/comments/{comment_id}/reply")
+def report_comment_reply(
+    report_id: int,
+    comment_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+    body: Annotated[str, Form()] = "",
+):
+    _require_writer(user)
+    report = ensure_visible(_get_report(session, report_id), user)
+    thread = comment_service.get_or_404(session, report, comment_id)
+    try:
+        comment_service.reply(session, report, thread, author=user, body=body)
+    except comment_service.CommentError as exc:
+        return _review_redirect(report_id, str(exc.detail))
+    return _review_redirect(report_id)
+
+
+@router.post("/reports/{report_id}/comments/{comment_id}/{action}")
+def report_comment_action(
+    report_id: int,
+    comment_id: int,
+    action: str,
+    request: Request,
+    session: SessionDep,
+    user: CurrentUser,
+    background_tasks: BackgroundTasks,
+    version: Annotated[int, Form()] = 0,
+):
+    """Resolve, reject, reopen, or accept a thread's suggested edit."""
+
+    _require_writer(user)
+    report = ensure_visible(_get_report(session, report_id), user)
+    thread = comment_service.get_or_404(session, report, comment_id)
+    handlers = {
+        "resolve": (comment_service.resolve, AuditAction.REPORT_COMMENT_RESOLVED),
+        "reject": (comment_service.reject, AuditAction.REPORT_COMMENT_REJECTED),
+        "reopen": (comment_service.reopen, None),
+    }
+    try:
+        if action == "accept":
+            thread = comment_service.accept_suggestion(
+                session, report, thread, actor=user, expected_version=version
+            )
+            _audit_comment(
+                session, background_tasks, request, user,
+                AuditAction.REPORT_SUGGESTION_ACCEPTED, report, thread,
+                {"applied_version": thread.applied_version},
+            )
+            return _review_redirect(report_id)
+        if action not in handlers:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown review action")
+        handler, audit_action = handlers[action]
+        thread = handler(session, thread, actor=user)
+    except comment_service.CommentError as exc:
+        return _review_redirect(report_id, str(exc.detail))
+    if audit_action is not None:
+        _audit_comment(
+            session, background_tasks, request, user, audit_action, report, thread, {}
+        )
+    return _review_redirect(report_id)
+
+
+def _audit_comment(
+    session, background_tasks, request, user, action, report, comment, detail
+):
+    """Record the decision, never the prose that produced it."""
+
+    audit.record_and_emit(
+        session,
+        background_tasks=background_tasks,
+        action=action,
+        category=AuditCategory.LIFECYCLE,
+        severity=AuditSeverity.INFO,
+        actor=user,
+        request=request,
+        resource_type="report",
+        resource_id=report.id,
+        detail={
+            "comment_id": comment.id,
+            "section": str(comment.section),
+            "blocking": comment.blocking,
+            "status": str(comment.status),
+            **detail,
         },
     )
 

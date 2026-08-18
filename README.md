@@ -445,6 +445,21 @@ curl -G -H "Authorization: Bearer $ICEBERG_TOKEN" \
    tags). The importer is deliberately file-only — obtain the STIX bundle through your normal
    supply-chain process; the server never downloads it for you.
 
+### Review a product with editorial threads
+1. As a `REVIEWER`, open a report and use the **Editorial review** section: pick the section your
+   comment is about, quote the exact passage, and optionally propose a **suggested replacement**.
+   Tick **Blocking** for something that must be settled before publication, and mention a colleague
+   with `@name` (their address's local part) to notify them.
+2. Each thread records the revision it was written against, so after an edit it says whether it is
+   still current, still quotable, or pointing at text that has gone — it never silently drifts.
+3. The report's author accepts a suggestion (reviewers propose, the analyst decides). Accepting
+   applies it only if the report is still at the revision shown *and* the quoted passage is still
+   uniquely present; otherwise you get a 409 rather than a silent overwrite. Resolve or reject
+   settles a thread without changing the text.
+4. Publication refuses while a blocking thread is open (set
+   `ICEBERG_PUBLISH_REQUIRES_RESOLVED_THREADS=false` to treat threads as advisory). Threads are
+   internal: a stakeholder never sees them.
+
 ### Gauge program maturity & effectiveness
 1. Open **Maturity** (left rail, `/maturity`) — a writer-only, leadership-facing dashboard that
    derives program-health indicators purely from existing data: production (publish velocity,
@@ -542,6 +557,7 @@ tiles; secrets show only a set/not-set status, never their value. Highlights:
 | `ICEBERG_AI_BACKEND` + `ICEBERG_AI_*` | Governed AI assist backend (`none`/`openai`/`openai-compatible`/`ollama`/`gemini`/`claude`/`bedrock`), model, key/`ICEBERG_AI_AWS_REGION`, TLP egress ceiling and timeout — **seeds** the `AISettings` row, then edit live at `/admin/ai` (off by default) |
 | `ICEBERG_AI_OLLAMA_BASE_URL` | Operator-approved Ollama base URL; the DB-editable base URL for the `ollama` provider must match it exactly (anti-SSRF base-URL pinning) |
 | `ICEBERG_AI_OPENAI_COMPATIBLE_BASE_URL` | Operator-approved base URL for the generic `openai-compatible` backend, enforced identically. Blank (the default) refuses that backend — without an env trust anchor a DB edit could ship the API key and TLP-gated content to any host |
+| `ICEBERG_PUBLISH_REQUIRES_RESOLVED_THREADS` | Refuse to publish while a blocking editorial review thread is open (default `true`) |
 | `ICEBERG_MEASURES_MIN_GROUP` | Minimum distinct responding stakeholders behind a `/measures` breakdown before it is shown (default 5; `0` disables suppression) |
 | `ICEBERG_RELATED_BACKEND` | Related-product index provider: `local` (default — deterministic, non-egress hash embedding) or `none` (no vector index; related products are served by the lexical fallback) |
 | `ICEBERG_RSS_POLL_ENABLED` / `ICEBERG_RSS_POLL_INTERVAL_MINUTES` | Opt-in RSS poller switch and interval |

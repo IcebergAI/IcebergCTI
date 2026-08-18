@@ -7,6 +7,7 @@ from .ai import router as ai_router
 from .attack import router as attack_router
 from .audience import router as audience_router
 from .audience_policy import router as audience_policy_router
+from .comments import router as comments_router
 from .demo import router as demo_router
 from .feedback import router as feedback_router
 from .feed import router as feed_router
@@ -26,6 +27,7 @@ api_router.include_router(audience_policy_router)
 api_router.include_router(demo_router)
 api_router.include_router(notebooks_router)
 api_router.include_router(reports_router)
+api_router.include_router(comments_router)
 api_router.include_router(requirements_router)
 api_router.include_router(feed_router)
 api_router.include_router(feeds_router)
