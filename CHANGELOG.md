@@ -11,8 +11,28 @@ the SemVer form. See [docs/RELEASING.md](docs/RELEASING.md).
 
 ## [Unreleased]
 
-No release has been cut yet. This section captures the work merged to `main` to date; the first
-tagged release will snapshot it under a dated heading.
+## [0.1.0-beta.1] — 2026-08-18
+
+The first supported beta. Everything below is the work merged to `main` up to this tag.
+
+**Compatibility.** Until 1.0 the public surfaces — JSON API, TAXII, the STIX bundle shape,
+environment variable names and the container's operational contract — may change in a minor
+release. **PostgreSQL** is the supported datastore for containers/production; SQLite is local
+dev/test only. Upgrade **one release forward at a time**, running migrations as an explicit deploy
+step before the new image serves traffic.
+
+**Rollback.** Downgrade is not supported: most migrations add schema, so `downgrade()` drops it and
+the data in it, and a data-only migration cannot restore what it rewrote. Roll back by restoring
+the pre-upgrade backup and redeploying the previous digest. The database and the object prefix are
+**one consistency set** — a dump without its matching object snapshot is not a backup.
+
+**Known limitations.** The public surfaces are not frozen; skipping intermediate releases on
+upgrade is untested; optional integrations (AI providers, MISP, SIEM, S3-compatible storage, and
+OIDC providers beyond those exercised in CI) are validated against fixtures and test doubles rather
+than against every vendor implementation.
+
+See [docs/RELEASING.md](docs/RELEASING.md) for the rehearsal (`scripts/release_rehearsal.sh`) and
+post-publication verification (`scripts/verify_release.sh`) that gate this release.
 
 ### Added
 
@@ -204,4 +224,5 @@ tagged release will snapshot it under a dated heading.
   conflict now stops the autosave loop and surfaces a distinct state with two explicit ways out —
   reload the saved version, or overwrite with yours.
 
-[Unreleased]: https://github.com/IcebergAI/IcebergCTI/commits/main
+[Unreleased]: https://github.com/IcebergAI/IcebergCTI/compare/v0.1.0-beta.1...HEAD
+[0.1.0-beta.1]: https://github.com/IcebergAI/IcebergCTI/releases/tag/v0.1.0-beta.1

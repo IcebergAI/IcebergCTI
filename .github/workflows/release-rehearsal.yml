@@ -1,0 +1,59 @@
+name: Release rehearsal
+
+# Manual by design (#314): this is the pre-tag drill an operator runs to prove a
+# release installs cleanly, upgrades a database that already holds data, and can
+# be backed up and restored — not something every pull request should pay for.
+# Run it on the commit you are about to tag; attach its log to the release.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "release-rehearsal-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  rehearse:
+    name: Clean install, seeded upgrade, backup/restore
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The rollback report walks the migration history, and the rehearsal
+          # record names the commit under test.
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
+        with:
+          enable-cache: true
+      - name: Install the project (for the rehearsal's own stages)
+        run: uv sync --locked --extra dev --extra postgres
+      - name: Build the release image
+        run: docker build -t iceberg:rehearsal .
+      - name: Rehearse
+        env:
+          REHEARSAL_PG_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+          ICEBERG_SECRET_KEY: rehearsal-secret-0123456789abcdef0123456789
+        # The script's own stages run through uv so they import the project.
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          printf '#!/usr/bin/env bash\nexec uv run --no-sync python "$@"\n' > "$RUNNER_TEMP/bin/python3"
+          chmod +x "$RUNNER_TEMP/bin/python3"
+          PATH="$RUNNER_TEMP/bin:$PATH" scripts/release_rehearsal.sh iceberg:rehearsal

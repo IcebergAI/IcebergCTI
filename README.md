@@ -445,6 +445,14 @@ curl -G -H "Authorization: Bearer $ICEBERG_TOKEN" \
    tags). The importer is deliberately file-only — obtain the STIX bundle through your normal
    supply-chain process; the server never downloads it for you.
 
+### Cut or verify a release
+A release is a git tag; the automation does the rest. Before tagging, **rehearse** the exact commit
+(Actions → *Release rehearsal*, or `scripts/release_rehearsal.sh` with docker and a throwaway
+PostgreSQL): it proves a clean install, an upgrade of a database that already holds data, a backup
+and verified restore, and prints the rollback boundary. After tagging, `scripts/verify_release.sh
+v0.1.0-beta.1` checks the published digest, cosign signature, SLSA provenance and source revision
+all agree. Compatibility, support and rollback policy: [docs/RELEASING.md](docs/RELEASING.md).
+
 ### Accept evidence from an adjacent system
 Sibling products (IcebergOSINT, ASM, CM) hand over an evidence item as a small **versioned
 envelope** instead of sharing a database — the contract is published at

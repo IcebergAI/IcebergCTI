@@ -65,6 +65,81 @@ That's it. `release.yml` then:
 the image but does not push, sign, attest, or create a release. Use it to check the Dockerfile
 builds cleanly under buildx before tagging.
 
+## Before you tag: rehearse it
+
+A release automation that has never been run is a plan, not a release. Rehearse the exact commit
+you are about to tag (#314):
+
+```bash
+# In CI: Actions → "Release rehearsal" → Run workflow (on the commit to be tagged).
+# Locally, with docker and a PostgreSQL you can throw away:
+scripts/release_rehearsal.sh
+```
+
+It proves four things and stops at the first failure, printing a **rehearsal record** worth
+attaching to the release:
+
+1. **Clean install** — migrate an empty database to head, boot the image, `/healthz` + `/readyz`
+   come up.
+2. **Seeded upgrade** — stage a database at the *previous* schema revision, seed a user, notebook,
+   source and report, migrate forward with this release's job, and assert the seeded rows are still
+   readable. This is the upgrade an operator actually performs.
+3. **Backup and verified restore** — `pg_dump` the upgraded database, restore into a fresh one, and
+   run `iceberg-verify-files` plus the seeded-data check against the restored release.
+4. **Rollback boundary** — classify every migration's `downgrade()` and report how many do not
+   restore prior state.
+
+`release.yml`'s `workflow_dispatch` **dry run** is the complementary check: it builds the image
+under buildx without pushing, signing or releasing anything.
+
+## After you tag: verify what was published
+
+```bash
+scripts/verify_release.sh v0.1.0-beta.1
+```
+
+It resolves the tag to an **immutable digest**, verifies the **cosign signature** was issued to
+this repository's release workflow *for that tag*, verifies the **SLSA provenance** attestation,
+and checks the image's `org.opencontainers.image.revision` label is the commit the tag points at —
+so the artifact, its signature, its provenance and its source revision all agree, or the script
+fails.
+
+## Compatibility and support
+
+**Versioning.** [SemVer](https://semver.org/). Until 1.0 the public surfaces — the JSON API, the
+TAXII surface, the STIX bundle shape, environment variable names and the container's operational
+contract — may change in a minor release; such changes are called out in the changelog. A
+pre-release tag (`-beta.N`, `-rc.N`) never becomes `:latest` and is marked as a pre-release on
+GitHub.
+
+**Datastore.** PostgreSQL is the supported datastore for every container/production deployment.
+SQLite is local dev/test only — the prod app refuses to boot on it and the image ships no SQLite
+fallback.
+
+**Upgrades.** One release forward at a time, migrations run as an explicit deploy step
+(`ICEBERG_AUTO_MIGRATE=false`, the migration Job), and the schema is migrated *before* the new
+image serves traffic. Skipping releases is not rehearsed and not supported.
+
+**Rollback.** Most migrations add schema; their `downgrade()` drops it and takes the data in those
+columns with it, and a data-only migration cannot restore what it rewrote at all. The supported
+rollback is therefore **restore the pre-upgrade backup and redeploy the previous digest**, not
+`alembic downgrade`. Run `python scripts/rehearsal_seed.py --stage rollback-report` for the
+per-migration classification.
+
+**Backups.** The database and the object prefix form **one consistency set** — a dump without its
+matching object snapshot is not a backup. The full quiesce/backup/restore runbook is in
+[`deploy/k8s/README.md`](../deploy/k8s/README.md#backup--restore); rehearse it with the release, not
+after an incident.
+
+### Known limitations of a beta
+
+- The public API/TAXII/STIX surfaces are not yet frozen (see *Versioning* above).
+- Downgrade is not supported; roll back by restore.
+- Skipping intermediate releases on upgrade is untested.
+- Optional integrations (AI providers, MISP, SIEM, S3-compatible storage, OIDC providers other than
+  the ones exercised in CI) are validated against fixtures and test doubles, not against every
+  vendor implementation.
+
 ## Deploying a release
 
 The Kubernetes manifests under [`deploy/k8s/`](../deploy/k8s/) reference

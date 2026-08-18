@@ -155,6 +155,21 @@ workflow files themselves so the SHA-pinning / least-privilege posture can't sil
 push-only `docker` job also runs a **Trivy** image vulnerability scan (fixable HIGH/CRITICAL,
 `ignore-unfixed`) so base-layer CVEs beyond `pip-audit`'s reach surface.
 
+**Release rehearsal (`scripts/release_rehearsal.sh`, `scripts/rehearsal_seed.py`,
+`.github/workflows/release-rehearsal.yml`).** A release automation that has never been run is a
+plan, not a release. The **manual** `Release rehearsal` workflow (and the same script locally)
+proves four things against PostgreSQL on the commit about to be tagged and stops at the first
+failure: a **clean install** (migrate an empty database to head, boot the image, probes ready), a
+**seeded upgrade** (stage a database at the *previous* revision, seed a user/notebook/source/report,
+migrate forward with this release's job, read them back), a **backup and verified restore** (dump →
+restore into a fresh database → `iceberg-verify-files` + the seeded-data check), and the **rollback
+boundary** (classify every migration's `downgrade()`; most add schema, so rollback is
+restore-the-backup, not `alembic downgrade`). `scripts/verify_release.sh` checks a *published*
+release: the tag resolves to an immutable digest whose cosign signature was issued to this repo's
+release workflow for that tag, whose SLSA provenance verifies, and whose
+`org.opencontainers.image.revision` is the commit the tag points at. Compatibility, support and
+rollback policy live in [`docs/RELEASING.md`](docs/RELEASING.md).
+
 **Releases (`.github/workflows/release.yml`, [`docs/RELEASING.md`](docs/RELEASING.md)).** A release
 is a git tag: pushing a `v*` tag to `main` fires the workflow, which verifies the tag matches the
 `pyproject.toml` version (PEP 440 → SemVer normalised) and that the commit is on `main`, then builds
