@@ -1,7 +1,7 @@
 """isolated guided demo workspaces
 
-Revision ID: d4e5f6a7b8c9
-Revises: c3d4e5f6a7b8
+Revision ID: e5f6a7b8c9d0
+Revises: d4e5f6a7b8c9
 Create Date: 2026-08-12 00:00:00.000000
 """
 
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 import sqlmodel
 from alembic import op
 
-revision: str = "d4e5f6a7b8c9"
-down_revision: str | Sequence[str] | None = "c3d4e5f6a7b8"
+revision: str = "e5f6a7b8c9d0"
+down_revision: str | Sequence[str] | None = "d4e5f6a7b8c9"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

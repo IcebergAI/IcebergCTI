@@ -16,6 +16,23 @@ from axe_playwright_python.sync_playwright import Axe
 from playwright.sync_api import Browser, BrowserContext, Page, sync_playwright
 
 
+def _chromium_installed() -> bool:
+    try:
+        with sync_playwright() as playwright:
+            return Path(playwright.chromium.executable_path).exists()
+    except Exception:  # pragma: no cover - no driver or no browser build
+        return False
+
+
+# The guided-demo acceptance needs a real Chromium (CI installs it with
+# `playwright install --with-deps chromium`). A developer running the documented
+# `uv run pytest` without that one-off install should get a skip, not a failure.
+pytestmark = pytest.mark.skipif(
+    not _chromium_installed(),
+    reason="Chromium is not installed; run `uv run playwright install chromium`",
+)
+
+
 def _free_port() -> int:
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
