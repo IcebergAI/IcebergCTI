@@ -57,8 +57,10 @@
               <div class="head-row mb-2">
                 <div class="flow" style="gap:8px;flex-wrap:wrap;">
                   <span class="mono text-xs">{{ v.label }}</span>
-                  {% if v.approved_at %}
+                  {% if v.approved_at and v.id in live_version_ids %}
                     <span class="tag tag--c is-ok"><span class="dot"></span>Approved</span>
+                  {% elif v.approved_at %}
+                    <span class="tag tag--c"><span class="dot"></span>Not in effect</span>
                   {% else %}
                     <span class="tag tag--c is-warn"><span class="dot"></span>Draft</span>
                   {% endif %}

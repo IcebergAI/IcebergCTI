@@ -97,7 +97,8 @@ def admin_policy_view(request: Request, session: SessionDep, user: CurrentUser):
             "policies": [
                 (policy, policy_service.versions(session, policy)) for policy in policies
             ],
-            "live_versions": policy_service.applicable_versions(session),
+            "live_versions": (live := policy_service.applicable_versions(session)),
+            "live_version_ids": {v.id for v in live},
             "groups": list(
                 session.exec(select(AudienceGroup).order_by(AudienceGroup.name)).all()
             ),

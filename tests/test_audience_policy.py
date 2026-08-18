@@ -7,7 +7,13 @@ from the set a product's own marking and audience scope already allow.
 import pytest
 from sqlmodel import Session, select
 
-from iceberg.models import AuditEvent, DisseminationEvent, PublicationSnapshot, Report
+from iceberg.models import (
+    AuditEvent,
+    DisseminationEvent,
+    DisseminationPolicyVersion,
+    PublicationSnapshot,
+    Report,
+)
 from iceberg.services import email as email_service
 
 
@@ -85,6 +91,31 @@ def _policy(client, login, rules, *, name="Routing", approve=True, **version):
         )
         assert approved.status_code == 200, approved.text
     return policy.json()["id"], created.json()["id"]
+
+
+def _next_version(client, login, policy_id, rules, *, approve=True, **version):
+    """Draft (and by default approve) the next version of an existing policy."""
+
+    login("ADMIN", email="admin@example.com")
+    created = client.post(
+        f"/api/dissemination-policies/{policy_id}/versions",
+        json={"rules": rules, **version},
+    )
+    assert created.status_code == 201, created.text
+    if approve:
+        approved = client.post(
+            f"/api/dissemination-policies/versions/{created.json()['id']}/approve"
+        )
+        assert approved.status_code == 200, approved.text
+    return created.json()["id"]
+
+
+def _versions(client, login, policy_id):
+    login("ADMIN", email="admin@example.com")
+    listed = client.get("/api/dissemination-policies")
+    assert listed.status_code == 200, listed.text
+    policy = next(p for p in listed.json() if p["id"] == policy_id)
+    return {v["version"]: v for v in policy["versions"]}
 
 
 def _preview(client, login, report_id, *, params=None):
@@ -553,6 +584,55 @@ def test_portal_audience_page_is_publisher_only(client, login):
     assert client.get(f"/reports/{report_id}/audience").status_code == 403
 
 
+def test_portal_publish_carries_the_reviewed_fingerprint_and_exceptions(client, login, engine):
+    """The audience page posts to the portal transition route, not the JSON API."""
+
+    _stakeholder(client, login, "first@example.com")
+    withheld = _stakeholder(client, login, "second@example.com")
+    report_id = _approved_report(client, login)
+    fingerprint = _preview(client, login, report_id, params={"exception": [withheld]})[
+        "fingerprint"
+    ]
+
+    _stakeholder(client, login, "late@example.com")
+    login("REVIEWER", email="rev@example.com")
+    stale = client.post(
+        f"/reports/{report_id}/transition",
+        data={
+            "target": "PUBLISHED",
+            "audience_fingerprint": fingerprint,
+            "audience_exceptions": [withheld],
+        },
+    )
+    assert stale.status_code == 409
+    assert "changed since it was previewed" in stale.json()["detail"]
+
+    current = _preview(client, login, report_id, params={"exception": [withheld]})[
+        "fingerprint"
+    ]
+    login("REVIEWER", email="rev@example.com")
+    published = client.post(
+        f"/reports/{report_id}/transition",
+        data={
+            "target": "PUBLISHED",
+            "audience_fingerprint": current,
+            "audience_exceptions": [withheld],
+        },
+        follow_redirects=False,
+    )
+    assert published.status_code in (302, 303), published.text
+
+    with Session(engine) as session:
+        delivered = session.exec(
+            select(DisseminationEvent).where(DisseminationEvent.report_id == report_id)
+        ).all()
+        assert withheld not in {event.stakeholder_id for event in delivered}
+        snapshot = session.exec(
+            select(PublicationSnapshot).where(PublicationSnapshot.report_id == report_id)
+        ).one()
+        assert snapshot.payload["audience"]["exceptions"] == [withheld]
+
+
 def test_portal_admin_console_renders_and_is_admin_only(client, login):
     login("ADMIN", email="admin@example.com")
     page = client.get("/admin/dissemination-policy")
@@ -591,3 +671,125 @@ def test_report_status_is_unchanged_by_a_refused_publish(client, login, engine):
             ).first()
             is None
         )
+
+
+# --------------------------------------------------------------------------- #
+# Version replacement — one policy carries exactly one live rule set
+# --------------------------------------------------------------------------- #
+def test_approving_a_replacement_version_stops_the_one_it_replaces(client, login):
+    """A rewrite must be able to loosen the rule it was drafted to loosen.
+
+    v1 and its open-ended replacement v2 would otherwise both be applicable, and
+    because rules only ever subtract, the stale restriction would survive forever.
+    """
+
+    exec_id = _stakeholder(client, login, "exec@example.com")
+    _stakeholder(client, login, "desk@example.com")
+    group_id = _group(client, login, "Executive", [exec_id])
+    policy_id, _ = _policy(
+        client,
+        login,
+        [{"id": "exec-only", "effect": "LIMIT_TO", "audience": {"audience_group_ids": [group_id]}}],
+    )
+    report_id = _approved_report(client, login)
+    assert _names(_preview(client, login, report_id)["included"]) == ["exec"]
+
+    _next_version(
+        client,
+        login,
+        policy_id,
+        [{"id": "exec-only", "effect": "LIMIT_TO", "audience": {"audience_group_ids": [group_id]}}]
+        + [{"id": "widen", "effect": "EXCLUDE", "audience": {"organisations": ["nobody"]}}],
+    )
+    # v2 keeps the same restriction, so this only proves v2 is the one routing.
+    preview = _preview(client, login, report_id)
+    assert preview["policy_versions"] == ["routing@v2"]
+
+    _next_version(client, login, policy_id, [])
+
+    preview = _preview(client, login, report_id)
+    assert _names(preview["included"]) == ["desk", "exec"]
+    assert preview["policy_versions"] == ["routing@v3"]
+
+
+def test_a_replacement_closes_the_previous_versions_effective_window(client, login):
+    policy_id, _ = _policy(client, login, [])
+    _next_version(client, login, policy_id, [])
+
+    listed = _versions(client, login, policy_id)
+
+    assert listed[1]["effective_to"] is not None
+    assert listed[2]["effective_to"] is None
+
+
+def test_a_future_dated_replacement_leaves_the_current_version_live_until_it_starts(
+    client, login
+):
+    blocked = _stakeholder(client, login, "blocked@example.com")
+    policy_id, _ = _policy(
+        client,
+        login,
+        [{"id": "no-vendor", "effect": "EXCLUDE", "audience": {"stakeholder_ids": [blocked]}}],
+    )
+    report_id = _approved_report(client, login)
+
+    _next_version(client, login, policy_id, [], effective_from="2099-01-01T00:00:00")
+
+    preview = _preview(client, login, report_id)
+    assert preview["included"] == []
+    assert preview["policy_versions"] == ["routing@v1"]
+    assert _versions(client, login, policy_id)[1]["effective_to"].startswith("2099-01-01")
+
+
+def test_a_retired_version_is_not_reopened_by_a_later_approval(client, login):
+    policy_id, first = _policy(client, login, [])
+    login("ADMIN", email="admin@example.com")
+    retired = client.post(f"/api/dissemination-policies/versions/{first}/retire")
+    assert retired.status_code == 200, retired.text
+    closed_at = retired.json()["effective_to"]
+
+    _next_version(client, login, policy_id, [])
+
+    assert _versions(client, login, policy_id)[1]["effective_to"] == closed_at
+
+
+def test_only_the_newest_applicable_version_of_a_policy_routes(client, login, engine):
+    """Defence in depth for windows widened by hand after a replacement landed."""
+
+    blocked = _stakeholder(client, login, "blocked@example.com")
+    policy_id, first = _policy(
+        client,
+        login,
+        [{"id": "no-vendor", "effect": "EXCLUDE", "audience": {"stakeholder_ids": [blocked]}}],
+    )
+    _next_version(client, login, policy_id, [])
+    report_id = _approved_report(client, login)
+
+    with Session(engine) as session:
+        stale = session.get(DisseminationPolicyVersion, first)
+        stale.effective_to = None
+        session.add(stale)
+        session.commit()
+
+    preview = _preview(client, login, report_id)
+
+    assert _names(preview["included"]) == ["blocked"]
+    assert preview["policy_versions"] == ["routing@v2"]
+
+
+def test_a_replacement_does_not_disturb_another_policys_versions(client, login):
+    blocked = _stakeholder(client, login, "blocked@example.com")
+    _policy(
+        client,
+        login,
+        [{"id": "no-vendor", "effect": "EXCLUDE", "audience": {"stakeholder_ids": [blocked]}}],
+        name="Vendor routing",
+    )
+    other_id, _ = _policy(client, login, [], name="Second routing")
+    report_id = _approved_report(client, login)
+
+    _next_version(client, login, other_id, [])
+
+    preview = _preview(client, login, report_id)
+    assert preview["included"] == []
+    assert preview["policy_versions"] == ["second-routing@v2", "vendor-routing@v1"]

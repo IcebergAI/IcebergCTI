@@ -314,14 +314,56 @@ def update_draft(
 def approve(
     session: Session, version: DisseminationPolicyVersion, *, actor: User
 ) -> DisseminationPolicyVersion:
+    """Approve a draft, and close the version it replaces.
+
+    A policy carries exactly one live rule set: approving vN ends the effective
+    window of every earlier approved version of the same policy at the moment vN
+    starts. Without that, an open-ended v1 and its open-ended replacement v2 would
+    both be applicable and their restrictions would intersect, so a routine
+    rewrite could never loosen a rule it was drafted to loosen.
+    """
+
     if version.approved_at is not None:
         raise PolicyError("Version is already approved", status.HTTP_409_CONFLICT)
     version.approved_at = utcnow()
     version.approved_by_id = actor.id
     session.add(version)
+    _supersede_earlier(session, version)
     session.commit()
     session.refresh(version)
     return version
+
+
+def _supersede_earlier(
+    session: Session, version: DisseminationPolicyVersion
+) -> list[DisseminationPolicyVersion]:
+    """End every earlier approved version of ``version``'s policy at its start.
+
+    The boundary is the replacement's own ``effective_from`` when it is set, so a
+    version scheduled to start next week leaves the current one live until then;
+    otherwise it is the approval moment. Versions that already end at or before
+    the boundary are left alone, and one whose window starts *after* the boundary
+    is collapsed to an empty window rather than given an end before its start.
+    """
+
+    boundary = _aware(version.effective_from) or _aware(version.approved_at) or utcnow()
+    earlier = session.exec(
+        select(DisseminationPolicyVersion).where(
+            DisseminationPolicyVersion.policy_id == version.policy_id,
+            col(DisseminationPolicyVersion.approved_at).is_not(None),
+            col(DisseminationPolicyVersion.version) < version.version,
+        )
+    ).all()
+    closed: list[DisseminationPolicyVersion] = []
+    for prior in earlier:
+        end = _aware(prior.effective_to)
+        if end is not None and end <= boundary:
+            continue
+        start = _aware(prior.effective_from)
+        prior.effective_to = start if start and start > boundary else boundary
+        session.add(prior)
+        closed.append(prior)
+    return closed
 
 
 def retire(
@@ -360,10 +402,15 @@ def _aware(value: datetime | None) -> datetime | None:
 def applicable_versions(
     session: Session, *, at: datetime | None = None
 ) -> list[DisseminationPolicyVersion]:
-    """Every approved version whose effective window contains ``at``.
+    """The live version of each policy at ``at`` — at most one per policy.
 
-    Rules only ever subtract recipients, so applying several policies at once is
+    Rules only ever subtract recipients, so applying several *policies* at once is
     order-independent: the result is the intersection of what each one allows.
+    Several versions of the *same* policy are a different matter — they are
+    successive drafts of one rule set, not additional restrictions — so only the
+    newest applicable one counts. ``approve()`` already closes the version it
+    replaces; taking the highest version per policy here keeps rows written before
+    that, or windows an admin has widened by hand, from stacking up.
     """
 
     moment = _aware(at) or utcnow()
@@ -372,13 +419,18 @@ def applicable_versions(
             col(DisseminationPolicyVersion.approved_at).is_not(None)
         )
     ).all()
-    live = [
-        version
-        for version in rows
-        if ((start := _aware(version.effective_from)) is None or start <= moment)
-        and ((end := _aware(version.effective_to)) is None or end > moment)
-    ]
-    return sorted(live, key=lambda v: (v.policy.slug, v.version))
+    live: dict[int, DisseminationPolicyVersion] = {}
+    for version in rows:
+        start = _aware(version.effective_from)
+        end = _aware(version.effective_to)
+        if start is not None and start > moment:
+            continue
+        if end is not None and end <= moment:
+            continue
+        current = live.get(version.policy_id)
+        if current is None or version.version > current.version:
+            live[version.policy_id] = version
+    return sorted(live.values(), key=lambda v: (v.policy.slug, v.version))
 
 
 # --------------------------------------------------------------------------- #
