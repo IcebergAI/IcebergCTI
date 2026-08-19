@@ -13,6 +13,7 @@ from . import (  # noqa: F401 — imported for their @router route registrations
     admin_home,
     admin_misp,
     admin_oidc,
+    admin_policy,
     admin_proxy,
     admin_webhook,
     analytics,

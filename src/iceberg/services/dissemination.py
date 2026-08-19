@@ -8,10 +8,10 @@ email notification runs as a background task.
 """
 
 import logging
+from dataclasses import dataclass
 
 import httpx
 from fastapi import BackgroundTasks
-from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, col, select
@@ -39,44 +39,122 @@ def _max_tlp() -> TLP:
     return TLP(get_settings().dissemination_max_tlp)
 
 
-def matched_stakeholders(session: Session, report: Report) -> list[User]:
-    if not is_disseminable(TLP(report.tlp), _max_tlp()):
-        return []
+@dataclass(frozen=True)
+class MatchDecision:
+    """Why one stakeholder is (or is not) authorised to receive a report.
+
+    This is the *base* authorization: the report's own TLP ceiling, the
+    stakeholder's intel-level preference, their tag subscriptions and the
+    report's audience scope. A dissemination policy may narrow this set further
+    but never widen it (see ``services/audience_policy.py``).
+    """
+
+    user: User
+    included: bool
+    reason: str
+    explanation: str
+
+
+def match_decisions(session: Session, report: Report) -> list[MatchDecision]:
+    """Explain the base recipient set for every stakeholder, in name order."""
+
     stmt = (
         select(User)
         .where(User.role == Role.STAKEHOLDER)
-        .where(
-            or_(
-                col(User.preferred_intel_level).is_(None),
-                User.preferred_intel_level == report.intel_level,
-            )
-        )
         # Eager-load the per-user collections the match loop reads, so matching N
         # stakeholders is two extra queries, not 2N lazy loads.
         .options(
             selectinload(User.tag_subscriptions),
             selectinload(User.audience_groups),
         )
+        .order_by(col(User.display_name), col(User.id))
     )
+    ceiling = _max_tlp()
+    disseminable = is_disseminable(TLP(report.tlp), ceiling)
     report_tag_ids = {t.id for t in report.tags}
     report_group_ids = {g.id for g in report.audience_groups}
-    matches: list[User] = []
+    decisions: list[MatchDecision] = []
     for user in session.exec(stmt).all():
+        if not disseminable:
+            decisions.append(
+                MatchDecision(
+                    user,
+                    False,
+                    "tlp_ceiling",
+                    f"Report is marked TLP:{TLP(report.tlp).value}, above the "
+                    f"TLP:{ceiling.value} dissemination ceiling",
+                )
+            )
+            continue
+        preference = user.preferred_intel_level
+        if preference is not None and preference != report.intel_level:
+            decisions.append(
+                MatchDecision(
+                    user,
+                    False,
+                    "intel_level",
+                    f"Stakeholder receives {preference} products only; this one "
+                    f"is {report.intel_level}",
+                )
+            )
+            continue
         subscription_ids = {t.id for t in user.tag_subscriptions}
         if subscription_ids and not (subscription_ids & report_tag_ids):
+            decisions.append(
+                MatchDecision(
+                    user,
+                    False,
+                    "tag_subscription",
+                    "Stakeholder subscribes to specific topics, none of which "
+                    "this report carries",
+                )
+            )
             continue
         user_group_ids = {g.id for g in user.audience_groups}
         if report_group_ids and not (report_group_ids & user_group_ids):
+            decisions.append(
+                MatchDecision(
+                    user,
+                    False,
+                    "audience_group",
+                    "Report is scoped to audience groups the stakeholder does "
+                    "not belong to",
+                )
+            )
             continue
-        matches.append(user)
-    return matches
+        decisions.append(
+            MatchDecision(user, True, "authorised", "Authorised by report scope")
+        )
+    return decisions
 
 
-def disseminate(session: Session, report: Report, *, commit: bool = True) -> list[User]:
+def matched_stakeholders(session: Session, report: Report) -> list[User]:
+    return [decision.user for decision in match_decisions(session, report) if decision.included]
+
+
+def disseminate(
+    session: Session,
+    report: Report,
+    *,
+    commit: bool = True,
+    recipient_ids: list[int] | None = None,
+) -> list[User]:
     """Create feed events for matched stakeholders (idempotent). Returns the
-    stakeholders who newly received it, so they can be emailed."""
+    stakeholders who newly received it, so they can be emailed.
+
+    ``recipient_ids`` lets a caller deliver to an already-resolved recipient set
+    (``services/audience_policy.resolve``) instead of recomputing the base match,
+    so the feed records agree with the previewed and recorded audience. It is
+    always a *subset* of the base match — resolution starts from it — so this
+    can only narrow delivery, never widen it.
+    """
+    if recipient_ids is None:
+        targets = matched_stakeholders(session, report)
+    else:
+        by_id = {user.id: user for user in matched_stakeholders(session, report)}
+        targets = [by_id[user_id] for user_id in recipient_ids if user_id in by_id]
     new_recipients: list[User] = []
-    for user in matched_stakeholders(session, report):
+    for user in targets:
         existing = session.exec(
             select(DisseminationEvent).where(
                 DisseminationEvent.report_id == report.id,

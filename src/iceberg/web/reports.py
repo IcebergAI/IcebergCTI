@@ -4,7 +4,7 @@ import logging
 from urllib.parse import quote
 
 from sqlalchemy import update
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 from typing import Annotated
 
 from fastapi import (
@@ -30,12 +30,14 @@ from ..models import (
     ProductFormat,
     ProductUsefulness,
     AudienceGroup,
+    DisseminationEvent,
     RenderedProduct,
     Report,
     ReportStatus,
     RfiSatisfaction,
     Role,
     TLP,
+    User,
     utcnow,
 )
 from ..rendering.typst import TypstNotAvailable, TypstRenderError, typst_available
@@ -43,6 +45,7 @@ from ..services import (
     ach as ach_service,
     attachments as attachment_service,
     audience as audience_service,
+    audience_policy as audience_policy_service,
     audit,
     diamond as diamond_service,
     feedback as feedback_service,
@@ -406,6 +409,61 @@ def report_misp_push(
     return _redirect(f"/reports/{report_id}")
 
 
+@router.get("/reports/{report_id}/audience")
+def report_audience_view(
+    report_id: int,
+    request: Request,
+    session: SessionDep,
+    user: CurrentUser,
+    exception: Annotated[list[int] | None, Query()] = None,
+):
+    """Who receives this product, who does not, and why — before it is sent.
+
+    Publishing is a reviewer/admin act, so the simulation (and the power to
+    except a stakeholder from delivery) is scoped to the same people.
+    """
+
+    ensure_role(user, Role.REVIEWER, detail="Reviewer or admin role required")
+    report = _get_report(session, report_id)
+    resolution = audience_policy_service.resolve(session, report, exceptions=exception)
+    return templates.TemplateResponse(
+        request,
+        "report_audience.html",
+        {
+            "user": user,
+            "report": report,
+            "resolution": resolution,
+            # For a published product the frozen record is the authority; the
+            # live resolution above is only shown as "what it would be today".
+            "record": publication.audience_record(session, report),
+            "receipts": _delivery_receipts(session, report),
+            "conflict": request.query_params.get("conflict", ""),
+        },
+    )
+
+
+def _delivery_receipts(session: Session, report: Report) -> list[dict]:
+    """Feed-delivery receipts for a published product, newest recipient first."""
+
+    events = session.exec(
+        select(DisseminationEvent)
+        .where(DisseminationEvent.report_id == report.id)
+        .order_by(col(DisseminationEvent.created_at))
+    ).all()
+    receipts = []
+    for event in events:
+        stakeholder = session.get(User, event.stakeholder_id)
+        receipts.append(
+            {
+                "name": stakeholder.display_name if stakeholder else "(deleted user)",
+                "email": stakeholder.email if stakeholder else "",
+                "delivered_at": event.created_at,
+                "read_at": event.read_at,
+            }
+        )
+    return receipts
+
+
 @router.post("/reports/{report_id}/transition")
 def report_transition(
     report_id: int,
@@ -414,6 +472,8 @@ def report_transition(
     user: CurrentUser,
     background_tasks: BackgroundTasks,
     target: Annotated[ReportStatus, Form()],
+    audience_fingerprint: Annotated[str, Form()] = "",
+    audience_exceptions: Annotated[list[int] | None, Form()] = None,
 ):
     report = _get_report(session, report_id)
     if target == ReportStatus.PUBLISHED:
@@ -424,6 +484,8 @@ def report_transition(
                 actor=user,
                 request=request,
                 background_tasks=background_tasks,
+                audience_fingerprint=audience_fingerprint,
+                exceptions=audience_exceptions,
             )
         except PermissionError as exc:
             raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc

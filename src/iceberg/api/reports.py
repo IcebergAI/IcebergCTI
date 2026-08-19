@@ -280,6 +280,8 @@ def transition_report(
                 actor=user,
                 request=request,
                 background_tasks=background_tasks,
+                audience_fingerprint=body.audience_fingerprint,
+                exceptions=body.audience_exceptions,
             )
         except PermissionError as exc:
             raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc

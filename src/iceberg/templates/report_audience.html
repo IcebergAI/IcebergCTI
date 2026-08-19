@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% block title %}Audience · {{ report.title }} · {{ app_name }}{% endblock %}
+{% block crumb %}<a href="/reports/{{ report.id }}/edit">{{ report.title }}</a> · Audience{% endblock %}
+{% block page_class %}page-wide{% endblock %}
+{% block content %}
+
+<div class="head-row mb-6">
+  <div>
+    <div class="eyebrow eyebrow-accent">Dissemination</div>
+    <h1 class="page-title mt-2">Who receives this product</h1>
+    <div class="title-rule"></div>
+    <p class="text-sm mt-3" style="color:var(--muted);max-width:74ch;">
+      Resolved from the product's marking (TLP:{{ report.tlp.value }}), its audience scope and the
+      dissemination policy in force. Nothing is sent until you confirm below.
+    </p>
+  </div>
+</div>
+
+{% if conflict %}
+  <div class="inline-notice mb-4" role="alert">{{ conflict }}</div>
+{% endif %}
+
+{% for warning in resolution.warnings %}
+  <div class="inline-notice mb-3">{{ warning }}</div>
+{% endfor %}
+
+<div class="stat-grid mb-6">
+  <div class="stat">
+    <div class="stat-label">Receiving</div>
+    <div class="stat-value">{{ resolution.included | length }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Withheld</div>
+    <div class="stat-value">{{ resolution.excluded | length }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Policy in force</div>
+    <div class="stat-value mono text-sm">
+      {{ resolution.applied_versions | join(', ') if resolution.applied_versions else 'none' }}
+    </div>
+  </div>
+</div>
+
+<form method="get" action="/reports/{{ report.id }}/audience" class="mb-6">
+  <div class="grid lg:grid-cols-2 gap-6">
+    <section class="card card-pad-lg">
+      <h2 class="section-title mb-1">Receiving ({{ resolution.included | length }})</h2>
+      <p class="text-xs mb-4" style="color:var(--muted);">
+        Tick a stakeholder to withhold this product from them. An exception can only remove a
+        recipient — it can never add one.
+      </p>
+      <div class="space-y-2">
+        {% for d in resolution.included %}
+          <label class="check">
+            <input type="checkbox" name="exception" value="{{ d.user_id }}">
+            <span>
+              <span class="font-medium">{{ d.display_name }}</span>
+              {% if d.organisation %}<span class="text-xs"> · {{ d.organisation }}</span>{% endif %}
+              <span class="mono text-xs block mt-0.5" style="color:var(--muted);">{{ d.email }}</span>
+            </span>
+          </label>
+        {% else %}
+          <p class="empty">No stakeholder resolves as a recipient of this product.</p>
+        {% endfor %}
+      </div>
+      {% if resolution.included %}
+        <button class="btn btn--ghost btn--sm mt-4">Apply exceptions to preview</button>
+      {% endif %}
+    </section>
+
+    <section class="card card-pad-lg">
+      <h2 class="section-title mb-1">Not receiving ({{ resolution.excluded | length }})</h2>
+      <p class="text-xs mb-4" style="color:var(--muted);">Every exclusion, with the rule that caused it.</p>
+      <div class="space-y-3">
+        {% for d in resolution.excluded %}
+          <div class="well card-pad">
+            <div class="flow" style="gap:8px;flex-wrap:wrap;">
+              <span class="font-medium">{{ d.display_name }}</span>
+              <span class="tag tag--c is-warn"><span class="dot"></span>{{ d.reason.replace('_', ' ') }}</span>
+              {% if d.rule %}<span class="mono text-xs" style="color:var(--faint);">{{ d.rule }}</span>{% endif %}
+            </div>
+            <p class="text-xs mt-1" style="color:var(--muted);">{{ d.explanation }}</p>
+          </div>
+        {% else %}
+          <p class="empty">Every stakeholder is receiving this product.</p>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+</form>
+
+{% if report.status.value == 'APPROVED' %}
+  <section class="card card-pad-lg mb-6">
+    <h2 class="section-title mb-2">Publish &amp; disseminate</h2>
+    <p class="text-sm mb-4" style="color:var(--muted);max-width:74ch;">
+      Publishing freezes the product and delivers it to the {{ resolution.included | length }}
+      stakeholder{{ '' if resolution.included | length == 1 else 's' }} above. If group membership,
+      the policy or the report changes between now and confirming, the send is refused and you are
+      asked to review the audience again.
+    </p>
+    <form method="post" action="/reports/{{ report.id }}/transition"
+          x-data="confirmSubmit('Publish and disseminate to {{ resolution.included | length }} stakeholder(s)?')"
+          @submit="check($event)">
+      <input type="hidden" name="target" value="PUBLISHED">
+      <input type="hidden" name="audience_fingerprint" value="{{ resolution.fingerprint }}">
+      {% for user_id in resolution.exceptions %}
+        <input type="hidden" name="audience_exceptions" value="{{ user_id }}">
+      {% endfor %}
+      <button class="btn btn--ink">Publish &amp; disseminate →</button>
+      <span class="mono text-xs ml-3" style="color:var(--faint);">{{ resolution.fingerprint }}</span>
+    </form>
+  </section>
+{% endif %}
+
+{% if record %}
+  <section class="card card-pad-lg mb-6">
+    <h2 class="section-title mb-2">Recorded at publication</h2>
+    <p class="text-xs mb-3" style="color:var(--muted);">
+      The frozen routing decision this product was published under — policy versions, exceptions and
+      the recipient list, captured in the immutable publication snapshot.
+    </p>
+    <div class="grid md:grid-cols-2 gap-3">
+      <div class="field-wrap" style="margin:0;">
+        <span class="field-label" style="margin-bottom:4px;">Policy versions</span>
+        <span class="mono text-sm">{{ record.policy_versions | join(', ') if record.policy_versions else 'none' }}</span>
+      </div>
+      <div class="field-wrap" style="margin:0;">
+        <span class="field-label" style="margin-bottom:4px;">Fingerprint</span>
+        <span class="mono text-sm">{{ record.fingerprint }}</span>
+      </div>
+      <div class="field-wrap" style="margin:0;">
+        <span class="field-label" style="margin-bottom:4px;">Exceptions</span>
+        <span class="mono text-sm">{{ record.exceptions | join(', ') if record.exceptions else 'none' }}</span>
+      </div>
+      <div class="field-wrap" style="margin:0;">
+        <span class="field-label" style="margin-bottom:4px;">Recipients</span>
+        <span class="text-sm">{{ record.included | length }} included · {{ record.excluded | length }} withheld</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="card card-pad-lg">
+    <h2 class="section-title mb-2">Delivery receipts</h2>
+    <p class="text-xs mb-3" style="color:var(--muted);">
+      Feed delivery is recorded with the publication itself; email and webhook notification is retried
+      by the durable outbox worker.
+    </p>
+    <div class="space-y-2">
+      {% for r in receipts %}
+        <div class="file-row" style="flex-wrap:wrap;">
+          <span class="font-medium">{{ r.name }}</span>
+          <span class="mono text-xs" style="color:var(--muted);">{{ r.delivered_at.strftime('%Y-%m-%d %H:%M') }}</span>
+          {% if r.read_at %}
+            <span class="tag tag--c is-ok"><span class="dot"></span>read {{ r.read_at.strftime('%Y-%m-%d %H:%M') }}</span>
+          {% else %}
+            <span class="tag tag--c is-neutral"><span class="dot"></span>unread</span>
+          {% endif %}
+        </div>
+      {% else %}
+        <p class="empty">Nothing has been delivered for this product.</p>
+      {% endfor %}
+    </div>
+  </section>
+{% endif %}
+
+{% endblock %}

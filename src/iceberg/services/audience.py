@@ -9,7 +9,14 @@ from typing import TYPE_CHECKING
 from fastapi import HTTPException, status
 from sqlmodel import Session, col, select
 
-from ..models import AudienceGroup, AuditCategory, Report, ReportAudienceGroup, User
+from ..models import (
+    AudienceGroup,
+    AuditAction,
+    AuditCategory,
+    Report,
+    ReportAudienceGroup,
+    User,
+)
 from . import audit
 
 if TYPE_CHECKING:  # avoid importing framework types at runtime for services
@@ -78,7 +85,7 @@ def set_report_audience(
         audit.record_and_emit(
             session,
             background_tasks=background_tasks,
-            action="AUDIENCE_SCOPE_UPDATED",
+            action=AuditAction.AUDIENCE_SCOPE_UPDATED,
             category=AuditCategory.ADMIN,
             actor=actor,
             request=request,

@@ -146,3 +146,10 @@ _.decided_by_id  # SQLModel persisted attribute (src/iceberg/services/feed_indic
 # /admin Settings-hub tile fields — read only in templates/admin_home.html.
 tone  # unused variable (src/iceberg/services/effective_config.py)
 meta  # unused variable (src/iceberg/services/effective_config.py)
+
+# Versioned dissemination-policy provenance + the recipient-decision organisation
+# field — persisted by the ORM / read only in report_audience.html (#308).
+created_by_id  # unused variable (src/iceberg/models.py)
+approved_by_id  # unused variable (src/iceberg/models.py)
+_.approved_by_id  # SQLModel persisted attribute (src/iceberg/services/audience_policy.py)
+organisation  # unused variable (src/iceberg/services/audience_policy.py)

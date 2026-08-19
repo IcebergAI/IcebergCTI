@@ -361,6 +361,12 @@ class AuditAction(StrEnum):
     MISP_SETTINGS_UPDATED = "MISP_SETTINGS_UPDATED"
     MISP_TEST = "MISP_TEST"
     MISP_PUSHED = "MISP_PUSHED"
+    # Audience scope + dissemination policy (admin / publisher)
+    AUDIENCE_SCOPE_UPDATED = "AUDIENCE_SCOPE_UPDATED"
+    AUDIENCE_POLICY_CREATED = "AUDIENCE_POLICY_CREATED"
+    AUDIENCE_POLICY_VERSION_CREATED = "AUDIENCE_POLICY_VERSION_CREATED"
+    AUDIENCE_POLICY_APPROVED = "AUDIENCE_POLICY_APPROVED"
+    AUDIENCE_POLICY_RETIRED = "AUDIENCE_POLICY_RETIRED"
     # Publication webhook configuration (admin)
     WEBHOOK_SETTINGS_UPDATED = "WEBHOOK_SETTINGS_UPDATED"
     WEBHOOK_TEST = "WEBHOOK_TEST"
@@ -1193,6 +1199,78 @@ class DisseminationEvent(SQLModel, table=True):
     read_at: datetime | None = Field(default=None)
 
     report: Report = Relationship(back_populates="dissemination_events")
+
+
+class DisseminationPolicy(SQLModel, table=True):
+    """A named, versioned dissemination policy (#308).
+
+    The policy itself is only an identity + description; every rule set lives on
+    an immutable :class:`DisseminationPolicyVersion`, so a publication can name
+    the exact bytes that decided its recipients.
+    """
+
+    __table_args__ = (
+        UniqueConstraint("slug", name="uq_dissemination_policy_slug"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    name: str
+    slug: str = Field(index=True)
+    description: str = ""
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+    versions: list["DisseminationPolicyVersion"] = Relationship(
+        back_populates="policy", cascade_delete=True
+    )
+
+
+class DisseminationPolicyVersion(SQLModel, table=True):
+    """One immutable-once-approved rule set of a :class:`DisseminationPolicy`.
+
+    ``rules`` is a validated JSON list. Every rule can only *remove* recipients
+    from the set the report's own authorization and marking already allow, so a
+    policy can never broaden access (see ``services/audience_policy.py``).
+
+    A version applies to a publication when it is approved and the publication
+    time falls inside ``[effective_from, effective_to)``; editing a rule set
+    means creating the next version, never rewriting an approved one.
+    """
+
+    __table_args__ = (
+        UniqueConstraint(
+            "policy_id", "version", name="uq_dissemination_policy_version"
+        ),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    policy_id: int = Field(
+        foreign_key="disseminationpolicy.id", ondelete="CASCADE", index=True
+    )
+    version: int = Field(default=1)
+    note: str = ""
+    rules: list = Field(
+        default_factory=list,
+        sa_column=Column(JSON, nullable=False, server_default="[]"),
+    )
+    effective_from: datetime | None = Field(default=None)
+    effective_to: datetime | None = Field(default=None)
+    created_at: datetime = Field(default_factory=utcnow)
+    created_by_id: int | None = Field(
+        default=None, foreign_key="user.id", ondelete="SET NULL"
+    )
+    approved_at: datetime | None = Field(default=None)
+    approved_by_id: int | None = Field(
+        default=None, foreign_key="user.id", ondelete="SET NULL"
+    )
+
+    policy: DisseminationPolicy = Relationship(back_populates="versions")
+
+    @property
+    def label(self) -> str:
+        """Stable human/machine reference recorded on a publication."""
+
+        return f"{self.policy.slug}@v{self.version}"
 
 
 class ReportMispEvent(SQLModel, table=True):
