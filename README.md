@@ -340,11 +340,33 @@ per attribute that maps into Iceberg's supported indicator types.
 ### Export and relate products
 Published reports can be exported as STIX 2.1 bundles with `GET /api/reports/{id}/stix`.
 The export maps the report plus controlled taxonomy tags into STIX report, threat-actor,
-malware, campaign, attack-pattern and sector identity objects. The same published-report
-objects are available through a read-only TAXII-shaped collection rooted at
-`GET /api/taxii2/` (`published-reports`: collections, manifest and objects), access-scoped
-like report reads and supporting incremental pull filters (`added_after`, `limit`, `next`,
-`match[type]`, `match[id]`). `GET /api/reports/{id}/related`
+malware, campaign, attack-pattern and sector identity objects, and adds:
+
+- **relationship objects** — `attributed-to`, from an entity to the sponsor recorded on its
+  profile. Entities merely classified on the same product are *not* related to each other by
+  the export: co-occurrence is not a recorded claim, so it travels as the report's
+  `object_refs` and a warning says no relationship was inferred;
+- **external references** — a resolvable link back to the report and to each entity profile,
+  and the MITRE technique page (plus `kill_chain_phases`) for ATT&CK terms;
+- **markings** — the product's TLP as the well-known STIX marking definition, carried in
+  `object_marking_refs` on every object the product derives. TLP 2.0's `CLEAR` and
+  `AMBER+STRICT` have no STIX equivalent, so they export as the nearest marking that is
+  **never less restrictive** (`AMBER+STRICT` as TLP:RED, since STIX `amber` would permit
+  onward sharing), with the exact label preserved as a statement marking.
+
+Nothing Iceberg models more precisely than STIX is dropped silently. Every approximation
+produces a warning that is both machine-readable and readable by a person:
+`GET /api/reports/{id}/stix/conformance` lists them (with the object counts and the fields
+declared round-trip safe), and the bundle response points at it via an
+`X-Iceberg-Stix-Warning-Count` header and a `Link: …; rel="describedby"`.
+
+The same published-report objects are available through a read-only TAXII-shaped collection
+rooted at `GET /api/taxii2/` (`published-reports`: collections, manifest, objects and
+`objects/{id}/versions/`), access-scoped like report reads and supporting incremental pull
+filters (`added_after`, `limit`, `next`, `match[type]`, `match[id]`, `match[version]`,
+`match[spec_version]`). Published products are immutable, so each served object has exactly
+one version: `first`, `last` and `all` all select it, and an explicit timestamp selects it
+only when it is that version. `GET /api/reports/{id}/related`
 returns access-scoped related products from a rebuildable local vector table; rebuild it with
 `iceberg-rebuild-related`. The report view exposes both the STIX download and related-product
 panel when related products exist.

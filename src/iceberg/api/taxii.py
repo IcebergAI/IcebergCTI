@@ -66,6 +66,25 @@ def _taxii_query(
             ),
         ),
     ] = None,
+    match_versions: Annotated[
+        list[str] | None,
+        Query(
+            alias="match[version]",
+            description=(
+                "Filter by object version: first, last, all, or an exact "
+                "modified timestamp. Published products are immutable, so each "
+                "served object has exactly one version and every keyword "
+                "selects it."
+            ),
+        ),
+    ] = None,
+    match_spec_versions: Annotated[
+        list[str] | None,
+        Query(
+            alias="match[spec_version]",
+            description="Filter by STIX spec version. Everything served is 2.1.",
+        ),
+    ] = None,
 ) -> taxii_service.TaxiiQuery:
     return taxii_service.build_query(
         added_after=added_after,
@@ -73,6 +92,8 @@ def _taxii_query(
         next_token=next_token,
         match_types=match_types,
         match_ids=match_ids,
+        match_versions=match_versions,
+        match_spec_versions=match_spec_versions,
     )
 
 
@@ -120,4 +141,13 @@ def object_by_id(
 ):
     return _taxii_response(
         taxii_service.object_by_id(session, user, collection_id, object_id)
+    )
+
+
+@router.get("/collections/{collection_id}/objects/{object_id}/versions/")
+def object_versions(
+    collection_id: str, object_id: str, session: SessionDep, user: CurrentUser
+):
+    return _taxii_response(
+        taxii_service.object_versions(session, user, collection_id, object_id)
     )
