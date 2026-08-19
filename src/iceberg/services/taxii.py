@@ -242,7 +242,9 @@ def _report_object(bundle: dict) -> dict:
     raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "STIX report object missing")
 
 
-def _visible_object_records(session: Session, user: User) -> list[_ObjectRecord]:
+def _visible_object_records(
+    session: Session, user: User, *, unique: bool = True
+) -> list[_ObjectRecord]:
     records: list[_ObjectRecord] = []
     for report in visible_published_reports(session, user):
         bundle = _cached_bundle(report)
@@ -264,6 +266,12 @@ def _visible_object_records(session: Session, user: User) -> list[_ObjectRecord]
                     )
                 )
     records.sort(key=lambda record: (record.date_added, record.object_id))
+    if not unique:
+        return records
+    # Serving dedupes to the earliest record per id, which only ever collapses
+    # the objects every bundle repeats verbatim (the producer identity and the
+    # marking definitions). Report-derived ids are scoped to their report, so
+    # nothing report-specific is dropped here.
     by_id: dict[str, _ObjectRecord] = {}
     for record in records:
         by_id.setdefault(record.object_id, record)
@@ -329,13 +337,27 @@ def _matches_spec_version(record: _ObjectRecord, wanted: tuple[str, ...]) -> boo
 def object_versions(
     session: Session, user: User, collection_id: str, object_id: str
 ) -> dict:
-    """TAXII ``/objects/{id}/versions/`` — the versions held for one object."""
+    """TAXII ``/objects/{id}/versions/`` — every version held for one object.
+
+    Report-derived objects are scoped to their report, so in practice an id has
+    one version; the shared objects (the producer identity, the TLP and
+    statement markings) are byte-identical wherever they appear. This still
+    collects across every visible record rather than returning the first match:
+    "the versions we hold" must not silently mean "the first one we found".
+    """
 
     _ensure_collection(collection_id)
-    for record in _visible_object_records(session, user):
-        if record.object_id == object_id:
-            return {"versions": [record.version], "more": False}
-    raise HTTPException(status.HTTP_404_NOT_FOUND, "STIX object not found")
+    versions = sorted(
+        {
+            record.version
+            for record in _visible_object_records(session, user, unique=False)
+            if record.object_id == object_id
+        },
+        reverse=True,
+    )
+    if not versions:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "STIX object not found")
+    return {"versions": versions, "more": False}
 
 
 def _envelope(objects: list[dict], *, more: bool, next_token: str | None) -> dict:

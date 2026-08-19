@@ -342,14 +342,17 @@ Published reports can be exported as STIX 2.1 bundles with `GET /api/reports/{id
 The export maps the report plus controlled taxonomy tags into STIX report, threat-actor,
 malware, campaign, attack-pattern and sector identity objects, and adds:
 
-- **relationship objects** — `uses` / `targets` between entities the same finished product
-  classifies, and `attributed-to` from an entity to the sponsor recorded on its profile;
+- **relationship objects** — `attributed-to`, from an entity to the sponsor recorded on its
+  profile. Entities merely classified on the same product are *not* related to each other by
+  the export: co-occurrence is not a recorded claim, so it travels as the report's
+  `object_refs` and a warning says no relationship was inferred;
 - **external references** — a resolvable link back to the report and to each entity profile,
   and the MITRE technique page (plus `kill_chain_phases`) for ATT&CK terms;
 - **markings** — the product's TLP as the well-known STIX marking definition, carried in
-  `object_marking_refs` on every object in the bundle. TLP 2.0's `CLEAR` and `AMBER+STRICT`
-  have no STIX equivalent, so they export as the nearest marking that is **never less
-  restrictive**, with the exact label preserved as a statement marking.
+  `object_marking_refs` on every object the product derives. TLP 2.0's `CLEAR` and
+  `AMBER+STRICT` have no STIX equivalent, so they export as the nearest marking that is
+  **never less restrictive** (`AMBER+STRICT` as TLP:RED, since STIX `amber` would permit
+  onward sharing), with the exact label preserved as a statement marking.
 
 Nothing Iceberg models more precisely than STIX is dropped silently. Every approximation
 produces a warning that is both machine-readable and readable by a person:

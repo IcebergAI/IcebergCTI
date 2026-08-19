@@ -46,11 +46,19 @@ _TLP_MARKINGS = {
 # TLP 2.0 (what Iceberg marks with) → the STIX 2.1 TLP marking. CLEAR and
 # AMBER+STRICT have no STIX equivalent; each maps to the nearest marking that is
 # **not less restrictive** and reports the loss.
+#
+# AMBER+STRICT limits distribution to the recipient organization; STIX TLP:AMBER
+# permits onward sharing with the recipient's clients, so it is *less*
+# restrictive and cannot carry AMBER+STRICT. The nearest marking that is not
+# less restrictive is TLP:RED. Over-restricting is a survivable loss of reach;
+# under-restricting is a released control, and the statement marking that
+# preserves the exact label is advisory — a consumer enforcing only
+# ``object_marking_refs`` never sees it.
 _TLP_TO_STIX = {
     TLP.CLEAR: ("white", True),
     TLP.GREEN: ("green", False),
     TLP.AMBER: ("amber", False),
-    TLP.AMBER_STRICT: ("amber", True),
+    TLP.AMBER_STRICT: ("red", True),
     TLP.RED: ("red", False),
 }
 
@@ -186,8 +194,10 @@ def _markings(report: Report) -> tuple[list[dict], list[str], list[ExportWarning
                 code="tlp_not_representable",
                 message=(
                     f"{tlp_label(tlp)} has no STIX 2.1 TLP marking; exported as "
-                    f"TLP:{level.upper()} (never less restrictive) with the exact "
-                    "marking carried as a statement marking and an iceberg:tlp label"
+                    f"TLP:{level.upper()}, the nearest marking that is never less "
+                    "restrictive — a consumer honouring only the TLP marking will "
+                    "treat this product as more closed than it is. The exact "
+                    "marking travels as a statement marking and an iceberg:tlp label"
                 ),
                 field="report.tlp",
             )
@@ -316,7 +326,7 @@ def _motivations(tag: Tag) -> tuple[dict, list[ExportWarning]]:
     return fields, warnings
 
 
-def _object_for_tag(tag: Tag) -> tuple[dict | None, list[ExportWarning]]:
+def _object_for_tag(tag: Tag, *, scope: str) -> tuple[dict | None, list[ExportWarning]]:
     kind = TagKind(tag.kind)
     warnings: list[ExportWarning] = []
     common: dict = {
@@ -342,7 +352,7 @@ def _object_for_tag(tag: Tag) -> tuple[dict | None, list[ExportWarning]]:
         warnings.extend(seen_warnings)
         obj = {
             "type": stix_type,
-            "id": _stix_id(stix_type, f"tag:{tag.id}"),
+            "id": _stix_id(stix_type, f"{scope}|tag:{tag.id}"),
             "external_references": [entity_ref],
             **({"aliases": tag.aliases} if tag.aliases else {}),
             **seen,
@@ -415,18 +425,16 @@ def _object_for_tag(tag: Tag) -> tuple[dict | None, list[ExportWarning]]:
 # --------------------------------------------------------------------------- #
 # Relationships
 # --------------------------------------------------------------------------- #
-# Which co-occurring entity kinds a finished product asserts a relationship
-# between. Both ends must appear on the same report, so every SRO is evidenced
-# by the product itself rather than inferred across the library.
-_COOCCURRENCE = (
-    ("threat-actor", "uses", "malware"),
-    ("threat-actor", "uses", "attack-pattern"),
-    ("campaign", "uses", "malware"),
-    ("campaign", "uses", "attack-pattern"),
-    ("malware", "uses", "attack-pattern"),
-    ("threat-actor", "targets", "identity"),
-    ("campaign", "targets", "identity"),
-    ("malware", "targets", "identity"),
+# A relationship SRO is a semantic claim — "this actor uses that malware" — and
+# Iceberg records no such claim. Two entities classified on one product is
+# co-occurrence, not evidence: a report may discuss an actor and a malware
+# family that have nothing to do with each other. Emitting `uses`/`targets` from
+# co-occurrence would invent assertions the analyst never made, so the only SRO
+# exported is `attributed-to`, which comes from an explicit field on the entity
+# profile. The co-occurring set still travels — as the report's `object_refs`,
+# which says these entities appear together and claims nothing more.
+_RELATABLE_TYPES = frozenset(
+    {"threat-actor", "campaign", "malware", "attack-pattern", "identity"}
 )
 
 
@@ -436,8 +444,9 @@ def _relationship(
     return {
         "type": "relationship",
         "spec_version": _SPEC,
-        # Keyed on the two endpoints and the verb, so the same assertion between
-        # the same entities is the same object in every export.
+        # Keyed on the two endpoints and the verb. Both endpoints are already
+        # scoped to the report they were exported from, so re-exporting one
+        # report yields the same id while two reports never collide.
         "id": _stix_id("relationship", f"{source['id']}|{kind}|{target['id']}"),
         "created": created,
         "modified": modified,
@@ -449,7 +458,7 @@ def _relationship(
 
 
 def _attribution_objects(
-    tag: Tag, subject: dict, *, created: str, modified: str
+    tag: Tag, subject: dict, *, scope: str, created: str, modified: str
 ) -> tuple[list[dict], list[ExportWarning]]:
     """``Tag.suspected_attribution`` is an explicit analyst statement, so it
     becomes a real ``attributed-to`` relationship to a named identity."""
@@ -464,7 +473,7 @@ def _attribution_objects(
     identity = {
         "type": "identity",
         "spec_version": _SPEC,
-        "id": _stix_id("identity", f"attribution:{sponsor.casefold()}"),
+        "id": _stix_id("identity", f"{scope}|attribution:{sponsor.casefold()}"),
         "created": created,
         "modified": modified,
         "name": sponsor,
@@ -514,9 +523,17 @@ def report_export(report: Report) -> StixExport:
     )
     created_text, modified_text = _ts(report.created_at), _ts(modified)
 
+    # Every object a report derives is scoped to that report, so one id always
+    # identifies one representation: the same entity exported from two products
+    # under different markings is two objects, not one object whose content
+    # depends on which bundle you fetched. Consumers correlate across products
+    # on ``name``/``aliases`` and the ``iceberg`` external reference, which carry
+    # the taxonomy id.
+    scope = f"report:{report.id}"
+
     mapped: list[tuple[Tag, dict]] = []
     for tag in report.tags:
-        obj, tag_warnings = _object_for_tag(tag)
+        obj, tag_warnings = _object_for_tag(tag, scope=scope)
         warnings.extend(tag_warnings)
         if obj is not None:
             mapped.append((tag, obj))
@@ -525,45 +542,28 @@ def report_export(report: Report) -> StixExport:
     extra_objects: list[dict] = []
     for tag, obj in mapped:
         objects, attribution_warnings = _attribution_objects(
-            tag, obj, created=created_text, modified=modified_text
+            tag, obj, scope=scope, created=created_text, modified=modified_text
         )
         extra_objects.extend(objects)
         warnings.extend(attribution_warnings)
 
-    by_type: dict[str, list[dict]] = {}
-    for obj in tag_objects:
-        by_type.setdefault(obj["type"], []).append(obj)
-    cooccurrence: list[dict] = []
-    for source_type, verb, target_type in _COOCCURRENCE:
-        for source in by_type.get(source_type, []):
-            for target in by_type.get(target_type, []):
-                cooccurrence.append(
-                    _relationship(
-                        source,
-                        verb,
-                        target,
-                        created=created_text,
-                        modified=modified_text,
-                        description=(
-                            f"Asserted by the finished product '{report.title}', which "
-                            f"classifies both '{source['name']}' and '{target['name']}'."
-                        ),
-                    )
-                )
-    if cooccurrence:
+    relatable = [obj for obj in tag_objects if obj["type"] in _RELATABLE_TYPES]
+    if len(relatable) > 1:
         warnings.append(
             ExportWarning(
-                code="relationship_asserted_by_product",
+                code="relationship_not_inferred",
                 message=(
-                    f"{len(cooccurrence)} relationship object(s) are asserted by this "
-                    "product classifying both entities together, not by a separately "
-                    "recorded link between them"
+                    f"{len(relatable)} entities are classified on this product. "
+                    "Appearing on the same product is not a recorded link between "
+                    "them, so no uses/targets relationship is exported; they travel "
+                    "as the report's object_refs. Only an attribution recorded on an "
+                    "entity profile becomes a relationship"
                 ),
                 field="report.tags",
             )
         )
 
-    referenced = [*tag_objects, *extra_objects, *cooccurrence, producer]
+    referenced = [*tag_objects, *extra_objects, producer]
     report_obj: dict = {
         "type": "report",
         "spec_version": _SPEC,
@@ -597,8 +597,12 @@ def report_export(report: Report) -> StixExport:
         obj["created_by_ref"] = producer["id"]
         obj["object_marking_refs"] = list(marking_refs)
     # The producer identity is the ``created_by_ref`` of everything else, so it
-    # cannot name itself.
+    # cannot name itself. It is also the one object shared verbatim by every
+    # bundle — the deployment that produced them, not product content — so it
+    # carries no report marking either: stamping one product's TLP on it would
+    # give the same id different content in the next product's bundle.
     producer.pop("created_by_ref", None)
+    producer.pop("object_marking_refs", None)
 
     bundle = {
         "type": "bundle",
