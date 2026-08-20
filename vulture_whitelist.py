@@ -157,3 +157,8 @@ organisation  # unused variable (src/iceberg/services/audience_policy.py)
 # Programme-measure catalogue fields — rendered in templates/measures.html and
 # exported to CSV rather than referenced by name in Python (#310).
 definition  # unused variable (src/iceberg/services/program_measures.py)
+
+# Editorial-thread resolution provenance — persisted by the ORM and rendered in
+# templates/report_view.html rather than read back in Python (#306).
+resolved_by_id  # unused variable (src/iceberg/models.py)
+_.resolved_by_id  # SQLModel persisted attribute (src/iceberg/services/comments.py)

@@ -252,10 +252,18 @@ def publish(
     """
 
     from ..models import AuditCategory, AuditSeverity, Role, utcnow
-    from . import audience_policy, audit, dissemination, jobs, storage
+    from . import audience_policy, audit, comments, dissemination, jobs, storage
 
     if ReportStatus(report.status) is not ReportStatus.APPROVED:
         raise PublicationConflict("Report must be approved before publication")
+    # An unresolved blocking review thread is an open editorial decision; the
+    # deployment can choose whether that stops publication (#306).
+    blocking = comments.publication_blocked_by(session, report)
+    if blocking:
+        raise PublicationConflict(
+            f"{len(blocking)} blocking review thread(s) are still open — resolve or "
+            "reject them before publishing"
+        )
     if actor.role not in {Role.REVIEWER, Role.ADMIN}:
         raise PermissionError("Reviewer or admin role required for publication")
 
