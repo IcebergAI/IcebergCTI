@@ -60,6 +60,24 @@ def test_the_snapshot_script_takes_the_suite_from_the_image():
     archive = re.search(r'^base="([^"]+)"', body, re.M)
     assert archive, "the script must define the snapshot archive base URL"
     assert urlparse(archive.group(1)).hostname == "snapshot.debian.org"
+
+
+def test_the_snapshot_archive_is_fetched_over_a_bound_transport():
+    """The timestamp is only trustworthy if the transport authenticates it.
+
+    APT's signatures prove Debian published a Release set, not *which* one, and
+    a snapshot must disable Check-Valid-Until (its Release is stale by design),
+    which is the control that would otherwise catch a replay. TLS is what binds
+    the answer to the snapshot that was asked for, so http here would let a
+    network attacker serve a validly signed older archive state and leave the
+    image with packages the pinned timestamp does not describe.
+    """
+
+    body = SNAPSHOT_SCRIPT.read_text()
+    archive = re.search(r'^base="([^"]+)"', body, re.M)
+    assert archive, "the script must define the snapshot archive base URL"
+    assert urlparse(archive.group(1)).scheme == "https"
+    assert "http://snapshot.debian.org" not in body
     # A snapshot's Release file is older than apt's freshness window by design.
     assert 'Acquire::Check-Valid-Until "false"' in body
     assert SNAPSHOT_SCRIPT.stat().st_mode & 0o111, "the script must be executable"
@@ -69,3 +87,52 @@ def test_the_built_image_records_which_snapshot_it_came_from():
     """`docker inspect` should answer this without the source tree."""
 
     assert 'LABEL io.iceberg.apt-snapshot="${APT_SNAPSHOT}"' in DOCKERFILE
+
+
+CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
+
+# Copied into the image but unable to change whether the build or the image scan
+# succeeds, so the docker job is not worth running for an edit to it.
+BUILD_FILTER_EXEMPT = {"README.md"}
+
+
+def _build_affecting_pattern() -> str:
+    match = re.search(r"grep -qE '\^\((.+?)\)'", CI_WORKFLOW.read_text())
+    assert match, "the CI docker filter must be a single anchored grep pattern"
+    return match.group(1)
+
+
+def _copy_sources() -> list[str]:
+    """Host paths the Dockerfile copies in, excluding stage/image copies."""
+
+    sources = []
+    for line in DOCKERFILE.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("COPY ") or "--from=" in stripped:
+            continue
+        # The final token is the destination inside the image.
+        sources.extend(stripped.split()[1:-1])
+    return sources
+
+
+def test_ci_builds_the_image_when_any_copied_input_changes():
+    """A build input CI does not watch is an input that ships unbuilt.
+
+    `docker/apt-snapshot.sh` was exactly that: added with the snapshot pin,
+    executed before every apt-get in both stages, and absent from the filter —
+    so editing the script skipped the only job that builds the image.
+    """
+
+    pattern = re.compile(f"^({_build_affecting_pattern()})")
+    for source in _copy_sources():
+        if source in BUILD_FILTER_EXEMPT:
+            continue
+        path = ROOT / source
+        # A directory changes via the files under it, so test a real member.
+        if path.is_dir():
+            member = next((p for p in sorted(path.rglob("*.py")) if p.is_file()), None)
+            assert member, f"no representative file under {source}"
+            source = str(member.relative_to(ROOT))
+        assert pattern.match(source), (
+            f"{source} is copied into the image but CI would not rebuild it"
+        )
