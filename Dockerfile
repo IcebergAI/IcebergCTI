@@ -1,5 +1,24 @@
 # syntax=docker/dockerfile:1
 # ---------------------------------------------------------------------------- #
+# Every input to this image is pinned: the base digests, the uv digest, the
+# Typst tarball checksum — and the Debian package set, via APT_SNAPSHOT below.
+#
+# `apt-get upgrade` against the live mirror was the one unpinned input: it
+# applies whatever Debian has published at build time, so two builds of the same
+# commit could differ (#324). Pointing APT at snapshot.debian.org makes the
+# upgrade a function of a timestamp instead: same commit, same packages, while
+# still picking up security fixes the base digest predates (which is why the
+# upgrade is here at all — the Trivy gate fails on *fixable* HIGH/CRITICAL, i.e.
+# exactly the window between Debian publishing a fix and docker-library
+# rebuilding the base).
+#
+# Bump APT_SNAPSHOT the way the digests are bumped: deliberately, in a commit,
+# when a fix is needed. `docker build --build-arg APT_SNAPSHOT=...` overrides it
+# for a one-off test without editing the file.
+# ---------------------------------------------------------------------------- #
+ARG APT_SNAPSHOT=20260819T000000Z
+
+# ---------------------------------------------------------------------------- #
 # Builder: resolve the *locked* dependency graph (uv.lock) into a venv and fetch
 # the Typst binary. Build-only tooling (uv, curl, xz) stays out of the runtime.
 # ---------------------------------------------------------------------------- #
@@ -31,7 +50,10 @@ COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
 RUN uv sync --frozen --no-dev --extra postgres --extra object-storage
 
+ARG APT_SNAPSHOT
+COPY docker/apt-snapshot.sh /usr/local/bin/apt-snapshot
 RUN set -eux; \
+    /usr/local/bin/apt-snapshot "$APT_SNAPSHOT"; \
     apt-get update; \
     apt-get install -y --no-install-recommends curl xz-utils ca-certificates; \
     arch="$(dpkg --print-architecture)"; \
@@ -79,20 +101,34 @@ ENV FORWARDED_ALLOW_IPS="127.0.0.1"
 # though pip is never executed here — same "build-only tooling stays out of the
 # runtime" rule as uv/curl/xz above.
 #
-# `apt-get upgrade` applies Debian security updates that the pinned base predates.
-# The digest pin is what makes the build reproducible and auditable, but it also
-# freezes the base's package versions until docker-library rebuilds it — and the
-# Trivy gate fails on *fixable* HIGH/CRITICAL, i.e. exactly the window between
-# Debian publishing a fix and that rebuild landing. CVE-2026-53615 (util-linux,
-# 9 fixable HIGH) sat in that window and turned every PR red. Upgrading here
-# closes it without waiting on upstream cadence; Dependabot still bumps the pin.
-RUN apt-get update \
-    && apt-get upgrade -y --no-install-recommends \
-    && apt-get install -y --no-install-recommends ca-certificates \
-    && rm -rf /var/lib/apt/lists/* \
-    && rm -rf /usr/local/lib/python3.14/site-packages/pip* \
-              /usr/local/lib/python3.14/ensurepip \
-              /usr/local/bin/pip*
+# `apt-get upgrade` applies Debian security updates that the pinned base
+# predates: the digest freezes the base's package versions until docker-library
+# rebuilds it, and the Trivy gate fails on *fixable* HIGH/CRITICAL — exactly the
+# window between Debian publishing a fix and that rebuild landing. CVE-2026-53615
+# (util-linux, 9 fixable HIGH) sat in that window and turned every PR red.
+#
+# The upgrade reads from the APT_SNAPSHOT archive, so it is deterministic: this
+# commit always produces this package set, and moving to a newer one is a commit
+# that changes the timestamp rather than a silent difference between two builds.
+ARG APT_SNAPSHOT
+COPY docker/apt-snapshot.sh /usr/local/bin/apt-snapshot
+RUN set -eux; \
+    /usr/local/bin/apt-snapshot "$APT_SNAPSHOT"; \
+    apt-get update; \
+    apt-get upgrade -y --no-install-recommends; \
+    apt-get install -y --no-install-recommends ca-certificates; \
+    rm -f /usr/local/bin/apt-snapshot; \
+    rm -rf /var/lib/apt/lists/*; \
+    rm -rf /usr/local/lib/python3.14/site-packages/pip* \
+           /usr/local/lib/python3.14/ensurepip \
+           /usr/local/bin/pip*
+
+# Record the pin on the image itself, so `docker inspect` answers "which package
+# set is this?" without the Dockerfile. The snapshot sources are left in place
+# deliberately — they are the honest record of where these packages came from,
+# and nothing installs packages in this image anyway (pip is removed above and
+# the process runs unprivileged).
+LABEL io.iceberg.apt-snapshot="${APT_SNAPSHOT}"
 
 WORKDIR /app
 COPY --from=builder /usr/local/bin/typst /usr/local/bin/typst
