@@ -310,6 +310,27 @@ def _evidence_json(reference, session=None) -> dict:
     }
 
 
+async def _read_bounded_body(request: Request) -> bytes:
+    """Read at most one envelope's worth of request body, then stop.
+
+    A declared Content-Length over the cap is refused without reading anything;
+    otherwise chunks are counted as they arrive and the read is abandoned as
+    soon as the cap is passed, so a large body costs the cap rather than its own
+    size. This mirrors ``BodySizeLimitMiddleware``, which does the same for the
+    global limit.
+    """
+
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > evidence.MAX_ENVELOPE_BYTES:
+        raise evidence.EvidenceError(evidence.oversized_message(int(declared)))
+    chunks = bytearray()
+    async for chunk in request.stream():
+        chunks.extend(chunk)
+        if len(chunks) > evidence.MAX_ENVELOPE_BYTES:
+            raise evidence.EvidenceError(evidence.oversized_message(len(chunks)))
+    return bytes(chunks)
+
+
 @router.post("/{notebook_id}/evidence")
 async def receive_evidence(
     notebook_id: int,
@@ -329,9 +350,12 @@ async def receive_evidence(
     """
 
     notebook = _get_notebook(session, notebook_id)
-    # Bound the body before parsing it: the envelope is a reference, and a
-    # reference that needs more than the cap is not one.
-    body = evidence.decode_envelope(await request.body())
+    # Bound the body *while* reading it: the envelope is a reference, and a
+    # reference that needs more than the cap is not one. Reading it whole and
+    # then measuring would still pull everything the global body limit allows
+    # (ICEBERG_MAX_BODY_MB, orders of magnitude above this cap) into memory
+    # before answering 422.
+    body = evidence.decode_envelope(await _read_bounded_body(request))
     result = evidence.intake(session, notebook, body, actor=user)
     if result.created:
         response.status_code = status.HTTP_201_CREATED
