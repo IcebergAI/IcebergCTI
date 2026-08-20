@@ -60,6 +60,24 @@ def test_the_snapshot_script_takes_the_suite_from_the_image():
     archive = re.search(r'^base="([^"]+)"', body, re.M)
     assert archive, "the script must define the snapshot archive base URL"
     assert urlparse(archive.group(1)).hostname == "snapshot.debian.org"
+
+
+def test_the_snapshot_archive_is_fetched_over_a_bound_transport():
+    """The timestamp is only trustworthy if the transport authenticates it.
+
+    APT's signatures prove Debian published a Release set, not *which* one, and
+    a snapshot must disable Check-Valid-Until (its Release is stale by design),
+    which is the control that would otherwise catch a replay. TLS is what binds
+    the answer to the snapshot that was asked for, so http here would let a
+    network attacker serve a validly signed older archive state and leave the
+    image with packages the pinned timestamp does not describe.
+    """
+
+    body = SNAPSHOT_SCRIPT.read_text()
+    archive = re.search(r'^base="([^"]+)"', body, re.M)
+    assert archive, "the script must define the snapshot archive base URL"
+    assert urlparse(archive.group(1)).scheme == "https"
+    assert "http://snapshot.debian.org" not in body
     # A snapshot's Release file is older than apt's freshness window by design.
     assert 'Acquire::Check-Valid-Until "false"' in body
     assert SNAPSHOT_SCRIPT.stat().st_mode & 0o111, "the script must be executable"
