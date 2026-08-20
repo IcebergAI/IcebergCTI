@@ -106,6 +106,15 @@ def _deep_link(envelope: dict) -> str:
     return link
 
 
+def oversized_message(size: int) -> str:
+    """One wording for the cap, whether it is hit while reading or after."""
+
+    return (
+        f"An evidence envelope is limited to {MAX_ENVELOPE_BYTES} bytes; this "
+        f"request body is {size} or more. Send a reference, not the evidence body"
+    )
+
+
 def decode_envelope(raw: bytes) -> dict:
     """Parse one envelope from the raw request body, bounded before parsing.
 
@@ -118,10 +127,7 @@ def decode_envelope(raw: bytes) -> dict:
     """
 
     if len(raw) > MAX_ENVELOPE_BYTES:
-        raise EvidenceError(
-            f"An evidence envelope is limited to {MAX_ENVELOPE_BYTES} bytes; this "
-            f"request body is {len(raw)}. Send a reference, not the evidence body"
-        )
+        raise EvidenceError(oversized_message(len(raw)))
     try:
         parsed = json.loads(raw or b"")
     except ValueError:
