@@ -809,7 +809,10 @@ the `APT_SNAPSHOT` timestamp at the top of the `Dockerfile`. The runtime stage s
 `apt-get upgrade` — the base digest freezes packages until docker-library rebuilds it, and the
 release scan fails on *fixable* HIGH/CRITICAL findings — but it reads from
 `snapshot.debian.org` at that timestamp rather than a live mirror, so the upgrade is a function
-of a pinned input rather than of the build date. Moving to a newer package set is a commit that
+of a pinned input rather than of the build date. The archive is fetched over HTTPS deliberately:
+APT's signatures prove Debian published a package set but not *which* one, and a snapshot has to
+disable APT's staleness check, so the transport is what binds the answer to the timestamp that was
+asked for. Moving to a newer package set is a commit that
 bumps `APT_SNAPSHOT`; `docker build --build-arg APT_SNAPSHOT=<timestamp>` tries one without
 editing the file.
 
