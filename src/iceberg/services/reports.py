@@ -45,6 +45,39 @@ from . import storage, storage_deletions
 # Authorization guards (shared by both the JSON API and the portal so the rules
 # can never drift between the two presentation layers).
 # --------------------------------------------------------------------------- #
+def stakeholder_visibility_clause(user_id: int):
+    """SQL form of :func:`ensure_visible`'s audience rule, for bulk queries.
+
+    An unscoped published product is visible to every stakeholder; a scoped one
+    needs an overlapping user/report audience group. Correlated ``EXISTS``
+    clauses keep it a filter rather than a join fan-out. Retrieval and reporting
+    both apply this so a restricted product cannot leak through an aggregate.
+    """
+
+    from sqlalchemy import or_
+
+    from ..models import ReportAudienceGroup, UserAudienceGroup
+
+    is_scoped = (
+        select(ReportAudienceGroup.report_id)
+        .where(ReportAudienceGroup.report_id == Report.id)
+        .exists()
+    )
+    has_matching_group = (
+        select(ReportAudienceGroup.report_id)
+        .join(
+            UserAudienceGroup,
+            UserAudienceGroup.group_id == ReportAudienceGroup.group_id,
+        )
+        .where(
+            ReportAudienceGroup.report_id == Report.id,
+            UserAudienceGroup.user_id == user_id,
+        )
+        .exists()
+    )
+    return or_(~is_scoped, has_matching_group)
+
+
 def ensure_visible(report: Report, user: User) -> Report:
     """Read access. Stakeholders (read-only consumers) may only see *published*
     reports; analysts/reviewers/admins see everything. Returns 404 rather than

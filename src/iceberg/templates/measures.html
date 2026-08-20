@@ -1,0 +1,247 @@
+{% extends "base.html" %}
+{% block title %}Program measures · {{ app_name }}{% endblock %}
+{% block crumb %}Program measures{% endblock %}
+{% block page_class %}page-wide{% endblock %}
+
+{% macro distbar(key, count, peak) %}
+  <div class="distbar">
+    <span class="distbar-key">{{ key }}</span>
+    <div class="distbar-track"><span style="width:{{ (100 * count / (peak or 1)) | round }}%"></span></div>
+    <span class="distbar-val">{{ count }}</span>
+  </div>
+{% endmacro %}
+
+{% macro pctbar(key, rate) %}
+  <div class="distbar">
+    <span class="distbar-key">{{ key }}</span>
+    <div class="distbar-track"><span style="width:{{ (100 * rate) | round }}%"></span></div>
+    <span class="distbar-val">{{ (100 * rate) | round }}%</span>
+  </div>
+{% endmacro %}
+
+{% macro suppressed_note(group) %}
+  <p class="empty">
+    Suppressed: fewer than {{ m.min_group }} stakeholders contributed
+    ({{ group.contributors }}), so showing this would risk identifying an individual response.
+  </p>
+{% endmacro %}
+
+{% block content %}
+{% set reqs = m.requirements %}
+{% set prods = m.products %}
+{% set reach = m.reach %}
+{% set fb = m.feedback %}
+
+<div class="head-row mb-5">
+  <div>
+    <div class="eyebrow eyebrow-accent">Analytics</div>
+    <h1 class="page-title mt-1">Program measures</h1>
+    <p class="text-sm mt-2" style="color:var(--muted);max-width:66ch;">
+      Aging requirements, unmet collection needs and stakeholder usefulness over time.
+      Aggregate only — there is nothing here about an individual analyst's output.
+      Every figure is computed from products you have access to.
+    </p>
+  </div>
+</div>
+
+<form method="get" action="/measures" class="flow mb-6" style="gap:10px;flex-wrap:wrap;align-items:end;">
+  <label class="field-wrap" style="margin:0;">
+    <span class="field-label">Window</span>
+    <select name="window" class="field" style="width:auto;">
+      {% for w in windows %}
+        <option value="{{ w }}" {% if m.window_days == w %}selected{% endif %}>
+          {{ 'All time' if w == 0 else 'Last ' ~ w ~ ' days' }}
+        </option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field-wrap" style="margin:0;">
+    <span class="field-label">Requirement kind</span>
+    <select name="kind" class="field" style="width:auto;">
+      <option value="">All kinds</option>
+      {% for k in kinds %}
+        <option value="{{ k.value }}" {% if selected_kind == k.value %}selected{% endif %}>{{ k.value }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button class="btn btn--ghost btn--sm">Apply</button>
+  <a class="btn btn--quiet btn--sm"
+     href="/measures/export.csv?window={{ m.window_days }}&amp;kind={{ selected_kind }}">Export CSV ↓</a>
+</form>
+
+<section class="stat-grid mb-7" aria-label="Headline measures">
+  <div class="stat">
+    <div class="stat-label">Outstanding requirements</div>
+    <div class="stat-row">
+      <span class="stat-num">{{ reqs.outstanding }}</span>
+      <span class="stat-delta">median {{ reqs.median_age_days }}d old</span>
+    </div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Neglected</div>
+    <div class="stat-row">
+      <span class="stat-num">{{ reqs.neglected_total }}</span>
+      <span class="stat-delta">no collection, no product</span>
+    </div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Product linkage</div>
+    <div class="stat-row">
+      <span class="stat-num">{{ (100 * prods.linkage_rate) | round }}%</span>
+      <span class="stat-delta">{{ prods.linked }}/{{ prods.published }} published</span>
+    </div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Feedback response</div>
+    <div class="stat-row">
+      <span class="stat-num">{{ (100 * fb.response_rate) | round }}%</span>
+      <span class="stat-delta">{{ fb.responses }} of {{ fb.deliveries }} deliveries</span>
+    </div>
+  </div>
+</section>
+
+<div class="grid lg:grid-cols-2 gap-6 mb-6">
+  <section class="card card-pad-lg">
+    <h2 class="section-title mb-1">Requirement age</h2>
+    <p class="text-xs mb-4" style="color:var(--muted);">Open and in-progress requirements, by how long they have been waiting.</p>
+    {% set peak = reqs.age_buckets.values() | max if reqs.age_buckets else 0 %}
+    {% for label, count in reqs.age_buckets.items() %}
+      {{ distbar(label, count, peak) }}
+    {% endfor %}
+    <h3 class="section-title mt-5 mb-2">Coverage</h3>
+    {{ pctbar('Tasked (linked notebook)', reqs.tasked_rate) }}
+    {{ pctbar('Sourced (collection produced material)', reqs.sourced_rate) }}
+  </section>
+
+  <section class="card card-pad-lg">
+    <h2 class="section-title mb-1">Neglected requirements</h2>
+    <p class="text-xs mb-4" style="color:var(--muted);">Nothing is collecting against these, and no product you can see addresses them.</p>
+    <div class="space-y-2">
+      {% for r in reqs.neglected %}
+        <div class="file-row" style="flex-wrap:wrap;">
+          <a class="btn-link" href="/requirements/{{ r.id }}">{{ r.title }}</a>
+          <span class="tag mono">{{ r.kind }}</span>
+          <span class="tag mono">{{ r.priority }}</span>
+          <span class="mono text-xs" style="color:var(--muted);">{{ r.age_days }}d</span>
+        </div>
+      {% else %}
+        <p class="empty">Every outstanding requirement has collection work or a product against it.</p>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+
+<div class="grid lg:grid-cols-2 gap-6 mb-6">
+  <section class="card card-pad-lg">
+    <h2 class="section-title mb-1">Declared collection gaps</h2>
+    <p class="text-xs mb-4" style="color:var(--muted);">
+      {{ (100 * prods.declared_gap_rate) | round }}% of published products in this window state their intelligence gaps.
+    </p>
+    <div class="space-y-3">
+      {% for gap in prods.declared_gaps %}
+        <div class="well card-pad">
+          <a class="btn-link" href="/reports/{{ gap.id }}">{{ gap.title }}</a>
+          <p class="text-xs mt-1" style="color:var(--muted);">{{ gap.gaps }}</p>
+        </div>
+      {% else %}
+        <p class="empty">No product in this window declares an intelligence gap.</p>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="card card-pad-lg">
+    <h2 class="section-title mb-1">Audience reach</h2>
+    <p class="text-xs mb-4" style="color:var(--muted);">Deliveries of products in this window, and how many were opened.</p>
+    <div class="stat-grid">
+      <div class="stat">
+        <div class="stat-label">Deliveries</div>
+        <div class="stat-value">{{ reach.deliveries }}</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Stakeholders reached</div>
+        <div class="stat-value">{{ reach.stakeholders_reached }}</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Read rate</div>
+        <div class="stat-value">{{ (100 * reach.read_rate) | round }}%</div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="grid lg:grid-cols-2 gap-6 mb-6">
+  <section class="card card-pad-lg">
+    <h2 class="section-title mb-1">Product usefulness</h2>
+    <p class="text-xs mb-4" style="color:var(--muted);">
+      Over the {{ fb.responses }} response{{ '' if fb.responses == 1 else 's' }} received — a delivery that
+      drew no response is not counted as a poor rating.
+    </p>
+    {% if fb.usefulness.suppressed %}
+      {{ suppressed_note(fb.usefulness) }}
+    {% else %}
+      {% set peak = fb.usefulness['values'].values() | max if fb.usefulness['values'] else 0 %}
+      {% for label, count in fb.usefulness['values'].items() %}
+        {{ distbar(label.replace('_', ' '), count, peak) }}
+      {% endfor %}
+    {% endif %}
+    <h3 class="section-title mt-5 mb-2">Requirement satisfaction</h3>
+    <p class="text-xs mb-2" style="color:var(--muted);">Over the {{ fb.verdicts }} response(s) that recorded a verdict.</p>
+    {% if fb.satisfaction_rate.suppressed %}
+      {{ suppressed_note(fb.satisfaction_rate) }}
+    {% else %}
+      {{ pctbar('Met', fb.satisfaction_rate.value) }}
+    {% endif %}
+  </section>
+
+  <section class="card card-pad-lg">
+    <h2 class="section-title mb-1">Usefulness trend</h2>
+    <p class="text-xs mb-4" style="color:var(--muted);">Useful-or-better share per month, over that month's responses.</p>
+    {% for month, group in fb.trend.items() %}
+      {% if group.suppressed %}
+        <div class="distbar">
+          <span class="distbar-key">{{ month }}</span>
+          <div class="distbar-track"></div>
+          <span class="distbar-val">suppressed</span>
+        </div>
+      {% else %}
+        {{ pctbar(month, group['values'].useful_rate) }}
+      {% endif %}
+    {% else %}
+      <p class="empty">No feedback in this window yet.</p>
+    {% endfor %}
+
+    <h3 class="section-title mt-5 mb-2">Feedback themes</h3>
+    {% if fb.themes.suppressed %}
+      {{ suppressed_note(fb.themes) }}
+    {% else %}
+      <div class="flow" style="flex-wrap:wrap;gap:6px;">
+        {% for word, count in fb.themes['values'].items() %}
+          <span class="tag mono">{{ word }} · {{ count }}</span>
+        {% else %}
+          <span class="empty">No comments in this window.</span>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </section>
+</div>
+
+<section class="card card-pad-lg">
+  <h2 class="section-title mb-1">What each measure means</h2>
+  <p class="text-xs mb-4" style="color:var(--muted);">
+    Every number above is defined here, with the records it is taken from.
+  </p>
+  <div class="space-y-3">
+    {% for d in m.definitions %}
+      <div class="well card-pad">
+        <div class="flow" style="gap:8px;flex-wrap:wrap;">
+          <span class="font-medium">{{ d.label }}</span>
+          <span class="mono text-xs" style="color:var(--faint);">{{ d.key }}</span>
+        </div>
+        <p class="text-xs mt-1" style="color:var(--muted);">{{ d.definition }}</p>
+        <p class="mono text-xs mt-1" style="color:var(--faint);">Source: {{ d.source }}</p>
+      </div>
+    {% endfor %}
+  </div>
+</section>
+
+{% endblock %}

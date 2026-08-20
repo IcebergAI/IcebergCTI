@@ -8,6 +8,7 @@ from fastapi import (
     HTTPException,
     Query,
     Request,
+    Response,
     status,
 )
 from sqlmodel import Session, select
@@ -20,6 +21,7 @@ from ..models import (
     IntelLevel,
     Motivation,
     ReportStatus,
+    RequirementKind,
     Role,
     Tag,
     TagKind,
@@ -31,6 +33,7 @@ from ..services import (
     audience as audience_service,
     audit,
     maturity as maturity_service,
+    program_measures,
     search as search_service,
     tags as tag_service,
 )
@@ -142,6 +145,64 @@ def maturity_view(request: Request, session: SessionDep, user: CurrentUser):
         "maturity.html",
         {"user": user, "m": maturity_service.program_maturity(session)},
     )
+
+
+@router.get("/measures")
+def measures_view(
+    request: Request,
+    session: SessionDep,
+    user: CurrentUser,
+    window: Annotated[int, Query()] = 90,
+    kind: Annotated[str, Query()] = "",
+):
+    """Writer-only programme measures (#310): requirement coverage, collection
+    gaps and product usefulness, aggregated — never per analyst."""
+
+    _require_writer(user)
+    selected_kind = _requirement_kind(kind)
+    return templates.TemplateResponse(
+        request,
+        "measures.html",
+        {
+            "user": user,
+            "m": program_measures.program_measures(
+                session, user=user, window_days=window, kind=selected_kind
+            ),
+            "windows": program_measures.WINDOWS,
+            "kinds": list(RequirementKind),
+            "selected_kind": kind if selected_kind else "",
+        },
+    )
+
+
+@router.get("/measures/export.csv")
+def measures_export(
+    session: SessionDep,
+    user: CurrentUser,
+    window: Annotated[int, Query()] = 90,
+    kind: Annotated[str, Query()] = "",
+):
+    """The same numbers as a CSV — including the suppressions, so the export is
+    not a way around the minimum-group control."""
+
+    _require_writer(user)
+    measures = program_measures.program_measures(
+        session, user=user, window_days=window, kind=_requirement_kind(kind)
+    )
+    return Response(
+        program_measures.export_csv(measures),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": 'attachment; filename="iceberg-program-measures.csv"'
+        },
+    )
+
+
+def _requirement_kind(value: str) -> RequirementKind | None:
+    try:
+        return RequirementKind(value)
+    except ValueError:
+        return None
 
 
 @router.get("/tags")

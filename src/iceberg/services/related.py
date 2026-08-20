@@ -24,21 +24,19 @@ import re
 from abc import ABC, abstractmethod
 from math import sqrt
 
-from sqlalchemy import or_
 from sqlmodel import Session, col, select
 
 from ..config import get_settings
 from ..models import (
     Report,
-    ReportAudienceGroup,
     ReportEmbedding,
     ReportStatus,
     Role,
     User,
-    UserAudienceGroup,
     utcnow,
 )
 from . import ai as ai_service
+from . import reports as reports_service
 
 
 # Local JSON vectors cannot be ranked by either supported database, so related
@@ -320,33 +318,6 @@ def index_health(session: Session) -> dict:
 # --------------------------------------------------------------------------- #
 # Retrieval
 # --------------------------------------------------------------------------- #
-def _stakeholder_audience_clause(user_id: int):
-    """SQL equivalent of ``reports.ensure_visible`` audience handling.
-
-    Unscoped published products are visible to every stakeholder. A scoped
-    product needs one overlapping user/report audience group.  Correlated
-    ``EXISTS`` clauses avoid loading either relationship for every candidate.
-    """
-    is_scoped = (
-        select(ReportAudienceGroup.report_id)
-        .where(ReportAudienceGroup.report_id == Report.id)
-        .exists()
-    )
-    has_matching_group = (
-        select(ReportAudienceGroup.report_id)
-        .join(
-            UserAudienceGroup,
-            UserAudienceGroup.group_id == ReportAudienceGroup.group_id,
-        )
-        .where(
-            ReportAudienceGroup.report_id == Report.id,
-            UserAudienceGroup.user_id == user_id,
-        )
-        .exists()
-    )
-    return or_(~is_scoped, has_matching_group)
-
-
 def _candidate_statement(report: Report, user: User, *, with_entries: bool):
     """Products this reader may see, capped to a stable window.
 
@@ -374,7 +345,9 @@ def _candidate_statement(report: Report, user: User, *, with_entries: bool):
     if user.role == Role.STAKEHOLDER:
         if user.id is None:
             return None
-        statement = statement.where(_stakeholder_audience_clause(user.id))
+        statement = statement.where(
+            reports_service.stakeholder_visibility_clause(user.id)
+        )
     return statement
 
 
