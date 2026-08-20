@@ -803,6 +803,16 @@ is normally delivered by an in-process pass right after commit; schedule **`iceb
 manager) to retry anything a crashed process left behind, and use `iceberg-worker --inspect`
 to review job state.
 
+The image is built from fully pinned inputs so the same commit produces the same bytes: base
+images and the `uv` binary by digest, the Typst tarball by SHA-256, and the Debian package set by
+the `APT_SNAPSHOT` timestamp at the top of the `Dockerfile`. The runtime stage still runs
+`apt-get upgrade` — the base digest freezes packages until docker-library rebuilds it, and the
+release scan fails on *fixable* HIGH/CRITICAL findings — but it reads from
+`snapshot.debian.org` at that timestamp rather than a live mirror, so the upgrade is a function
+of a pinned input rather than of the build date. Moving to a newer package set is a commit that
+bumps `APT_SNAPSHOT`; `docker build --build-arg APT_SNAPSHOT=<timestamp>` tries one without
+editing the file.
+
 ### Application layers
 A FastAPI process serves both the JSON API and the server-rendered portal; the same service layer
 fronts the datastore, local-or-S3 blob storage and proxy-aware outbound integrations.
