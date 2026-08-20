@@ -137,6 +137,43 @@ def test_renaming_onto_another_terms_alias_is_blocked(client, login):
     assert "resolve to two entities" in impact["conflicts"][0]
 
 
+def test_renaming_onto_another_kinds_alias_is_blocked_too(client, login):
+    """Aliases resolve across kinds, so the conflict scan has to as well.
+
+    A label may legitimately exist under two kinds — uniqueness is
+    ``(kind, slug)`` — but an alias colliding with a new label is what makes one
+    query answer with two entities, and that is kind-blind.
+    """
+
+    actor = _tag(client, login, kind="ACTOR", label="First Actor")
+    _tag(client, login, kind="MALWARE", label="Some Loader", aliases=["Shadow Crane"])
+
+    impact = _preview(client, login, actor["id"], "Shadow Crane")
+
+    assert impact["blocked"] is True
+    assert "already an alias" in impact["conflicts"][0]
+    assert "MALWARE" in impact["conflicts"][0]
+    assert _rename(client, login, actor["id"], "Shadow Crane").status_code == 409
+
+
+def test_a_label_may_still_be_reused_under_a_different_kind(client, login):
+    """The rule tightened is about aliases, not labels.
+
+    Two kinds sharing a *label* is allowed by the schema (``uq_tag_kind_slug``),
+    and renaming into that is not a conflict — otherwise this change would
+    quietly narrow the taxonomy.
+    """
+
+    actor = _tag(client, login, kind="ACTOR", label="First Actor")
+    _tag(client, login, kind="MALWARE", label="Nightshade")
+
+    impact = _preview(client, login, actor["id"], "Nightshade")
+
+    assert impact["blocked"] is False
+    assert impact["conflicts"] == []
+    assert _rename(client, login, actor["id"], "Nightshade").status_code == 200
+
+
 def test_a_blank_name_is_refused(client, login):
     tag = _tag(client, login)
 
