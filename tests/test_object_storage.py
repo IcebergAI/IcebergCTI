@@ -36,6 +36,28 @@ from iceberg.services import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _isolated_storage_roots(tmp_path, monkeypatch):
+    """Point every storage root at this test's own directory.
+
+    ``reconcile()`` walks all three kinds — attachment, figure and render — so a
+    test that redirects only ``attachments_dir`` still lists whatever the
+    process-wide figure and render directories happen to hold. Under ``-n auto``
+    that is leftovers from other tests in the same worker, which show up as
+    orphans and make counts depend on execution order: the suite passes alone
+    and fails in CI. Redirecting all three per test removes the shared state
+    rather than each test remembering to.
+    """
+
+    settings = get_settings()
+    for attribute, name in (
+        ("attachments_dir", "attachments"),
+        ("figures_dir", "figures"),
+        ("render_output_dir", "renders"),
+    ):
+        monkeypatch.setattr(settings, attribute, str(tmp_path / name))
+
+
 class MemoryStore:
     """Shared S3-shaped test double used by independent application sessions."""
 
