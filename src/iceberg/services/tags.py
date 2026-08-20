@@ -445,13 +445,22 @@ def rename_impact(session: Session, tag: Tag, new_label: str) -> RenameImpact:
                 f"A {tag.kind.value} term named '{clash.label}' already exists "
                 f"(#{clash.id}) — merge into it instead of renaming onto it"
             )
-        for other in session.exec(
-            select(Tag).where(Tag.kind == tag.kind, col(Tag.id) != tag.id)
-        ).all():
+        # Aliases resolve across kinds (``find_by_identifier`` scans every tag),
+        # so this scan must too. A label may legitimately exist under two kinds
+        # — uniqueness is ``(kind, slug)`` — but an *alias* colliding with a new
+        # label is what makes one query answer with two entities, whichever
+        # kinds they belong to.
+        for other in session.exec(select(Tag).where(col(Tag.id) != tag.id)).all():
             if any(slugify(alias) == slug for alias in other.aliases):
+                where = (
+                    ""
+                    if other.kind == tag.kind
+                    else f" ({other.kind.value} term)"
+                )
                 conflicts.append(
-                    f"'{label}' is already an alias of '{other.label}' (#{other.id}), "
-                    "so the new name would resolve to two entities in search"
+                    f"'{label}' is already an alias of '{other.label}' "
+                    f"(#{other.id}){where}, so the new name would resolve to two "
+                    "entities in search"
                 )
                 break
 
