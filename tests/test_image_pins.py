@@ -9,6 +9,7 @@ resolving against whatever Debian published this morning.
 
 import re
 from pathlib import Path
+from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCKERFILE = (ROOT / "Dockerfile").read_text()
@@ -52,7 +53,13 @@ def test_the_snapshot_script_takes_the_suite_from_the_image():
 
     body = SNAPSHOT_SCRIPT.read_text()
     assert "VERSION_CODENAME" in body
-    assert "snapshot.debian.org" in body
+
+    # Compare the archive host exactly rather than looking for the name
+    # somewhere in the script: a substring check would also pass for a
+    # look-alike host that merely contains it.
+    archive = re.search(r'^base="([^"]+)"', body, re.M)
+    assert archive, "the script must define the snapshot archive base URL"
+    assert urlparse(archive.group(1)).hostname == "snapshot.debian.org"
     # A snapshot's Release file is older than apt's freshness window by design.
     assert 'Acquire::Check-Valid-Until "false"' in body
     assert SNAPSHOT_SCRIPT.stat().st_mode & 0o111, "the script must be executable"
