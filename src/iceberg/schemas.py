@@ -479,6 +479,16 @@ class TagUpdate(BaseModel):
     active: bool | None = None
 
 
+class TagRenameRequest(BaseModel):
+    """Rename a taxonomy term, keeping its old name resolvable as an alias."""
+
+    new_label: str
+
+
+class TagRenameUndoRequest(BaseModel):
+    previous_label: str
+
+
 class TagMergeRequest(BaseModel):
     """Consolidate the source tag into an existing canonical tag."""
 

@@ -1,6 +1,7 @@
 """Search, taxonomy & entity-discovery portal routes."""
 
 from typing import Annotated
+from urllib.parse import quote
 
 from fastapi import (
     BackgroundTasks,
@@ -221,6 +222,21 @@ def entities_list(request: Request, session: SessionDep, user: CurrentUser):
     )
 
 
+@router.get("/tags/by-name/{identifier}")
+def tag_by_name(identifier: str, session: SessionDep, user: CurrentUser):
+    """Resolve a term by its current *or* a previous name (#307).
+
+    A rename keeps the old name as an alias, so a link that was shared before
+    the rename still lands on the entity instead of 404-ing. Declared before the
+    ``/tags/{tag_id}`` route so a name is never read as an id.
+    """
+
+    tag = tag_service.find_by_identifier(session, identifier)
+    if tag is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Tag not found")
+    return _redirect(f"/tags/{tag.id}")
+
+
 @router.get("/tags/{tag_id}")
 def tag_detail(
     tag_id: int, request: Request, session: SessionDep, user: CurrentUser
@@ -274,6 +290,20 @@ def admin_tags_view(request: Request, session: SessionDep, user: CurrentUser):
             ),
             "kinds": list(TagKind),
             "motivations": list(Motivation),
+            # Rename preview/outcome state, carried on the query string so the
+            # page stays a plain server-rendered form (#307).
+            "rename": {
+                "tag_id": request.query_params.get("rename", ""),
+                "to": request.query_params.get("to", ""),
+                "drafts": request.query_params.get("drafts", ""),
+                "published": request.query_params.get("published", ""),
+                "frozen": request.query_params.get("frozen", ""),
+                "subs": request.query_params.get("subs", ""),
+                "rules": request.query_params.get("rules", ""),
+                "error": request.query_params.get("error", ""),
+                "renamed": request.query_params.get("renamed", ""),
+                "from": request.query_params.get("from", ""),
+            },
         },
     )
 
@@ -364,7 +394,7 @@ def admin_audience_delete(group_id: int, session: SessionDep, user: CurrentUser)
     return _redirect("/admin/audience")
 
 
-def _audit_tag(session, background_tasks, request, user, action, tag):
+def _audit_tag(session, background_tasks, request, user, action, tag, detail=None):
     audit.record_and_emit(
         session,
         background_tasks=background_tasks,
@@ -374,7 +404,12 @@ def _audit_tag(session, background_tasks, request, user, action, tag):
         request=request,
         resource_type="tag",
         resource_id=tag.id,
-        detail={"kind": str(tag.kind), "label": tag.label, "active": tag.active},
+        detail={
+            "kind": str(tag.kind),
+            "label": tag.label,
+            "active": tag.active,
+            **(detail or {}),
+        },
     )
 
 
@@ -455,6 +490,64 @@ def admin_tag_update(
         active=active,
     )
     _audit_tag(session, background_tasks, request, user, AuditAction.TAG_UPDATED, tag)
+    return _redirect("/admin/tags")
+
+
+@router.post("/admin/tags/{tag_id}/rename")
+def admin_tag_rename(
+    tag_id: int,
+    request: Request,
+    session: SessionDep,
+    user: CurrentUser,
+    background_tasks: BackgroundTasks,
+    new_label: Annotated[str, Form()] = "",
+    confirm: Annotated[bool, Form()] = False,
+):
+    """Preview a rename, then execute it once the impact has been seen.
+
+    Without ``confirm`` this only reports what the rename would touch; a term in
+    wide use is exactly the one you do not want to rename by accident.
+    """
+
+    _require_admin(user)
+    tag = _get_tag(session, tag_id)
+    impact = tag_service.rename_impact(session, tag, new_label)
+    if impact.blocked:
+        return _redirect(f"/admin/tags?rename={tag_id}&error={quote('; '.join(impact.conflicts))}")
+    if not confirm:
+        return _redirect(
+            f"/admin/tags?rename={tag_id}&to={quote(impact.new_label)}"
+            f"&drafts={impact.draft_reports}&published={impact.published_reports}"
+            f"&frozen={impact.frozen_snapshots}&subs={impact.subscriptions}"
+            f"&rules={len(impact.policy_rules)}"
+        )
+    previous = tag.label
+    impact = tag_service.rename_tag(session, tag, new_label)
+    if not impact.unchanged:
+        _audit_tag(
+            session, background_tasks, request, user, AuditAction.TAG_RENAMED, tag,
+            detail={"previous_label": previous, "new_label": impact.new_label},
+        )
+    return _redirect(f"/admin/tags?renamed={tag_id}&from={quote(previous)}")
+
+
+@router.post("/admin/tags/{tag_id}/rename/undo")
+def admin_tag_rename_undo(
+    tag_id: int,
+    request: Request,
+    session: SessionDep,
+    user: CurrentUser,
+    background_tasks: BackgroundTasks,
+    previous_label: Annotated[str, Form()] = "",
+):
+    _require_admin(user)
+    tag = _get_tag(session, tag_id)
+    superseded = tag.label
+    tag = tag_service.undo_rename(session, tag, previous_label)
+    _audit_tag(
+        session, background_tasks, request, user, AuditAction.TAG_RENAME_REVERTED, tag,
+        detail={"reverted_from": superseded, "restored_label": tag.label},
+    )
     return _redirect("/admin/tags")
 
 

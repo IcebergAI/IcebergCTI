@@ -445,6 +445,19 @@ curl -G -H "Authorization: Bearer $ICEBERG_TOKEN" \
    tags). The importer is deliberately file-only — obtain the STIX bundle through your normal
    supply-chain process; the server never downloads it for you.
 
+### Rename a taxonomy term safely
+1. As an `ADMIN`, open **Taxonomy** (`/admin/tags`), type the new name next to a term and press
+   **Preview rename**. Nothing changes yet: you get the impact — how many draft and published
+   reports carry the term, how many published snapshots froze the old name, how many stakeholder
+   subscriptions and dissemination rules reference it — or the conflict that blocks it (a term of
+   that kind already exists, or the name is already another entity's alias).
+2. Press **Rename to "…"** to execute. The old name is kept as an alias, so alias-aware search still
+   finds the entity by its former name and an old link keeps working via
+   `/tags/by-name/{old-slug}`. Published snapshots keep the name they froze — a finished product is
+   never rewritten. Nothing else is: every reference is by id, so there is no background migration.
+3. **Undo rename** reverses it (and removes the alias it added) while nobody has come to rely on the
+   new name. Both steps are audited with the old and new names.
+
 ### Review a product with editorial threads
 1. As a `REVIEWER`, open a report and use the **Editorial review** section: pick the section your
    comment is about, quote the exact passage, and optionally propose a **suggested replacement**.
