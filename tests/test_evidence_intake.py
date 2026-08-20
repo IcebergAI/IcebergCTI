@@ -103,6 +103,41 @@ def test_an_oversized_envelope_is_refused(client, login, envelope):
     assert "Send a reference, not the evidence body" in refused.json()["detail"]
 
 
+def test_an_oversized_body_is_refused_before_it_is_parsed(client, login, envelope):
+    """The cap has to bound the bytes that arrived, not the object they parse to.
+
+    JSON allows unlimited whitespace around a small object, so measuring the
+    re-serialised envelope bounds what is stored while letting a body orders of
+    magnitude larger be read and parsed first.
+    """
+
+    notebook = _notebook(client, login)
+    padded = json.dumps(envelope) + " " * (evidence.MAX_ENVELOPE_BYTES + 100)
+
+    refused = client.post(
+        f"/api/notebooks/{notebook['id']}/evidence",
+        content=padded,
+        headers={"content-type": "application/json"},
+    )
+
+    assert refused.status_code == 422
+    assert "request body is" in refused.json()["detail"]
+    assert "Send a reference, not the evidence body" in refused.json()["detail"]
+
+
+def test_a_body_that_is_not_json_is_refused_with_the_same_reason(client, login):
+    notebook = _notebook(client, login)
+
+    refused = client.post(
+        f"/api/notebooks/{notebook['id']}/evidence",
+        content="not json at all",
+        headers={"content-type": "application/json"},
+    )
+
+    assert refused.status_code == 422
+    assert "must be a JSON object" in refused.json()["detail"]
+
+
 # --------------------------------------------------------------------------- #
 # Identity: idempotent, replay-safe, revision-aware
 # --------------------------------------------------------------------------- #
@@ -311,6 +346,49 @@ def test_revocation_signals_without_erasing_the_citation(client, login, envelope
     page = client.get(f"/reports/{report['id']}")
     assert "Evidence withdrawn at source" in page.text
     assert "Seller advert removed" in page.text
+
+
+def test_a_revoked_item_cannot_be_rejected_back_into_play(client, login, envelope):
+    """Revocation is the producer's statement, not an analyst decision.
+
+    Rejecting a revoked item would move it to REJECTED, which accept() allows —
+    laundering withdrawn evidence into collection material and silencing the
+    report's withdrawal notice, which matches on REVOKED.
+    """
+
+    notebook = _notebook(client, login)
+    reference = _post(client, notebook["id"], envelope).json()["evidence"]
+    _accept(client, notebook["id"], reference["id"])
+    client.post(
+        f"/api/notebooks/{notebook['id']}/evidence/{reference['id']}/revoke",
+        json={"reason": "withdrawn"},
+    )
+
+    refused = client.post(
+        f"/api/notebooks/{notebook['id']}/evidence/{reference['id']}/reject"
+    )
+
+    assert refused.status_code == 409
+    assert "revocation stands" in refused.json()["detail"]
+    # ... and the state is untouched, so acceptance is still refused and the
+    # withdrawal notice still fires.
+    still = _accept(client, notebook["id"], reference["id"])
+    assert still.status_code == 409
+    assert "revoked by its producing system" in still.json()["detail"]
+
+
+def test_a_superseded_item_cannot_be_rejected_either(client, login, envelope):
+    notebook = _notebook(client, login)
+    first = _post(client, notebook["id"], envelope).json()["evidence"]
+    newer = {**envelope, "revision": str(int(envelope["revision"]) + 1)}
+    _post(client, notebook["id"], newer)
+
+    refused = client.post(
+        f"/api/notebooks/{notebook['id']}/evidence/{first['id']}/reject"
+    )
+
+    assert refused.status_code == 409
+    assert "supersedes it" in refused.json()["detail"]
 
 
 def test_a_revoked_item_cannot_be_accepted_afterwards(client, login, envelope):

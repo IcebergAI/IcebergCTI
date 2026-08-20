@@ -311,9 +311,8 @@ def _evidence_json(reference, session=None) -> dict:
 
 
 @router.post("/{notebook_id}/evidence")
-def receive_evidence(
+async def receive_evidence(
     notebook_id: int,
-    body: dict,
     session: SessionDep,
     user: CurrentUser,
     request: Request,
@@ -330,6 +329,9 @@ def receive_evidence(
     """
 
     notebook = _get_notebook(session, notebook_id)
+    # Bound the body before parsing it: the envelope is a reference, and a
+    # reference that needs more than the cap is not one.
+    body = evidence.decode_envelope(await request.body())
     result = evidence.intake(session, notebook, body, actor=user)
     if result.created:
         response.status_code = status.HTTP_201_CREATED

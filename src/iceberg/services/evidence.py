@@ -106,6 +106,31 @@ def _deep_link(envelope: dict) -> str:
     return link
 
 
+def decode_envelope(raw: bytes) -> dict:
+    """Parse one envelope from the raw request body, bounded before parsing.
+
+    ``validate`` re-serialises the parsed object to measure it, which bounds
+    what is *stored* but not what was *read*: JSON permits unlimited whitespace
+    around a small object, so a body far larger than the cap parses down to a
+    compliant envelope. The wire bound therefore lives here, on the bytes that
+    actually arrived, and ``validate`` keeps its own check for callers that
+    already hold a dict.
+    """
+
+    if len(raw) > MAX_ENVELOPE_BYTES:
+        raise EvidenceError(
+            f"An evidence envelope is limited to {MAX_ENVELOPE_BYTES} bytes; this "
+            f"request body is {len(raw)}. Send a reference, not the evidence body"
+        )
+    try:
+        parsed = json.loads(raw or b"")
+    except ValueError:
+        raise EvidenceError("An evidence envelope must be a JSON object") from None
+    if not isinstance(parsed, dict):
+        raise EvidenceError("An evidence envelope must be a JSON object")
+    return parsed
+
+
 def validate(envelope: object) -> dict:
     """Validate one envelope, returning the normalised fields it declares."""
 
@@ -337,9 +362,27 @@ def accept(
 def reject(
     session: Session, reference: EvidenceReference, *, actor: User
 ) -> EvidenceReference:
-    if EvidenceState(reference.state) is EvidenceState.ACCEPTED:
+    state = EvidenceState(reference.state)
+    if state is EvidenceState.ACCEPTED:
         raise EvidenceError(
             "This item is already collection material; delete the source instead",
+            status.HTTP_409_CONFLICT,
+        )
+    # REVOKED and SUPERSEDED are terminal: they record what the *producer* did,
+    # not what an analyst decided. Letting an analyst decision overwrite them
+    # would erase the signal — rejecting a revoked item and then accepting it
+    # would build collection material out of evidence withdrawn at source, and
+    # the report's withdrawal notice (which matches on REVOKED) would go quiet.
+    if state is EvidenceState.REVOKED:
+        raise EvidenceError(
+            "This item was withdrawn at source; its revocation stands and cannot "
+            "be decided away",
+            status.HTTP_409_CONFLICT,
+        )
+    if state is EvidenceState.SUPERSEDED:
+        raise EvidenceError(
+            "A newer revision of this item supersedes it; decide on that revision "
+            "instead",
             status.HTTP_409_CONFLICT,
         )
     reference.state = EvidenceState.REJECTED
