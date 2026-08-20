@@ -129,15 +129,19 @@ MEASURES: tuple[MeasureDefinition, ...] = (
     MeasureDefinition(
         "usefulness",
         "Product usefulness",
-        "Distribution of usefulness ratings over responses received — never "
-        "over deliveries. Suppressed below the configured minimum group size.",
+        "Distribution of usefulness ratings, and the useful-or-better share, "
+        "over responses received — never over deliveries. Both are suppressed "
+        "below the configured minimum group size; a rate over a small group "
+        "would state an individual's rating just as the distribution would.",
         "ProductFeedback.usefulness",
     ),
     MeasureDefinition(
         "satisfaction",
         "Requirement satisfaction",
         "Share of RFI-satisfaction verdicts recorded as MET, over responses "
-        "that carried a verdict.",
+        "that carried a verdict. Suppressed below the configured minimum group "
+        "size, counted over the stakeholders who gave a verdict: over a small "
+        "group the rate would state an individual's verdict.",
         "ProductFeedback.satisfaction",
     ),
     MeasureDefinition(
@@ -193,6 +197,21 @@ def _group(values: dict, contributors: int) -> dict:
     if _suppressed(contributors):
         return {"suppressed": True, "contributors": contributors, "values": {}}
     return {"suppressed": False, "contributors": contributors, "values": values}
+
+
+def _rate(value: float, contributors: int) -> dict:
+    """A single rate carries the same suppression as a breakdown would.
+
+    A rate is a summary of the same responses the distribution summarises, so
+    hiding one and publishing the other hides nothing: over a single respondent
+    a "satisfaction rate" of 1.0 *is* that stakeholder's verdict, and a
+    "useful rate" of 0.0 is their rating. Suppression therefore follows the
+    number of people the value rests on, not the shape it is reported in.
+    """
+
+    if _suppressed(contributors):
+        return {"suppressed": True, "contributors": contributors, "value": None}
+    return {"suppressed": False, "contributors": contributors, "value": value}
 
 
 def visible_report_ids(session: Session, user: User) -> set[int]:
@@ -406,9 +425,13 @@ def _feedback_measures(
         "respondents": len(respondents),
         # Every rate below is over responses, never over deliveries.
         "usefulness": _group(distribution, len(respondents)),
-        "useful_rate": _pct(useful, len(responses)),
+        "useful_rate": _rate(_pct(useful, len(responses)), len(respondents)),
         "verdicts": len(verdicts),
-        "satisfaction_rate": _pct(met, len(verdicts)),
+        # Satisfaction rests on the people who gave a verdict, which can be a
+        # smaller group than everyone who responded.
+        "satisfaction_rate": _rate(
+            _pct(met, len(verdicts)), len({row.stakeholder_id for row in verdicts})
+        ),
         "themes": _group(top_themes, len(respondents)),
         "trend": trend,
     }
@@ -481,9 +504,12 @@ def export_rows(measures: dict) -> list[tuple[str, str, str]]:
     rows += [
         ("responses", "", str(feedback["responses"])),
         ("response_rate", "", str(feedback["response_rate"])),
-        ("useful_rate", "", str(feedback["useful_rate"])),
-        ("satisfaction_rate", "", str(feedback["satisfaction_rate"])),
     ]
+    for key in ("useful_rate", "satisfaction_rate"):
+        rate = feedback[key]
+        rows.append(
+            (key, "", "suppressed" if rate["suppressed"] else str(rate["value"]))
+        )
     for key in ("usefulness", "themes"):
         group = feedback[key]
         if group["suppressed"]:

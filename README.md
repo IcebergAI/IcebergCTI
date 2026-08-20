@@ -467,9 +467,11 @@ curl -G -H "Authorization: Bearer $ICEBERG_TOKEN" \
    away with **Export CSV**.
 3. Every figure has a published definition and the records it comes from, listed at the foot of the
    page. Two rules are worth knowing: a delivery that drew **no** response is never counted as a
-   poor rating (the response rate is reported separately), and any breakdown resting on fewer than
-   `ICEBERG_MEASURES_MIN_GROUP` responding stakeholders (default 5) is **suppressed** — in the
-   export too — so an aggregate cannot identify one person's answer. Set it to `0` on a
+   poor rating (the response rate is reported separately), and any breakdown **or rate** resting on
+   fewer than `ICEBERG_MEASURES_MIN_GROUP` responding stakeholders (default 5) is **suppressed** —
+   in the export too — so an aggregate cannot identify one person's answer. A rate counts as
+   identifying just as a breakdown does: over a single respondent, "satisfaction: 100%" is that
+   stakeholder's verdict. Set it to `0` on a
    single-team deployment.
 
 ### Forward security events to your SIEM

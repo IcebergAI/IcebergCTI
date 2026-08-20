@@ -225,7 +225,7 @@ def test_missing_feedback_is_not_counted_as_negative(client, login, engine, no_s
     assert measures["responses"] == 1
     assert measures["response_rate"] == 0.5
     # The silent stakeholder is absent from the ratings, not counted as a poor one.
-    assert measures["useful_rate"] == 1.0
+    assert measures["useful_rate"]["value"] == 1.0
     assert measures["usefulness"]["values"]["HIGHLY_USEFUL"] == 1
     assert sum(measures["usefulness"]["values"].values()) == 1
 
@@ -245,7 +245,7 @@ def test_satisfaction_is_taken_over_verdicts_not_responses(client, login, engine
 
     assert measures["responses"] == 2
     assert measures["verdicts"] == 1
-    assert measures["satisfaction_rate"] == 1.0
+    assert measures["satisfaction_rate"]["value"] == 1.0
 
 
 # --------------------------------------------------------------------------- #
@@ -258,12 +258,60 @@ def test_a_breakdown_below_the_minimum_group_is_suppressed(client, login, engine
 
     measures = _measures(client, login, engine)["feedback"]
 
-    assert measures["min_group"] if False else measures["usefulness"]["suppressed"] is True
+    assert measures["usefulness"]["suppressed"] is True
     assert measures["usefulness"]["values"] == {}
     assert measures["themes"]["suppressed"] is True
     # The headline counts stay available — only the identifying breakdown goes.
     assert measures["responses"] == 1
     assert measures["response_rate"] == 1.0
+
+
+def test_a_rate_over_a_small_group_is_suppressed_like_its_breakdown(client, login, engine):
+    """A rate is a summary of the same responses the distribution summarises.
+
+    Over one respondent, a usefulness rate of 1.0 *is* that stakeholder's
+    rating and a satisfaction rate of 1.0 *is* their verdict, so publishing the
+    rate while suppressing the distribution would hide nothing.
+    """
+
+    _stakeholder(client, login, "one@example.com")
+    requirement = _requirement(client, login, title="Answer me", email="one@example.com")
+    report = _report(client, login, title="Product", requirement_ids=[requirement["id"]])
+    _feedback(
+        client, login, report["id"], email="one@example.com",
+        usefulness="HIGHLY_USEFUL", satisfaction="MET", requirement_id=requirement["id"],
+    )
+
+    measures = _measures(client, login, engine)["feedback"]
+
+    assert measures["useful_rate"]["suppressed"] is True
+    assert measures["useful_rate"]["value"] is None
+    assert measures["satisfaction_rate"]["suppressed"] is True
+    assert measures["satisfaction_rate"]["value"] is None
+    # The counts that say nothing about any one person stay.
+    assert measures["responses"] == 1
+    assert measures["verdicts"] == 1
+
+
+def test_a_suppressed_rate_is_not_leaked_by_the_export_or_the_page(client, login, engine):
+    _stakeholder(client, login, "one@example.com")
+    requirement = _requirement(client, login, title="Answer me", email="one@example.com")
+    report = _report(client, login, title="Product", requirement_ids=[requirement["id"]])
+    _feedback(
+        client, login, report["id"], email="one@example.com",
+        usefulness="HIGHLY_USEFUL", satisfaction="MET", requirement_id=requirement["id"],
+    )
+
+    csv = program_measures.export_csv(_measures(client, login, engine))
+    assert "useful_rate,,suppressed" in csv
+    assert "satisfaction_rate,,suppressed" in csv
+    assert "useful_rate,,1.0" not in csv
+    assert "satisfaction_rate,,1.0" not in csv
+
+    login("ANALYST", email="author@example.com")
+    page = client.get("/measures")
+    assert page.status_code == 200
+    assert "risk identifying an individual response" in page.text
 
 
 def test_suppression_can_be_switched_off_for_a_single_team(client, login, engine, no_suppression):

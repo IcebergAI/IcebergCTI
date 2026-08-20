@@ -186,7 +186,11 @@
     {% endif %}
     <h3 class="section-title mt-5 mb-2">Requirement satisfaction</h3>
     <p class="text-xs mb-2" style="color:var(--muted);">Over the {{ fb.verdicts }} response(s) that recorded a verdict.</p>
-    {{ pctbar('Met', fb.satisfaction_rate) }}
+    {% if fb.satisfaction_rate.suppressed %}
+      {{ suppressed_note(fb.satisfaction_rate) }}
+    {% else %}
+      {{ pctbar('Met', fb.satisfaction_rate.value) }}
+    {% endif %}
   </section>
 
   <section class="card card-pad-lg">
