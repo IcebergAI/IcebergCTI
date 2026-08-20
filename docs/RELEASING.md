@@ -81,11 +81,18 @@ attaching to the release:
 
 1. **Clean install** — migrate an empty database to head, boot the image, `/healthz` + `/readyz`
    come up.
-2. **Seeded upgrade** — stage a database at the *previous* schema revision, seed a user, notebook,
-   source and report, migrate forward with this release's job, and assert the seeded rows are still
-   readable. This is the upgrade an operator actually performs.
-3. **Backup and verified restore** — `pg_dump` the upgraded database, restore into a fresh one, and
-   run `iceberg-verify-files` plus the seeded-data check against the restored release.
+2. **Seeded upgrade** — stage a database at the schema **the previous release tag shipped** (read
+   out of git at that tag, not inferred from the current migration directory, so a release carrying
+   several migrations exercises all of them), seed a user, notebook, source, report and a
+   file-backed attachment, migrate forward with this release's job, and assert the seeded rows are
+   still readable. This is the upgrade an operator actually performs. Before the first release tag
+   exists there is no such path: the rehearsal stages at the penultimate migration instead and says
+   so in the record, rather than reading as though a release upgrade was tested.
+3. **Backup and verified restore** — `pg_dump` the upgraded database **and archive its object
+   store**, restore both into a fresh database and a fresh object root, then run
+   `iceberg-verify-files` plus the seeded-data check against the restored release. The check reads
+   the seeded attachment's bytes back and compares them to its recorded digest, so a database-only
+   restore — rows intact, blobs missing — fails here rather than looking complete.
 4. **Rollback boundary** — classify every migration's `downgrade()` and report how many do not
    restore prior state.
 
@@ -102,7 +109,9 @@ It resolves the tag to an **immutable digest**, verifies the **cosign signature*
 this repository's release workflow *for that tag*, verifies the **SLSA provenance** attestation,
 and checks the image's `org.opencontainers.image.revision` label is the commit the tag points at —
 so the artifact, its signature, its provenance and its source revision all agree, or the script
-fails.
+fails. An image carrying **no** revision label fails too: a check with nothing to compare against
+has not passed, and reporting it as verified would be the one outcome this script must never
+produce.
 
 ## Compatibility and support
 

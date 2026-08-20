@@ -19,7 +19,9 @@ import argparse
 import ast
 import os
 import re
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,6 +40,104 @@ def _session():
     return Session(engine)
 
 
+def _revisions_at(ref: str) -> list[str] | None:
+    """The migration chain as it stood at ``ref``, oldest first.
+
+    Reads the migration files out of the git object store rather than the work
+    tree, so the previous release's schema is taken from the previous release.
+    """
+
+    listed = subprocess.run(
+        ["git", "ls-tree", "-r", "--name-only", ref, "--",
+         "src/iceberg/migrations/versions"],
+        capture_output=True, text=True, cwd=ROOT,
+    )
+    if listed.returncode != 0:
+        return None
+    down: dict[str, str | None] = {}
+    for path in listed.stdout.split():
+        if not path.endswith(".py") or path.endswith("__init__.py"):
+            continue
+        shown = subprocess.run(
+            ["git", "show", f"{ref}:{path}"], capture_output=True, text=True, cwd=ROOT
+        )
+        if shown.returncode != 0:
+            continue
+        revision = re.search(
+            r'^revision(?::\s*str)?\s*=\s*["\'](.+?)["\']', shown.stdout, re.M
+        )
+        parent = re.search(r"^down_revision.*?=\s*(.+)$", shown.stdout, re.M)
+        if not revision:
+            continue
+        raw = (parent.group(1).strip() if parent else "None").strip("\"'")
+        down[revision.group(1)] = None if raw in {"None", ""} else raw
+    if not down:
+        return None
+    children = {parent: rev for rev, parent in down.items() if parent is not None}
+    roots = [rev for rev, parent in down.items() if parent is None]
+    if not roots:
+        return None
+    chain = [roots[0]]
+    while chain[-1] in children:
+        chain.append(children[chain[-1]])
+    return chain
+
+
+def _previous_release() -> tuple[str, str] | None:
+    """``(tag, head revision)`` of the newest release tag that is not HEAD.
+
+    The supported upgrade path is "from the last release", not "from the last
+    migration": a release carrying three migrations must be entered at the
+    schema the previous release shipped, or two of them are never exercised.
+    """
+
+    listed = subprocess.run(
+        ["git", "tag", "--list", "v*", "--sort=-v:refname"],
+        capture_output=True, text=True, cwd=ROOT,
+    )
+    if listed.returncode != 0:
+        return None
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], capture_output=True, text=True, cwd=ROOT
+    ).stdout.strip()
+    for tag in listed.stdout.split():
+        commit = subprocess.run(
+            ["git", "rev-parse", f"{tag}^{{commit}}"],
+            capture_output=True, text=True, cwd=ROOT,
+        ).stdout.strip()
+        if not commit or commit == head:
+            continue
+        chain = _revisions_at(tag)
+        if chain:
+            return tag, chain[-1]
+    return None
+
+
+def _staging_target() -> tuple[str, str, str]:
+    """Where the upgrade rehearsal should start, and how honest that start is.
+
+    Returns ``(revision, description, caveat)``; the caveat is empty when the
+    rehearsal really does begin at a released schema.
+    """
+
+    previous = _previous_release()
+    if previous is not None:
+        tag, target = previous
+        return target, f"the schema released in {tag}", ""
+    # No release has been tagged yet, so there is no supported upgrade path to
+    # rehearse. Stage at the penultimate migration to exercise the last one, and
+    # say plainly that this is weaker than the real thing rather than letting
+    # the record read as though a release upgrade was tested.
+    revisions = _revision_chain()
+    target = revisions[-2] if len(revisions) > 1 else revisions[-1]
+    return (
+        target,
+        "the penultimate migration (no previous release tag exists)",
+        "no previous release tag found; this rehearses the last migration only, "
+        "not an upgrade from a released version",
+    )
+
+
 def stage_previous() -> int:
     """Bring an empty database to the previous revision and seed it."""
 
@@ -47,14 +147,11 @@ def stage_previous() -> int:
     from iceberg import db
     from iceberg.models import Notebook, Report, Role, Source, User
 
-    revisions = _revision_chain()
-    if len(revisions) < 2:
-        print("only one migration exists; seeding at head instead", file=sys.stderr)
-        target = revisions[-1]
-    else:
-        target = revisions[-2]
+    target, origin, caveat = _staging_target()
+    if caveat:
+        print(f"NOTE: {caveat}", file=sys.stderr)
     command.upgrade(db.alembic_config(), target)
-    print(f"staged at previous revision {target}")
+    print(f"staged at {target} — {origin}")
 
     with _session() as session:
         user = session.exec(select(User).where(User.email == SEED_EMAIL)).first()
@@ -90,8 +187,55 @@ def stage_previous() -> int:
             )
         )
         session.commit()
-    print("seeded a user, notebook, source and report")
+        _seed_attachment(session, notebook.id)
+    print("seeded a user, notebook, source, report and a file-backed attachment")
     return 0
+
+
+SEED_ATTACHMENT = "Rehearsal attachment"
+SEED_BYTES = b"%PDF-1.4 rehearsal attachment\n"
+
+
+def _seed_attachment(session, notebook_id: int) -> None:
+    """Write a real blob and the row that points at it.
+
+    A backup rehearsal that restores only the database cannot show that a
+    deployment is recoverable: the rows reference objects, and
+    ``iceberg-verify-files`` has nothing to check unless one exists. Seeding an
+    attachment makes the database and the object store one consistency set, the
+    way RELEASING.md says they must be backed up.
+    """
+
+    import hashlib
+
+    from iceberg.models import Attachment, utcnow
+    from iceberg.services import storage
+
+    digest = hashlib.sha256(SEED_BYTES).hexdigest()
+    key = storage.new_key(".pdf", sha256=digest)
+    staged = Path(tempfile.gettempdir()) / f"rehearsal-{digest[:12]}.pdf"
+    staged.write_bytes(SEED_BYTES)
+    try:
+        storage.get_store("local").put_file(
+            "attachment", key, staged, sha256=digest, content_type="application/pdf"
+        )
+    finally:
+        staged.unlink(missing_ok=True)
+    session.add(
+        Attachment(
+            notebook_id=notebook_id,
+            title=SEED_ATTACHMENT,
+            original_filename="rehearsal.pdf",
+            stored_filename=key,
+            storage_backend="local",
+            storage_key=key,
+            content_sha256=digest,
+            storage_finalized_at=utcnow(),
+            content_type="application/pdf",
+            file_size=len(SEED_BYTES),
+        )
+    )
+    session.commit()
 
 
 def stage_verify() -> int:
@@ -107,15 +251,44 @@ def stage_verify() -> int:
         ).first()
         report = session.exec(select(Report).where(Report.title == SEED_TITLE)).first()
         source = session.exec(select(Source).where(Source.title == "Rehearsal source")).first()
+    from iceberg.models import Attachment
+
+    with _session() as session:
+        attachment = session.exec(
+            select(Attachment).where(Attachment.title == SEED_ATTACHMENT)
+        ).first()
+        stored = None
+        if attachment is not None:
+            from iceberg.services import storage
+
+            try:
+                stored = storage.get_store(attachment.storage_backend).read_bytes(
+                    "attachment", attachment.storage_key,
+                    expected_sha256=attachment.content_sha256,
+                )
+            except Exception as error:  # noqa: BLE001 - reported, not raised
+                print(f"attachment object unreadable: {error}", file=sys.stderr)
     missing = [
         name
-        for name, row in (("notebook", notebook), ("report", report), ("source", source))
+        for name, row in (
+            ("notebook", notebook),
+            ("report", report),
+            ("source", source),
+            ("attachment row", attachment),
+        )
         if row is None
     ]
+    if attachment is not None and stored != SEED_BYTES:
+        # The row surviving while its object does not is the failure this stage
+        # exists to catch: a restore that looks complete and is not.
+        missing.append("attachment object")
     if missing:
         print(f"FAIL: seeded {', '.join(missing)} missing after migration", file=sys.stderr)
         return 1
-    print("verified: seeded notebook, source and report are readable at head")
+    print(
+        "verified: seeded notebook, source, report and attachment are readable, "
+        "and the attachment's bytes match its recorded digest"
+    )
     return 0
 
 

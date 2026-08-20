@@ -37,20 +37,29 @@ fact() { printf '  %-24s %s\n' "$1" "$2"; }
 pg() { docker run --rm --network host postgres:18 psql "$1" -qtAX -c "$2"; }
 app_db_url() { echo "postgresql+psycopg://${PG_BASE#*://}/$1"; }
 
+objects_dir() { # objects_dir <db> — the object root paired with one database
+  echo "$WORKDIR/objects/$1"
+}
+
 run_in_image() { # run_in_image <db> <command...>
   local db="$1"; shift
+  mkdir -p "$(objects_dir "$db")"
   docker run --rm --network host \
     -e ICEBERG_ENVIRONMENT=prod \
     -e ICEBERG_SECRET_KEY="$SECRET" \
     -e ICEBERG_DATABASE_URL="$(app_db_url "$db")" \
     -e ICEBERG_AUTO_MIGRATE=false \
+    -e ICEBERG_ATTACHMENTS_DIR=/data/attachments \
+    -v "$(objects_dir "$db"):/data/attachments" \
     "$IMAGE" "$@"
 }
 
 seed_stage() { # seed_stage <db> <stage>
+  mkdir -p "$(objects_dir "$1")"
   ICEBERG_DATABASE_URL="$(app_db_url "$1")" \
   ICEBERG_SECRET_KEY="$SECRET" \
   ICEBERG_ENVIRONMENT=dev \
+  ICEBERG_ATTACHMENTS_DIR="$(objects_dir "$1")" \
     python3 scripts/rehearsal_seed.py --stage "$2"
 }
 
@@ -115,16 +124,24 @@ fact "seeded data" "survived the upgrade"
 
 # --------------------------------------------------------------------------- #
 log "3/4 Backup and verified restore"
+# The database and the object store are one consistency set: restoring rows
+# whose blobs are gone is a restore that looks complete and is not, so both are
+# backed up and both are restored before anything is verified.
 docker run --rm --network host postgres:18 \
   pg_dump "$PG_BASE/rehearsal_upgrade" -Fc > "$WORKDIR/rehearsal.dump"
+tar -C "$(objects_dir rehearsal_upgrade)" -cf "$WORKDIR/rehearsal-objects.tar" .
 recreate_db rehearsal_restore
 docker run --rm --network host -i postgres:18 \
   pg_restore -d "$PG_BASE/rehearsal_restore" --no-owner < "$WORKDIR/rehearsal.dump"
+rm -rf "$(objects_dir rehearsal_restore)"
+mkdir -p "$(objects_dir rehearsal_restore)"
+tar -C "$(objects_dir rehearsal_restore)" -xf "$WORKDIR/rehearsal-objects.tar"
 run_in_image rehearsal_restore iceberg-verify-files
 seed_stage rehearsal_restore verify
 fact "dump size" "$(wc -c < "$WORKDIR/rehearsal.dump") bytes"
+fact "object archive" "$(wc -c < "$WORKDIR/rehearsal-objects.tar") bytes"
 fact "restored schema" "$(schema_revision rehearsal_restore)"
-fact "file references" "verified"
+fact "file references" "verified against the restored objects"
 
 # --------------------------------------------------------------------------- #
 log "4/4 Rollback boundary"

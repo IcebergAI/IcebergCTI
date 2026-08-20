@@ -42,7 +42,15 @@ TAG_COMMIT="$(git rev-parse "${TAG}^{commit}")"
 IMAGE_COMMIT="$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$REPO_IMAGE:$IMAGE_TAG")"
 fact "tag commit" "$TAG_COMMIT"
 fact "image revision" "${IMAGE_COMMIT:-<unlabelled>}"
-if [ -n "$IMAGE_COMMIT" ] && [ "$IMAGE_COMMIT" != "$TAG_COMMIT" ]; then
+# An absent label is a failed check, not a skipped one. Treating "no claim" as
+# "claim agrees" would let this script print Verified for an image whose source
+# revision nobody can establish — the opposite of what it exists to say.
+if [ -z "$IMAGE_COMMIT" ]; then
+  echo "UNVERIFIABLE: the image carries no org.opencontainers.image.revision label," >&2
+  echo "so the commit it was built from cannot be checked against the tag" >&2
+  exit 1
+fi
+if [ "$IMAGE_COMMIT" != "$TAG_COMMIT" ]; then
   echo "MISMATCH: the image was built from a different commit than the tag" >&2
   exit 1
 fi

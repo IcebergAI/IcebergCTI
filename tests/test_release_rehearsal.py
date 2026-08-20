@@ -6,6 +6,7 @@ the tooling itself is covered here rather than trusted to work on the day.
 
 import re
 import subprocess
+import importlib.util
 import sys
 import tomllib
 from pathlib import Path
@@ -85,18 +86,19 @@ def test_seeded_data_survives_the_upgrade_to_head(tmp_path, monkeypatch):
         "ICEBERG_DATABASE_URL": url,
         "ICEBERG_SECRET_KEY": "rehearsal-secret-0123456789abcdef0123456789",
         "ICEBERG_ENVIRONMENT": "dev",
+        "ICEBERG_ATTACHMENTS_DIR": str(tmp_path / "attachments"),
     }
 
     staged = _run("--stage", "previous", env=env)
     assert staged.returncode == 0, staged.stderr
-    assert "staged at previous revision" in staged.stdout
+    assert "staged at" in staged.stdout
 
     monkeypatch.setattr(get_settings(), "database_url", url)
     command.upgrade(db.alembic_config(), "head")
 
     verified = _run("--stage", "verify", env=env)
     assert verified.returncode == 0, verified.stderr
-    assert "readable at head" in verified.stdout
+    assert "are readable" in verified.stdout
 
     engine = sa.create_engine(url)
     with engine.connect() as conn:
@@ -143,6 +145,81 @@ def test_the_release_scripts_are_executable_and_valid_shell(script):
     assert body.startswith("#!/usr/bin/env bash")
     # Fail fast: a rehearsal that continues past a failed step proves nothing.
     assert "set -euo pipefail" in body
+
+
+def test_verification_refuses_an_image_that_makes_no_revision_claim():
+    """A missing assertion is a failed check, not a skipped one.
+
+    Treating "no label" as "label agrees" would print Verified for an image
+    whose source commit nobody can establish.
+    """
+
+    body = (ROOT / "scripts" / "verify_release.sh").read_text()
+    assert 'if [ -z "$IMAGE_COMMIT" ]; then' in body
+    assert "UNVERIFIABLE" in body
+    # ... and the mismatch branch must no longer be conditional on the label
+    # being present, which is what let an empty one through.
+    assert '[ -n "$IMAGE_COMMIT" ] && [ "$IMAGE_COMMIT" != "$TAG_COMMIT" ]' not in body
+
+
+def test_the_backup_rehearsal_covers_the_object_store():
+    """Restoring rows whose blobs are gone is a restore that only looks complete."""
+
+    body = (ROOT / "scripts" / "release_rehearsal.sh").read_text()
+    assert "rehearsal-objects.tar" in body, "objects are never archived"
+    assert body.count("rehearsal-objects.tar") >= 2, "archived but never restored"
+    assert "objects_dir rehearsal_restore" in body
+    # The image and the seeder have to share one object root, or the seeded
+    # blob is invisible to the verifier running inside the container.
+    assert "ICEBERG_ATTACHMENTS_DIR=/data/attachments" in body
+    assert 'ICEBERG_ATTACHMENTS_DIR="$(objects_dir "$1")"' in body
+
+
+def _seed_module():
+    """Import the seeder as a module so its pure logic can be exercised."""
+
+    spec = importlib.util.spec_from_file_location("rehearsal_seed", SEED)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_rehearsal_starts_from_the_previous_release_when_one_exists(monkeypatch):
+    """The supported upgrade path is "from the last release".
+
+    Entering at the penultimate *migration* is a different, weaker claim: a
+    release carrying three migrations would leave two of them untested.
+    """
+
+    seed = _seed_module()
+    monkeypatch.setattr(seed, "_previous_release", lambda: ("v9.9.9", "deadbeef"))
+
+    target, origin, caveat = seed._staging_target()
+
+    assert target == "deadbeef"
+    assert "v9.9.9" in origin
+    assert caveat == "", "starting from a real release needs no caveat"
+
+
+def test_without_a_release_tag_the_rehearsal_says_what_it_did_not_prove(monkeypatch):
+    seed = _seed_module()
+    monkeypatch.setattr(seed, "_previous_release", lambda: None)
+    monkeypatch.setattr(seed, "_revision_chain", lambda: ["one", "two", "three"])
+
+    target, origin, caveat = seed._staging_target()
+
+    assert target == "two", "should stage at the penultimate migration"
+    assert "no previous release tag" in origin
+    assert "not an upgrade from a released version" in caveat
+
+
+def test_the_previous_release_is_read_from_the_tag_not_the_work_tree():
+    """The chain is reconstructed from git objects, so it reflects that tag."""
+
+    seed = _seed_module()
+
+    assert seed._revisions_at("HEAD") == seed._revision_chain()
+    assert seed._revisions_at("v0.0.0-does-not-exist") is None
 
 
 # --------------------------------------------------------------------------- #
