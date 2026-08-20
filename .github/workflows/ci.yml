@@ -219,9 +219,15 @@ jobs:
           fetch-depth: 2
           persist-credentials: false
       - id: filter
+        # Anything COPYed into the image or executed during the build belongs
+        # here. `docker/` holds the APT snapshot script, which runs before every
+        # apt-get in both stages, so a change to it changes the package set —
+        # it was missed when the script was added (#324) and left edits to it
+        # silently unbuilt. README.md is copied in too but is deliberately
+        # absent: it cannot change whether the build or the scan succeeds.
         run: |
           if git diff --name-only HEAD^1 HEAD \
-              | grep -qE '^(Dockerfile|\.dockerignore|uv\.lock|pyproject\.toml|src/iceberg/)'; then
+              | grep -qE '^(Dockerfile|\.dockerignore|docker/|uv\.lock|pyproject\.toml|src/iceberg/)'; then
             echo "docker=true" >> "$GITHUB_OUTPUT"
             echo "Image inputs changed — the docker job will run."
           else
