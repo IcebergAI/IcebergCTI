@@ -129,7 +129,12 @@ def test_dev_login_throttle_returns_plain_text_headers_and_audit(engine, monkeyp
     assert second.status_code == 429
     assert second.text == "Rate limit exceeded"
     assert second.headers["content-type"].startswith("text/plain")
-    assert second.headers["retry-after"] == "60"
+    # The bucket refills continuously, so Retry-After counts down from the
+    # window as real time passes between the two requests: pinning it to the
+    # full 60 only holds when they land inside the same second, which a loaded
+    # runner does not guarantee. What the client must be able to rely on is a
+    # positive wait no longer than the window.
+    assert 1 <= int(second.headers["retry-after"]) <= 60
     assert second.headers["x-ratelimit-limit"] == "1"
     assert second.headers["x-ratelimit-remaining"] == "0"
     assert "x-ratelimit-reset" in second.headers
@@ -143,6 +148,7 @@ def test_dev_login_throttle_returns_plain_text_headers_and_audit(engine, monkeyp
     assert event.detail["key_kind"] == "ip"
     assert event.detail["path"] == "/auth/dev-login"
     assert set(event.detail) == {"policy", "key_kind", "path", "retry_after"}
+    assert event.detail["retry_after"] == int(second.headers["retry-after"])
 
 
 def test_api_throttle_returns_json_and_security_headers(engine, monkeypatch):
@@ -157,7 +163,7 @@ def test_api_throttle_returns_json_and_security_headers(engine, monkeypatch):
     assert second.status_code == 429
     assert second.json() == {"detail": "Rate limit exceeded"}
     assert second.headers["content-type"].startswith("application/json")
-    assert second.headers["retry-after"] == "3600"
+    assert 1 <= int(second.headers["retry-after"]) <= 3600
     assert second.headers["x-ratelimit-limit"] == "1"
     assert "content-security-policy" in second.headers
 
