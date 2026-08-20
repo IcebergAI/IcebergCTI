@@ -24,6 +24,7 @@ from ..models import (
     Attachment,
     AuditAction,
     AuditCategory,
+    AuditSeverity,
     DiamondModel,
     Figure,
     IOC,
@@ -36,6 +37,7 @@ from ..models import (
 )
 from ..schemas import (
     ACHCreate,
+    EvidenceRevoke,
     ACHUpdate,
     DiamondCreate,
     DiamondUpdate,
@@ -55,6 +57,7 @@ from ..services import ach as ach_service
 from ..services import attachments as attachment_service
 from ..services import audit
 from ..services import diamond as diamond_service
+from ..services import evidence
 from ..services import demo as demo_service
 from ..services import figures as figure_service
 from ..services import iocs as ioc_service
@@ -280,6 +283,202 @@ def import_misp(
     return inbound.pull_misp(
         session, _get_notebook(session, notebook_id), body.event_uuid
     )
+
+
+# --------------------------------------------------------------------------- #
+# Governed evidence intake from adjacent systems (#305)
+# --------------------------------------------------------------------------- #
+def _evidence_json(reference, session=None) -> dict:
+    return {
+        "id": reference.id,
+        "notebook_id": reference.notebook_id,
+        "source_system": reference.source_system,
+        "external_id": reference.external_id,
+        "revision": reference.revision,
+        "schema_version": reference.schema_version,
+        "evidence_type": reference.evidence_type,
+        "title": reference.title,
+        "summary": reference.summary,
+        "deep_link": reference.deep_link,
+        "tlp": str(reference.tlp),
+        "content_sha256": reference.content_sha256,
+        "provenance": reference.provenance,
+        "state": str(reference.state),
+        "source_id": reference.source_id,
+        "received_at": reference.received_at,
+        "verification": evidence.verification(reference),
+    }
+
+
+@router.post("/{notebook_id}/evidence")
+async def receive_evidence(
+    notebook_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    response: Response,
+    _w: Writer,
+) -> dict:
+    """Accept one evidence envelope from an adjacent system as a pending offer.
+
+    Authenticated as an ordinary Iceberg writer — no producer credentials are
+    held here, and nothing the envelope claims about permissions is trusted.
+    Re-posting the same revision is idempotent (200); a new revision supersedes
+    its predecessor (201).
+    """
+
+    notebook = _get_notebook(session, notebook_id)
+    # Bound the body before parsing it: the envelope is a reference, and a
+    # reference that needs more than the cap is not one.
+    body = evidence.decode_envelope(await request.body())
+    result = evidence.intake(session, notebook, body, actor=user)
+    if result.created:
+        response.status_code = status.HTTP_201_CREATED
+        audit.record_and_emit(
+            session,
+            background_tasks=background_tasks,
+            action=AuditAction.EVIDENCE_RECEIVED,
+            category=AuditCategory.ADMIN,
+            actor=user,
+            request=request,
+            resource_type="notebook",
+            resource_id=notebook.id,
+            detail={
+                "source_system": result.reference.source_system,
+                "external_id": result.reference.external_id,
+                "revision": result.reference.revision,
+                "tlp": str(result.reference.tlp),
+                "superseded": result.superseded,
+            },
+        )
+        session.refresh(result.reference)
+    return {
+        "created": result.created,
+        "superseded": result.superseded,
+        "evidence": _evidence_json(result.reference),
+    }
+
+
+@router.get("/{notebook_id}/evidence")
+def list_evidence(notebook_id: int, session: SessionDep, _w: Writer) -> list[dict]:
+    notebook = _get_notebook(session, notebook_id)
+    return [
+        _evidence_json(reference)
+        for reference in evidence.list_for_notebook(session, notebook)
+    ]
+
+
+@router.post("/{notebook_id}/evidence/{reference_id}/accept")
+def accept_evidence(
+    notebook_id: int,
+    reference_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    _w: Writer,
+) -> dict:
+    notebook = _get_notebook(session, notebook_id)
+    reference = evidence.accept(
+        session,
+        notebook,
+        evidence.get_or_404(session, notebook, reference_id),
+        actor=user,
+    )
+    audit.record_and_emit(
+        session,
+        background_tasks=background_tasks,
+        action=AuditAction.EVIDENCE_ACCEPTED,
+        category=AuditCategory.ADMIN,
+        actor=user,
+        request=request,
+        resource_type="notebook",
+        resource_id=notebook.id,
+        detail={
+            "source_system": reference.source_system,
+            "external_id": reference.external_id,
+            "revision": reference.revision,
+            "source_id": reference.source_id,
+        },
+    )
+    session.refresh(reference)
+    return _evidence_json(reference)
+
+
+@router.post("/{notebook_id}/evidence/{reference_id}/reject")
+def reject_evidence(
+    notebook_id: int,
+    reference_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    _w: Writer,
+) -> dict:
+    notebook = _get_notebook(session, notebook_id)
+    reference = evidence.reject(
+        session, evidence.get_or_404(session, notebook, reference_id), actor=user
+    )
+    audit.record_and_emit(
+        session,
+        background_tasks=background_tasks,
+        action=AuditAction.EVIDENCE_REJECTED,
+        category=AuditCategory.ADMIN,
+        actor=user,
+        request=request,
+        resource_type="notebook",
+        resource_id=notebook.id,
+        detail={
+            "source_system": reference.source_system,
+            "external_id": reference.external_id,
+            "revision": reference.revision,
+        },
+    )
+    session.refresh(reference)
+    return _evidence_json(reference)
+
+
+@router.post("/{notebook_id}/evidence/{reference_id}/revoke")
+def revoke_evidence(
+    notebook_id: int,
+    reference_id: int,
+    body: EvidenceRevoke,
+    session: SessionDep,
+    user: CurrentUser,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    _w: Writer,
+) -> dict:
+    """Record that the producing system withdrew this item.
+
+    The record and any source built from it are kept — a published product may
+    already cite it — and the withdrawal is signalled instead.
+    """
+
+    notebook = _get_notebook(session, notebook_id)
+    reference = evidence.revoke(
+        session, evidence.get_or_404(session, notebook, reference_id), reason=body.reason
+    )
+    audit.record_and_emit(
+        session,
+        background_tasks=background_tasks,
+        action=AuditAction.EVIDENCE_REVOKED,
+        category=AuditCategory.ADMIN,
+        severity=AuditSeverity.WARNING,
+        actor=user,
+        request=request,
+        resource_type="notebook",
+        resource_id=notebook.id,
+        detail={
+            "source_system": reference.source_system,
+            "external_id": reference.external_id,
+            "revision": reference.revision,
+            "source_id": reference.source_id,
+        },
+    )
+    session.refresh(reference)
+    return _evidence_json(reference)
 
 
 def _audit_file(

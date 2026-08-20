@@ -257,6 +257,10 @@ class Settings(BaseSettings):
     # Publication policy: refuse to publish while a blocking editorial thread is
     # still open. Set false for a deployment that treats threads as advisory.
     publish_requires_resolved_threads: bool = True
+    # Floor marking for evidence offered by an adjacent system. An envelope's own
+    # marking is honoured but never allowed to make material *less* restricted
+    # than this, so a producer cannot downgrade what it hands over.
+    evidence_min_tlp: str = "AMBER"
     # Operator-approved Ollama base URL. The DB-editable AISettings.base_url for
     # the ``ollama`` provider must match this exact value — so a DB edit can't
     # redirect a real key to an attacker host (anti-SSRF; base-URL pinning).
@@ -424,7 +428,9 @@ class Settings(BaseSettings):
             )
         return backend
 
-    @field_validator("ai_max_tlp", "dissemination_max_tlp", "misp_max_tlp")
+    @field_validator(
+        "ai_max_tlp", "dissemination_max_tlp", "misp_max_tlp", "evidence_min_tlp"
+    )
     @classmethod
     def _validate_tlp_ceiling(cls, value: str) -> str:
         ceiling = (value or "").strip().upper().replace("+", "_STRICT")

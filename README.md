@@ -445,6 +445,31 @@ curl -G -H "Authorization: Bearer $ICEBERG_TOKEN" \
    tags). The importer is deliberately file-only — obtain the STIX bundle through your normal
    supply-chain process; the server never downloads it for you.
 
+### Accept evidence from an adjacent system
+Sibling products (IcebergOSINT, ASM, CM) hand over an evidence item as a small **versioned
+envelope** instead of sharing a database — the contract is published at
+[`docs/contracts/evidence-envelope-v1.json`](docs/contracts/evidence-envelope-v1.json):
+
+```bash
+curl -X POST -H "Authorization: Bearer $ICEBERG_TOKEN" -H "Content-Type: application/json" \
+  --data @docs/contracts/evidence-envelope-v1.json \
+  "http://localhost:8000/api/notebooks/1/evidence"
+```
+
+1. Intake is authenticated as an ordinary Iceberg writer (no producer credentials are stored here),
+   schema-versioned and size-bounded. `(source_system, external_id, revision)` is the identity:
+   re-posting the same revision is idempotent, the same identity with different content is refused,
+   and a new revision supersedes its predecessor rather than editing history.
+2. The envelope's marking is honoured but only ever **strengthened** — never below
+   `ICEBERG_EVIDENCE_MIN_TLP` (default `AMBER`) — and nothing it claims about permissions is trusted.
+3. Nothing becomes collection material until an analyst accepts it. Open the notebook's **External
+   evidence** section to see origin, revision, marking and whether a digest was declared, then accept
+   it as a source (which keeps the deep link, digest and provenance) or reject it.
+4. If the producing system withdraws an item, record the revocation: the record and any citation
+   built on it are kept — a published product may already rely on it — and the report view shows an
+   "evidence withdrawn at source" notice. The accepted evidence manifest is frozen into the
+   publication snapshot, so a finished product always records where its material came from.
+
 ### Rename a taxonomy term safely
 1. As an `ADMIN`, open **Taxonomy** (`/admin/tags`), type the new name next to a term and press
    **Preview rename**. Nothing changes yet: you get the impact — how many draft and published
@@ -570,6 +595,7 @@ tiles; secrets show only a set/not-set status, never their value. Highlights:
 | `ICEBERG_AI_BACKEND` + `ICEBERG_AI_*` | Governed AI assist backend (`none`/`openai`/`openai-compatible`/`ollama`/`gemini`/`claude`/`bedrock`), model, key/`ICEBERG_AI_AWS_REGION`, TLP egress ceiling and timeout — **seeds** the `AISettings` row, then edit live at `/admin/ai` (off by default) |
 | `ICEBERG_AI_OLLAMA_BASE_URL` | Operator-approved Ollama base URL; the DB-editable base URL for the `ollama` provider must match it exactly (anti-SSRF base-URL pinning) |
 | `ICEBERG_AI_OPENAI_COMPATIBLE_BASE_URL` | Operator-approved base URL for the generic `openai-compatible` backend, enforced identically. Blank (the default) refuses that backend — without an env trust anchor a DB edit could ship the API key and TLP-gated content to any host |
+| `ICEBERG_EVIDENCE_MIN_TLP` | Floor marking for evidence offered by an adjacent system (default `AMBER`) — an envelope's marking is honoured but never allowed below this |
 | `ICEBERG_PUBLISH_REQUIRES_RESOLVED_THREADS` | Refuse to publish while a blocking editorial review thread is open (default `true`) |
 | `ICEBERG_MEASURES_MIN_GROUP` | Minimum distinct responding stakeholders behind a `/measures` breakdown before it is shown (default 5; `0` disables suppression) |
 | `ICEBERG_RELATED_BACKEND` | Related-product index provider: `local` (default — deterministic, non-egress hash embedding) or `none` (no vector index; related products are served by the lexical fallback) |

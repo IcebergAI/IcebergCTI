@@ -277,6 +277,17 @@
   </aside>
 </div>
 
+{% if revoked_evidence %}
+  <div class="inline-notice mt-7" role="note">
+    <strong>Evidence withdrawn at source.</strong>
+    {% for e in revoked_evidence %}
+      {{ e.source_system }} <span class="mono">{{ e.external_id }}@{{ e.revision }}</span>
+      was withdrawn{% if e.revoked_reason %} ({{ e.revoked_reason }}){% endif %}.
+    {% endfor %}
+    The citation stands as published; treat the underlying material as no longer supported.
+  </div>
+{% endif %}
+
 {% if user.role != 'STAKEHOLDER' %}
   {# Editorial review threads (#306). Internal to writers: never rendered for a
      stakeholder, and the routes behind it enforce that independently. #}

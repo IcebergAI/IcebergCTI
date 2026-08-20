@@ -162,3 +162,9 @@ definition  # unused variable (src/iceberg/services/program_measures.py)
 # templates/report_view.html rather than read back in Python (#306).
 resolved_by_id  # unused variable (src/iceberg/models.py)
 _.resolved_by_id  # SQLModel persisted attribute (src/iceberg/services/comments.py)
+
+# Evidence-intake provenance columns — persisted by the ORM and rendered in
+# templates/notebook_detail.html rather than read back in Python (#305).
+received_by_id  # unused variable (src/iceberg/models.py)
+revoked_at  # unused variable (src/iceberg/models.py)
+_.revoked_at  # SQLModel persisted attribute (src/iceberg/services/evidence.py)

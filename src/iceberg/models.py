@@ -83,6 +83,18 @@ class ReportStatus(StrEnum):
     PUBLISHED = "PUBLISHED"
 
 
+class EvidenceState(StrEnum):
+    """Lifecycle of an external evidence reference offered to a notebook."""
+
+    PENDING = "PENDING"
+    ACCEPTED = "ACCEPTED"
+    REJECTED = "REJECTED"
+    # A newer revision of the same evidence item arrived.
+    SUPERSEDED = "SUPERSEDED"
+    # The producing system withdrew it. The historical citation is kept.
+    REVOKED = "REVOKED"
+
+
 class ReportSection(StrEnum):
     """Stable anchor points an editorial comment can attach to.
 
@@ -391,6 +403,11 @@ class AuditAction(StrEnum):
     MISP_SETTINGS_UPDATED = "MISP_SETTINGS_UPDATED"
     MISP_TEST = "MISP_TEST"
     MISP_PUSHED = "MISP_PUSHED"
+    # Governed evidence intake from adjacent systems
+    EVIDENCE_RECEIVED = "EVIDENCE_RECEIVED"
+    EVIDENCE_ACCEPTED = "EVIDENCE_ACCEPTED"
+    EVIDENCE_REJECTED = "EVIDENCE_REJECTED"
+    EVIDENCE_REVOKED = "EVIDENCE_REVOKED"
     # Editorial review threads on a report (metadata only — never the text)
     REPORT_COMMENT_CREATED = "REPORT_COMMENT_CREATED"
     REPORT_COMMENT_RESOLVED = "REPORT_COMMENT_RESOLVED"
@@ -1247,6 +1264,70 @@ class DisseminationEvent(SQLModel, table=True):
     read_at: datetime | None = Field(default=None)
 
     report: Report = Relationship(back_populates="dissemination_events")
+
+
+class EvidenceReference(SQLModel, table=True):
+    """An evidence item offered by an adjacent system, awaiting analyst decision.
+
+    Iceberg does not share a database with IcebergOSINT/ASM/CM: it accepts a
+    *versioned envelope* describing one item and keeps enough of it — origin,
+    immutable identifier, revision, markings, digest and deep link — to verify
+    and revisit the original later (#305).
+
+    Identity is ``(source_system, external_id, revision)``, so re-posting the
+    same revision is idempotent rather than a duplicate, and a *new* revision
+    supersedes its predecessor instead of overwriting it. The envelope's own
+    claims about who may see it are never trusted; only its **marking** is
+    honoured, and only ever to make the result more restrictive.
+    """
+
+    __table_args__ = (
+        UniqueConstraint(
+            "source_system", "external_id", "revision", name="uq_evidence_identity"
+        ),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    notebook_id: int = Field(
+        foreign_key="notebook.id", ondelete="CASCADE", index=True
+    )
+    schema_version: str = ""
+    source_system: str = Field(index=True)
+    external_id: str = Field(index=True)
+    revision: str = ""
+    evidence_type: str = ""
+    title: str = ""
+    summary: str = ""
+    deep_link: str = ""
+    # Never weaker than the envelope's own marking (see services/evidence.py).
+    tlp: TLP = Field(default=TLP.AMBER)
+    # The producer's digest of the evidence body — recorded so a later fetch can
+    # be checked against what was accepted here.
+    content_sha256: str = ""
+    provenance: dict = Field(
+        default_factory=dict,
+        sa_column=Column(JSON, nullable=False, server_default="{}"),
+    )
+    # The envelope exactly as received, so the decision can be re-examined.
+    payload: dict = Field(
+        default_factory=dict,
+        sa_column=Column(JSON, nullable=False, server_default="{}"),
+    )
+    state: EvidenceState = Field(default=EvidenceState.PENDING, index=True)
+    received_at: datetime = Field(default_factory=utcnow)
+    received_by_id: int | None = Field(
+        default=None, foreign_key="user.id", ondelete="SET NULL"
+    )
+    decided_at: datetime | None = Field(default=None)
+    decided_by_id: int | None = Field(
+        default=None, foreign_key="user.id", ondelete="SET NULL"
+    )
+    # The notebook source created when an analyst accepted this item.
+    source_id: int | None = Field(
+        default=None, foreign_key="source.id", ondelete="SET NULL", index=True
+    )
+    revoked_at: datetime | None = Field(default=None)
+    revoked_reason: str = ""
 
 
 class ReportComment(SQLModel, table=True):
