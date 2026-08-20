@@ -87,3 +87,52 @@ def test_the_built_image_records_which_snapshot_it_came_from():
     """`docker inspect` should answer this without the source tree."""
 
     assert 'LABEL io.iceberg.apt-snapshot="${APT_SNAPSHOT}"' in DOCKERFILE
+
+
+CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
+
+# Copied into the image but unable to change whether the build or the image scan
+# succeeds, so the docker job is not worth running for an edit to it.
+BUILD_FILTER_EXEMPT = {"README.md"}
+
+
+def _build_affecting_pattern() -> str:
+    match = re.search(r"grep -qE '\^\((.+?)\)'", CI_WORKFLOW.read_text())
+    assert match, "the CI docker filter must be a single anchored grep pattern"
+    return match.group(1)
+
+
+def _copy_sources() -> list[str]:
+    """Host paths the Dockerfile copies in, excluding stage/image copies."""
+
+    sources = []
+    for line in DOCKERFILE.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("COPY ") or "--from=" in stripped:
+            continue
+        # The final token is the destination inside the image.
+        sources.extend(stripped.split()[1:-1])
+    return sources
+
+
+def test_ci_builds_the_image_when_any_copied_input_changes():
+    """A build input CI does not watch is an input that ships unbuilt.
+
+    `docker/apt-snapshot.sh` was exactly that: added with the snapshot pin,
+    executed before every apt-get in both stages, and absent from the filter —
+    so editing the script skipped the only job that builds the image.
+    """
+
+    pattern = re.compile(f"^({_build_affecting_pattern()})")
+    for source in _copy_sources():
+        if source in BUILD_FILTER_EXEMPT:
+            continue
+        path = ROOT / source
+        # A directory changes via the files under it, so test a real member.
+        if path.is_dir():
+            member = next((p for p in sorted(path.rglob("*.py")) if p.is_file()), None)
+            assert member, f"no representative file under {source}"
+            source = str(member.relative_to(ROOT))
+        assert pattern.match(source), (
+            f"{source} is copied into the image but CI would not rebuild it"
+        )
