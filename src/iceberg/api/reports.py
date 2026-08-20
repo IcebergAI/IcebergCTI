@@ -65,6 +65,7 @@ router = APIRouter(prefix="/reports", tags=["reports"])
 
 SessionDep = Annotated[Session, Depends(get_session)]
 Writer = Annotated[object, Depends(require_role(Role.ANALYST, Role.REVIEWER))]
+Admin = Annotated[object, Depends(require_role(Role.ADMIN))]
 
 
 def _get_report(session: Session, report_id: int) -> Report:
@@ -110,19 +111,36 @@ def get_report(report_id: int, session: SessionDep, user: CurrentUser) -> dict:
     return report_detail_payload(report, user)
 
 
+# Declared before the ``/{report_id}`` routes so an operator path is never
+# mistaken for a report id.
+@router.get("/index-health/related")
+def related_index_health(session: SessionDep, _a: Admin) -> dict:
+    """Operator view of the related-product index: provider, coverage, staleness."""
+
+    return related.index_health(session)
+
+
 @router.get("/{report_id}/related")
 def related_reports(report_id: int, session: SessionDep, user: CurrentUser) -> dict:
     report = ensure_visible(_get_report(session, report_id), user)
     results = related.related_reports(session, report=report, user=user)
     if user.role == Role.STAKEHOLDER:
         results = [
-            {"report": report_summary(item["report"]), "score": item["score"]}
+            {
+                "report": report_summary(item["report"]),
+                "score": item["score"],
+                "method": item["method"],
+            }
             for item in results
         ]
     return {
         "report_id": report.id,
+        # Which retrieval path answered: the vector index, or the lexical
+        # fallback that keeps the feature working when indexing is off.
+        "retrieval": related.get_provider().name if related.get_provider().enabled else "lexical",
         "results": results,
     }
+
 
 
 @router.patch("/{report_id}")
