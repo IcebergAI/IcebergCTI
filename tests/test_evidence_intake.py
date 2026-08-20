@@ -125,6 +125,32 @@ def test_an_oversized_body_is_refused_before_it_is_parsed(client, login, envelop
     assert "Send a reference, not the evidence body" in refused.json()["detail"]
 
 
+def test_an_oversized_body_is_refused_without_reading_all_of_it(client, login, envelope):
+    """The cap bounds what is read, not only what is kept.
+
+    Reading the body whole and then measuring costs the sender's size, not the
+    cap — up to whatever the global body limit allows, which is orders of
+    magnitude larger. A declared Content-Length over the cap is refused before
+    any of it is read.
+    """
+
+    notebook = _notebook(client, login)
+    huge = evidence.MAX_ENVELOPE_BYTES * 4
+
+    refused = client.post(
+        f"/api/notebooks/{notebook['id']}/evidence",
+        content=json.dumps(envelope) + " " * huge,
+        headers={"content-type": "application/json"},
+    )
+
+    assert refused.status_code == 422
+    assert "Send a reference, not the evidence body" in refused.json()["detail"]
+
+    # A body inside the cap is unaffected.
+    accepted = _post(client, notebook["id"], envelope)
+    assert accepted.status_code == 201, accepted.text
+
+
 def test_a_body_that_is_not_json_is_refused_with_the_same_reason(client, login):
     notebook = _notebook(client, login)
 
