@@ -36,7 +36,7 @@ dependencies = [
     # it. Starlette TestClient has moved to the maintained httpx2 package; keep
     # both explicit until Authlib completes that transition.
     "httpx>=0.28.1",
-    "httpx2>=2.10.0",
+    "httpx2>=2.12.0",
     "pyjwt>=2.13",
     "pydantic-settings>=2.15.0",
     "redis>=8.1.0",

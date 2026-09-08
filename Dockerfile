@@ -16,7 +16,7 @@
 # when a fix is needed. `docker build --build-arg APT_SNAPSHOT=...` overrides it
 # for a one-off test without editing the file.
 # ---------------------------------------------------------------------------- #
-ARG APT_SNAPSHOT=20260819T000000Z
+ARG APT_SNAPSHOT=20260908T000000Z
 
 # ---------------------------------------------------------------------------- #
 # Builder: resolve the *locked* dependency graph (uv.lock) into a venv and fetch
