@@ -255,5 +255,15 @@ ignore_errors = true
 #   H037  duplicate attribute — djLint 1.42.1 misreads Alpine event-modifier
 #         syntax (@keydown.arrow-right.prevent, @click.stop) as duplicate
 #         `prevent`/`stop` attributes; djLint can't parse Alpine modifiers.
+#   H043  button without type — enabled by djLint 1.45, which fired on 68 of
+#         the portal's 122 buttons. Audited before ignoring rather than after:
+#         66 of the 68 sit inside a <form> and are submit buttons relying on
+#         the HTML default, which is the idiomatic server-rendered pattern
+#         here; the other 2 sit outside any form, where the default is inert.
+#         The failure mode the rule exists to catch — a button meant as an
+#         Alpine @click action that silently submits its form instead — has
+#         zero instances: no untyped in-form button carries @click/x-on:click.
+#         So this is an explicitness convention, not a defect, and the bump
+#         should not widen the gate silently (cf. the pinned ruff rule set).
 profile = "jinja"
-ignore = "H006,H021,H023,H030,H031,H037,J004,J018,T003"
+ignore = "H006,H021,H023,H030,H031,H037,H043,J004,J018,T003"
