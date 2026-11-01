@@ -22,7 +22,7 @@ ARG APT_SNAPSHOT=20260908T000000Z
 # Builder: resolve the *locked* dependency graph (uv.lock) into a venv and fetch
 # the Typst binary. Build-only tooling (uv, curl, xz) stays out of the runtime.
 # ---------------------------------------------------------------------------- #
-FROM python:3.14-slim@sha256:ce40764625a4ff50df3548277632e7f96c4e77fe75fa848aae9885476e7df5a4 AS builder
+FROM python:3.15-slim@sha256:94d3426f1def7db4a106a232ac121bfd975393e5dfd40a619b955fae45fe7913 AS builder
 
 # Bumping TYPST_VERSION requires updating the per-arch typst_sha checksums below
 # (the build verifies the tarball and fails closed on a mismatch).
@@ -75,7 +75,7 @@ RUN set -eux; \
 # Base pinned by digest (tag + @sha256) so the build is reproducible and the exact
 # bytes are auditable; Dependabot (docker ecosystem) bumps the digest as PRs.
 # ---------------------------------------------------------------------------- #
-FROM python:3.14-slim@sha256:ce40764625a4ff50df3548277632e7f96c4e77fe75fa848aae9885476e7df5a4 AS runtime
+FROM python:3.15-slim@sha256:94d3426f1def7db4a106a232ac121bfd975393e5dfd40a619b955fae45fe7913 AS runtime
 
 # No ICEBERG_DATABASE_URL default: the container datastore is PostgreSQL and the
 # prod app refuses to boot on SQLite (config._guard_production), so the operator
