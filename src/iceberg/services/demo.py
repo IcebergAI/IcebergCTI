@@ -16,6 +16,7 @@ from sqlmodel import Session, col, select
 
 from .. import demo_content as content
 from ..models import (
+    persisted_id,
     AudienceGroup,
     DemoWorkspace,
     DisseminationEvent,
@@ -125,7 +126,7 @@ def start(session: Session, owner: User) -> StartedWorkspace:
     code = _new_join_code()
     workspace = DemoWorkspace(
         public_id=secrets.token_urlsafe(18),
-        owner_id=owner.id,
+        owner_id=persisted_id(owner),
         join_code_digest=_digest(code),
         join_expires_at=utcnow() + timedelta(hours=24),
         scenario_version=content.SCENARIO_VERSION,
@@ -263,7 +264,7 @@ def _replace_scenario(session: Session, workspace: DemoWorkspace) -> None:
     session.add(audience)
     session.flush()
     source = Source(
-        notebook_id=notebook.id,
+        notebook_id=persisted_id(notebook),
         title=content.SOURCE_TITLE,
         reference=content.SOURCE_REFERENCE,
         summary=content.SOURCE_SUMMARY,
@@ -275,7 +276,7 @@ def _replace_scenario(session: Session, workspace: DemoWorkspace) -> None:
         grading_rationale="Synthetic demo fixture",
     )
     report = Report(
-        notebook_id=notebook.id,
+        notebook_id=persisted_id(notebook),
         demo_workspace_id=workspace.id,
         title=content.REPORT_TITLE,
         body_md=content.REPORT_BODY,

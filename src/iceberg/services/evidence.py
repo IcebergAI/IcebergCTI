@@ -37,6 +37,7 @@ from sqlmodel import Session, col, select
 
 from ..config import get_settings
 from ..models import (
+    persisted_id,
     EvidenceReference,
     EvidenceState,
     Notebook,
@@ -246,7 +247,7 @@ def intake(
             superseded.append(older.id)
 
     reference = EvidenceReference(
-        notebook_id=notebook.id,
+        notebook_id=persisted_id(notebook),
         schema_version=fields["schema_version"],
         source_system=fields["source_system"],
         external_id=fields["external_id"],

@@ -5,6 +5,7 @@ from fastapi import HTTPException, status
 from sqlmodel import Session
 
 from ..models import (
+    persisted_id,
     TLP,
     Note,
     Notebook,
@@ -48,7 +49,7 @@ def add_source(
     commit: bool = True,
 ) -> Source:
     source = Source(
-        notebook_id=notebook.id,
+        notebook_id=persisted_id(notebook),
         title=title,
         reference=reference,
         summary=summary,
@@ -109,7 +110,7 @@ def update_source(
 
 
 def add_note(session: Session, notebook: Notebook, *, body_md: str = "") -> Note:
-    note = Note(notebook_id=notebook.id, body_md=body_md)
+    note = Note(notebook_id=persisted_id(notebook), body_md=body_md)
     session.add(note)
     session.commit()
     session.refresh(note)

@@ -11,6 +11,20 @@ the SemVer form. See [docs/RELEASING.md](docs/RELEASING.md).
 
 ## [Unreleased]
 
+### Security
+
+- Dependency refresh clearing the open `pip-audit` / Trivy findings: authlib, pyjwt, joserfc,
+  urllib3, certifi, anyio, filelock, virtualenv, msgpack, the runtime image's Debian package set
+  (`APT_SNAPSHOT` → 2026-11-08: openssl, perl, zlib, sqlite, pcre2), GitHub Actions pins and
+  SeaweedFS 4.46.
+
+### Fixed
+
+- The `claude` / `bedrock` AI backends hand the SDK an `httpx2` client: `anthropic` 2.x rejects an
+  `httpx.Client`, which would have left governed AI assist permanently unavailable.
+- A dissemination-policy version window given as a naive ISO timestamp is treated as UTC instead of
+  failing with a server error (and mixing a naive with an offset bound no longer raises).
+
 ## [0.1.0-beta.1] — 2026-08-18
 
 The first supported beta. Everything below is the work merged to `main` up to this tag.

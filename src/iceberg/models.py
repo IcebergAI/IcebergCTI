@@ -16,6 +16,20 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def persisted_id(row: SQLModel) -> int:
+    """The primary key of a row that must already be flushed.
+
+    Every table's ``id`` is ``int | None`` until the row is inserted, while the
+    foreign keys that reference it are plain ``int``. Fail closed rather than
+    write a NULL parent id if a caller passes an unsaved row.
+    """
+
+    row_id = getattr(row, "id", None)
+    if row_id is None:
+        raise RuntimeError(f"{type(row).__name__} has not been persisted")
+    return row_id
+
+
 # --------------------------------------------------------------------------- #
 # Enums
 # --------------------------------------------------------------------------- #

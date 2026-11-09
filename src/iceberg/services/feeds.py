@@ -40,7 +40,16 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
 
 from ..config import get_settings
-from ..models import FeedIndicatorCandidate, TLP, Feed, FeedItem, Notebook, Source, utcnow
+from ..models import (
+    TLP,
+    Feed,
+    FeedIndicatorCandidate,
+    FeedItem,
+    Notebook,
+    Source,
+    persisted_id,
+    utcnow,
+)
 from . import notebooks as notebook_service
 from . import proxy, proxy_settings, retention
 
@@ -467,7 +476,7 @@ def fetch_feed(session: Session, feed: Feed) -> int:
             if _add_feed_item_if_new(
                 session,
                 FeedItem(
-                    feed_id=feed.id,
+                    feed_id=persisted_id(feed),
                     guid=guid,
                     link=entry.get("link", ""),
                     title=entry.get("title", "") or "(untitled)",
