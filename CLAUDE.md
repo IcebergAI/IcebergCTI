@@ -1,194 +1,26 @@
-# Iceberg
+# IcebergCTI contributor guide
 
-> Detailed domain model, subsystem designs, and the test-coverage map live in [ARCHITECTURE.md](ARCHITECTURE.md).
+IcebergCTI is a FastAPI cyber-threat-intelligence platform with a JSON API and server-rendered portal. It collects notebook material and publishes immutable intelligence products; it is not an authoritative IOC store.
 
-## Overview
-Iceberg is a cyber threat intelligence platform for collecting threat intelligence and, authoring and disseminating finished reports and artefacts to stakeholders. It follows the traditional Strategic, Tactical and Operational model for classifying intelligence levels. Iceberg also defines stakeholders and allows aligning intelligence goals with stakeholder requirements e.g. stakeholders are readonly users that can record intelligence goals which can be aggregated for analyst tasking. Stakeholders also define their preferred intelligence level and this drives dissemination. Classification of reports follows the TLP protocol. Reports are authored in markdown and published as finished reports in the portal. Iceberg is **not an IOC store** — the authoritative indicator store stays external (MISP in the first instance). It does carry **light-touch IOCs** as a staging layer: analysts capture indicators as notebook entities, cite a subset in a report (rendered as an Indicators appendix), and push them to MISP as one event (see *Light-touch IOCs (MISP push)*).
+## Essential invariants
 
-Collection is notebook-based: analysts open a topic **notebook**, gather **sources**, **notes** and uploaded **attachments** in it, then author one or more **intelligence products** (reports) from that material.
+- Keep one FastAPI application and preserve the authenticated API/portal boundaries. Production uses PostgreSQL; SQLite is local development/test only and is refused in production.
+- Keep secrets environment-only and retain production startup guards. Every outbound HTTP call uses the global proxy and the durable outbox; network fetches must remain SSRF-safe.
+- Published products are immutable snapshots. Preserve optimistic-lock conflicts as 409 and do not derive published output from mutable notebook material.
+- Dissemination can only narrow its authorization-derived recipient set; TLP gates egress/dissemination rather than in-portal reading.
+- Preserve role-wide writer notebook access, centralized authorization, audit behavior, strict CSP, and the documented middleware ordering.
+- Keep uploads bounded and magic-byte validated. Do not log secrets or sensitive payloads.
+- Releases require the documented signed, attested tag workflow; never publish or deploy without explicit authority.
 
-## Architecture
-API-first design consumed by a server-rendered portal; all endpoints authenticated using JWT.
+## Conditional references
 
-A **single FastAPI application** serves both the JSON API under `/api/*` and the server-rendered portal under `/*`. (The earlier "Quart" web framework was dropped in favour of this single-app design.) The interactive API docs (`/docs`, `/redoc`, `/openapi.json`) are disabled in prod.
+Read the detailed source only when relevant:
 
-Authentication is **multi-provider OIDC** (Microsoft Entra, Authentik, Auth0, Okta — simultaneously), admin-configured on the `OIDCSettings` row (`/admin/oidc`; env seeds it). One generic Authlib flow drives all providers via `auth/oidc/` adapters (thin per-IdP claim extraction) + parametrised `/auth/oidc/{provider}/{login,callback}` routes; the legacy `/auth/entra/login` + `/auth/callback` remain Entra back-compat aliases. After login Iceberg mints its own short-lived **JWT** (per-user `token_version` for logout/revocation), sent as a Bearer header by API clients or stored in a signed session cookie by the portal. The JWT and the session cookie are signed with **purpose-separated keys** derived from `ICEBERG_SECRET_KEY` (`auth/signing.py`, `jwt` vs `session` contexts). A **dev-login bypass** (`ICEBERG_DEV_AUTH=true`, disabled in prod) issues a role JWT without an IdP for local dev/tests. Users are keyed on **`(auth_provider, issuer, sub)`** (email is non-identifying — the same person may exist under two IdPs); a per-provider `role_map` maps IdP groups → `Role`, defaulting to least-privilege `STAKEHOLDER`; a missing/unverified email is rejected. Per-provider client secret is env-only (`ICEBERG_OIDC_<PROVIDER>_CLIENT_SECRET`). A same-origin **CSRF** middleware (`auth/csrf.py`) rejects cookie-authenticated state-changing requests whose `Origin`/`Referer` mismatch the host (Bearer/anonymous exempt); logout is POST-only. Full detail — auth, CSRF, rate limiting, security response headers, health probes — in ARCHITECTURE.md.
+- [Development reference](docs/DEVELOPMENT_REFERENCE.md) retains the full architecture, domain-model, tooling, test, release, and maintenance guidance formerly in this root file.
+- [Architecture](ARCHITECTURE.md) for subsystem contracts and test-coverage details.
+- [Release procedure](docs/RELEASING.md) for versioning, rehearsal, signing, publication, or verification.
+- [Demo workspace guide](docs/demo-workspace.md) for demo data and reset behavior.
 
-Roles: `ADMIN`, `ANALYST`, `REVIEWER`, `STAKEHOLDER` (read-only).
+## Validation and publication
 
-### Key invariants
-
-- **Secrets are env-only** — no secret DB columns; single-row settings (`Audit`/`Proxy`/`MISP`/`Webhook`Settings) seeded via `services/singleton.get_or_create` (atomic `INSERT … ON CONFLICT DO NOTHING`).
-- **Published reports are immutable** — stakeholder/PDF/MISP output comes from the frozen `PublicationSnapshot`, not live notebook material; an ORM optimistic-lock `version` column maps a stale write to **409**.
-- **Notebook access is role-wide** for any writer (ANALYST/REVIEWER/ADMIN), NOT owner-scoped (#65); `owner_id` is provenance only — the one owner/admin gate is deleting the whole notebook.
-- **Inline-embed tokens** `[[diamond|figure|ach:ID]]` + bare `[[attack]]` (single source `embeds.py`); SVG / base64 `data:` URIs are injected **after** nh3 sanitisation; tokens are notebook-scoped, unknown/cross-notebook ids degrade to an "unavailable" notice.
-- **Dissemination policy only narrows** — recipient resolution starts from the base authorization (TLP ceiling, intel-level preference, tag subscriptions, audience scope); every policy rule and every publisher exception can only *remove* a recipient, so no rule set can widen access or weaken a marking. The resolution is **fingerprinted**, and publishing with a stale fingerprint is a **409**.
-- **TLP** is a display + dissemination-routing marking (never an in-portal read gate) that gates **AI egress** (`ICEBERG_AI_MAX_TLP`), **dissemination** (`ICEBERG_DISSEMINATION_MAX_TLP`), and the **MISP push** (`ICEBERG_MISP_MAX_TLP`).
-- **Every outbound HTTP call honours the global proxy** (`proxy.resolve` — RSS/SIEM/MISP/AI/webhook **and OIDC discovery/JWKS/token**); **external work rides the durable `OutboxJob` outbox**, enqueued in the same transaction as its cause and drained by `iceberg-worker` (lease/retry/backoff).
-- **CSP-safe Alpine** — strict `script-src 'self'` (no `unsafe-inline`/`unsafe-eval`): the vendored CSP build, every component registered in `static/js/tags.js`, no inline JS / `on*=` handlers / `x-html`. **Middleware order** (outer→inner): `SecurityHeaders → BodySizeLimit → Audit → RateLimit → Session → CSRF` (`BodySizeLimit` rejects an oversized body with 413 before any inner middleware buffers it; `ICEBERG_MAX_BODY_MB`).
-- **Hardening** — the one server-side fetcher (RSS + writer TAXII/MISP pull) rides a full **SSRF guard** (http(s)-only, private/loopback rejected, byte/timeout-bounded, redirect hops re-validated); uploads are MIME-whitelisted + size-capped + **magic-byte validated** (`services/upload_validation.py`); the audit `detail` JSON never carries secrets/PII; prod guards (`config._guard_production`) refuse a SQLite URL / weak `ICEBERG_SECRET_KEY` / wildcard `FORWARDED_ALLOW_IPS`.
-
-### Technologies
-- Python >= 3.14
-- FastAPI (API + portal), SQLModel — **SQLite** (zero-dependency **local dev/test default only**) or **PostgreSQL** (the **required datastore for every container/production deployment**, via the `psycopg` v3 driver and a `postgresql+psycopg://` `ICEBERG_DATABASE_URL`; `pip install` the `postgres` extra). The app **refuses to boot on a SQLite URL when `ICEBERG_ENVIRONMENT=prod`** (`config._guard_production`, alongside the secret-key guard and a prod-only rejection of a wildcard `FORWARDED_ALLOW_IPS` — client IPs key rate limits and audit data, so wildcard proxy trust is unsafe), and the Docker image ships **no SQLite fallback** (no `ICEBERG_DATABASE_URL` default) so a container can't silently run SQLite. PyTest
-- Jinja2 + Tailwind CSS + Alpine JS (portal)
-- Typst — report → PDF typesetting (rendering goes directly through the Typst binary; Quarto was considered as a publishing layer but direct Typst was chosen — equivalent output, fewer dependencies)
-
-### Domain model (`src/iceberg/models.py`)
-_Compact index — full per-model bullets in ARCHITECTURE.md._
-
-- **User** — identity keyed on `(auth_provider, issuer, sub)`, role, intel-level preference, `token_version`, tag subs, audience-group memberships (email non-unique).
-- **Notebook** — writer-only topic workspace; role-wide access (#65), owner/admin-only whole-notebook delete.
-- **Source / Note** — collected notebook material; sources carry a TLP marking + Admiralty/NATO grading.
-- **Attachment** — writer-only uploaded blob; MIME + magic-byte validated, SHA-256 verified and citable in reports.
-- **DiamondModel** — Diamond Model assessment; embedded inline via `[[diamond:ID]]` (no link table).
-- **Figure** — uploaded image (PNG/JPEG/GIF); embedded inline via `[[figure:ID]]` as a `data:` URI.
-- **IOC** — light-touch indicator staging entity; MISP-typed; TLP inherited from provenance source.
-- **ReportMispEvent** — records a report's idempotent MISP push (event uuid + last outcome).
-- **AISettings** — single-row governed-AI provider config (`/admin/ai`); provider/model/base-URL/timeout/TLP-ceiling/embeddings; API key env-only. Env seeds the row; `services/ai_settings.resolve` overlays it onto `Settings` so `services/ai.py` (TLP egress gate, fail-soft envelope) is unchanged. openai/gemini base-URLs are hard-pinned; ollama's and openai-compatible's are validated (at save **and** at call time) against `ICEBERG_AI_OLLAMA_BASE_URL` / `ICEBERG_AI_OPENAI_COMPATIBLE_BASE_URL`, and an unset env pin refuses the backend outright (anti-SSRF, anti key-exfil).
-- **MISPSettings** — single-row outbound MISP config (`/admin/misp`); API key env-only.
-- **WebhookSettings** — single-row publication-webhook config (`/admin/webhook`); bearer token env-only.
-- **OIDCSettings** — single-row multi-provider OIDC config (`/admin/oidc`; Entra/Authentik/Auth0/Okta); per-provider client secret env-only.
-- **ACHModel** — Analysis of Competing Hypotheses matrix; embedded inline via `[[ach:ID]]`.
-- **EvidenceReference** — a versioned evidence envelope offered by an adjacent system (OSINT/ASM/CM), identified by `(source_system, external_id, revision)`; markings strengthen-only, analyst-accepted into a Source, revocation signals rather than erases.
-- **ReportComment** — editorial review thread/reply anchored to a report section *and* the revision it was written against; may carry a bounded suggested replacement applied under an optimistic-lock check.
-- **Report** — the intelligence product — markdown body, `intel_level`, `tlp`, lifecycle, ICD 203 scaffolding, tags, optimistic-lock `version`, snapshot hash.
-- **RenderedProduct** — on-demand PDF (FULL / EXEC_BRIEF / ONE_PAGER); retention-pruned, snapshot-bound.
-- **PublicationSnapshot** — immutable publish-time frozen representation (HTML / Typst / MISP inputs).
-- **Requirement** — stakeholder requirement (PIR/GIR/RFI) feeding the analyst tasking board.
-- **DemoWorkspace** — a resettable synthetic-cycle boundary linking one analyst owner to one stakeholder through a one-time join code. Its marked roots are excluded from operational metrics and reset without touching user-created work; publication still uses the normal immutable snapshot/feed path but queues no external notifications.
-- **Tag** — controlled CTI taxonomy term; admin-curated; named-threat kinds carry aliases + attribution; renaming is previewed for impact/conflicts and keeps the old name as an audited alias so links and search keep resolving.
-- **DisseminationEvent** — a published report delivered to a stakeholder's feed, with read tracking.
-- **OutboxJob** — durable lease-based unit of external work (dissemination email / webhook / RSS poll).
-- **AudienceGroup** — admin-managed need-to-know group scoping stakeholders + reports.
-- **DisseminationPolicy / DisseminationPolicyVersion** — reviewed, versioned recipient-routing rules; a version is immutable once approved and rules can only **narrow** the recipients a product's marking and audience scope already allow.
-- **ReportEmbedding** — rebuildable local vector row for related-products (no content egress); records provider/model/version + the indexed report revision and content digest, so a stale entry is detected and skipped rather than served.
-- **ProductFeedback** — stakeholder feedback on a delivered product (usefulness + RFI-satisfaction verdict).
-- **Feed / FeedItem / FeedIndicatorCandidate** — admin-configured RSS/Atom collection; writers can explicitly review deterministic, evidence-linked IOC candidates before accepting them into a notebook.
-- **AuditEvent** — persisted security-relevant event (OWASP attributes); local forensic trail.
-- **AuditSettings** — single-row SIEM-emit config (`/admin/audit`); HTTP/HEC token env-only.
-- **ProxySettings** — single-row global outbound-proxy config (`/admin/proxy`); credentials env-only.
-
-### TLP & intelligence level
-TLP is a **display marking + a dissemination-routing input**; it does **not** gate in-portal read access (any authenticated user may browse published reports). `intel_level` is a classification tag used for dissemination matching. Product format (full/brief/one-pager) is chosen on demand and is independent of `intel_level`.
-
-### Project structure
-```
-src/iceberg/
-  main.py          # app factory: mounts API + portal, middleware stack (CSRF/session/rate-limit/audit/headers), auth redirect, 409 stale-write handler, RSS poll loop
-  health.py        # unauthenticated /healthz (liveness) + /readyz (readiness) probes
-  config.py        # pydantic-settings (ICEBERG_ env prefix) + prod guards (secret key, SQLite, wildcard proxy trust)
-  db.py            # SQLite engine/session, FK pragma, Alembic upgrade on boot
-  migrations/      # Alembic env + versioned migrations (baseline owns the FTS DDL)
-  models.py        # SQLModel models + enums
-  schemas.py       # API request bodies
-  seed.py          # CLI: import the tag taxonomy (python -m iceberg.seed)
-  attack_import.py # CLI: file-only MITRE Enterprise ATT&CK bundle import (iceberg-import-attack)
-  help_content.py  # structured /help copy: per-role guides + concepts glossary
-  maintenance.py   # deploy/ops CLIs: schema + blob migration, prune, outbox/storage workers, reconciliation, active storage check, restore verification
-  embeds.py        # single source of the inline-embed token grammar ([[diamond|figure|ach:ID]] / [[attack]])
-  logging_config.py # app-log setup (level/format env, correlation-id contextvar)
-  templating.py    # shared Jinja2Templates instance
-  auth/            # OIDC (Entra) + dev login, JWT mint/decode (tokens), purpose-separated signing keys (signing), role dependencies, same-origin CSRF mw, rate-limit mw, audit capture mw, best-effort request-actor lookup
-  api/             # JSON routers: notebooks (incl. imports/taxii + imports/misp), reports, requirements, feed, feedback, account, preview, tags, search, attack, audience, comments (editorial review threads), audience-policy (admin rule sets + publisher recipient preview), ai, taxii
-                   #   (/api/preview/* are an authoring aid and are WRITER-ONLY: they resolve notebook-scoped
-                   #    [[diamond]]/[[figure]]/[[ach]] tokens, so a read-only stakeholder must not reach them)
-  web/             # portal routes (Jinja2): common (shared router + guards/helpers) + domain modules
-                   #   (notebooks, analytics [diamond/ACH], reports, requirements, feed [stakeholder dissemination],
-                   #    feeds [analyst RSS reader], discovery [search/taxonomy/audience/measures], admin_audit, admin_feeds [RSS config],
-                   #    admin_proxy [outbound proxy config], admin_oidc [multi-provider SSO config], admin_policy [dissemination-policy rule sets], admin_ai [AI provider config], admin_misp [MISP push config], admin_webhook [publication webhook config], admin_config [read-only effective-config viewer], admin_home [/admin Settings & integrations hub: status-pill tiles over the config pages])
-  auth/oidc/       # multi-provider OIDC adapters (base StandardOIDCAdapter + registry + entra/authentik/auth0/okta claim extraction)
-  services/        # users (OIDC provisioning keyed on (auth_provider,issuer,sub)), oidc_settings (multi-provider config row + enabled_providers resolver, env-only secrets), notebooks, lifecycle, citations/rendering (reports), comments (section-anchored editorial threads + suggested edits), publication (immutable publish snapshots + atomic publish), requirements, attachments, figures, upload_validation (magic-byte content sniffing for uploads), storage (verified local/S3 blob adapters), storage_deletions (durable tombstones + leased workers), storage_maintenance (resumable migration/cursor-backed reconciliation), storage_metrics (operation metrics + DB-persisted maintenance state), source_grading (offline Admiralty heuristic), diamond, ach, iocs (light-touch IOC staging CRUD + AI-candidate normalisation: refang + IOCType constraint), product_html (shared report-HTML assembler + inline-embed registry), dissemination (feed delivery + email/webhook job enqueue; `match_decisions` explains the base recipient set), audience_policy (versioned narrowing-only dissemination policy: rule validation, version lifecycle, fingerprinted recipient resolution), jobs (durable OutboxJob outbox: enqueue/lease/retry + worker pass), singleton (conflict-safe settings-row seeding), webhook_settings (publication-webhook config row, env-only token), email, feed (stakeholder feed helpers + delivery_context: the RFI link and the current preference match, reported separately — the event stores no publish-time routing metadata), feedback (intel-cycle feedback loop / RFI-satisfaction), feeds (inbound RSS ingestion: admin CRUD + bounded SSRF-guarded fetch/parse/sanitise + send-to-notebook), inbound (writer-triggered TAXII/MISP pull → notebook sources/IOCs), evidence (governed intake of versioned evidence envelopes from adjacent systems: idempotent identity, strengthen-only markings, analyst acceptance, revocation, publication manifest), misp + misp_settings (outbound MISP push: report indicators → one MISP event, env-only API key), proxy + proxy_settings (global outbound-proxy resolution for httpx), tags, search (FTS dispatch + paginated search_page), attack (ATT&CK Navigator export + coverage matrix), attack_import (Enterprise ATT&CK bundle → TECHNIQUE tags), stix (STIX 2.1 bundle export: deterministic ids, relationship SROs, external references, TLP/statement markings, structured lossy-mapping warnings), taxii (read-only TAXII 2.1-shaped serving incl. version/spec-version filters + an object-versions endpoint), related (permission-safe related-product retrieval: EmbeddingProvider abstraction, provenance-based staleness, cursor-free resumable reindex, lexical fallback, index health), audience (fail-closed audience-group mutations), ai + ai_settings (governed AI assist + admin-editable provider config row, env-only key, resolver overlays row onto Settings), tradecraft (advisory estimative-language lint), maturity (CTI program maturity & effectiveness dashboard), program_measures (programme measures: documented definitions, authorization-scoped totals, small-group suppression, CSV export), audit + audit_settings + siem (security audit logging → SIEM), effective_config (read-only resolved-config snapshot for /admin/config: provenance + secret-redaction + prod-guard validation + feature tiles; also `admin_hub_tiles` — the per-subsystem status pills behind /admin)
-  rendering/       # markdown->HTML, report->PDF (typst), svg (shared diagram helpers: escape/fonts/wrap/placard)
-  data/            # starter_tags.json (importable starter taxonomy)
-  templates/       # Jinja2 + Alpine: base (command-center shell: rail+topbar+canvas+⌘K palette), _glyph, _macros,
-                   #   one per screen (+ notebooks_list / entities_list index pages backing the rail)
-  static/css/      # iceberg.css design system + vendor/{tailwind,fonts}.css (built, SRI)
-  static/js/       # tags.js (Alpine factories) + vendor/alpine.min.js (pinned, SRI)
-  static/fonts/    # self-hosted Archivo/JetBrains Mono/Spectral woff2
-  static/assets.lock.json  # vendored-asset manifest (versions + SRI), read by templating.py
-  typst/           # product.typ template
-frontend/          # Tailwind v4 build entrypoint (input.css: @import/@source/@theme) for scripts/vendor_assets.py
-scripts/           # vendor_assets.py — regenerate the self-hosted frontend assets
-tests/             # pytest
-```
-
-## Running
-```bash
-uv sync --extra dev
-cp .env.example .env            # adjust as needed
-uv run uvicorn iceberg.main:app --reload
-# open http://localhost:8000 — use the dev login (or configure Entra)
-```
-Optional for PDF rendering: install the [`typst`](https://github.com/typst/typst) binary on PATH.
-
-The portal's frontend assets are **self-hosted** — `static/css/iceberg.css` (the hand-authored design system) plus the vendored, version-pinned, SRI-protected Tailwind build, Alpine and fonts under `static/{css,js,fonts}/vendor` (see *Self-hosted assets + SRI*). No CDN is contacted at runtime. To **regenerate or bump** them, edit the pins at the top of `scripts/vendor_assets.py` (and the font spec) and run `python scripts/vendor_assets.py`, then commit the regenerated `static/` assets + `assets.lock.json`. The `assets` CI job re-runs the script and fails on any drift; a `tests/test_frontend_assets.py` guard re-checks the SRI hashes and that no template references a CDN origin. (A standalone Tailwind binary is downloaded to `frontend/.bin/`, gitignored.)
-
-## Testing
-Test all crucial functionality with Pytest, create regression tests for identified bugs.
-```bash
-uv run pytest        # parallel by default (-n auto via pytest-xdist; pass -n0 to debug)
-```
-The suite is per-test setup-bound (each test rebuilds the app: migrations + taxonomy seed + FTS
-rebuild), so it's run **in parallel** via `pytest-xdist` (`addopts = "-n auto"`) — ~107s → ~40s
-on 8 cores. Tests are process-isolated and parallel-safe (in-memory DB per test, `tmp_path` for
-files, ASGI transport so no port binding; the `siem`/`email` `OUTBOX` globals are cleared by
-autouse fixtures per test). Use `pytest -n0` when you need `pdb` or live `-s` output.
-
-**Static gates** (CI + pre-commit, mirrored): `ruff` (lint — the rule set is pinned **explicitly**
-to `["E4","E7","E9","F"]` in `[tool.ruff.lint]` rather than inherited from ruff's implicit default,
-so a version bump can't silently widen the gate; ruff 0.16 broadened its default and produced 313
-findings on unchanged code), `bandit` (security), `vulture`
-(dead code), `mypy` (types), `pip-audit` (dependency CVEs), and **frontend lint** — `djlint
-src/iceberg/templates --lint` (Jinja/HTML structure; lint-only, config + ignore rationale in
-`[tool.djlint]`) and `biome lint src/iceberg/static` (hand-authored CSS + Alpine component JS; config
-in `biome.jsonc`). Biome is the one tool not in the pip dev extra — it's a standalone binary (no
-Node); CI installs it via `biomejs/setup-biome`, the pre-commit hook no-ops if it's absent.
-(curlylint was evaluated and rejected: its parser can't handle Alpine's `@click`/`:class` attribute
-syntax.) **mypy** type-checks the pure-logic / interface modules; ORM-query-heavy modules (SQLModel
-column expressions defeat mypy) are staged out via an `ignore_errors` override list in `[tool.mypy]`
-that is burned down over time — config in `pyproject.toml`, `migrations/` excluded like the other
-gates. Two **separate CI-only workflows** run outside the bundled `test` job: **CodeQL** SAST
-(`.github/workflows/codeql.yml`, Python + JavaScript/TypeScript, weekly cron, SARIF → code scanning,
-vendored Alpine excluded) and a **`lint-workflows`** job (`zizmor` + `actionlint`) that audits the
-workflow files themselves so the SHA-pinning / least-privilege posture can't silently regress. The
-push-only `docker` job also runs a **Trivy** image vulnerability scan (fixable HIGH/CRITICAL,
-`ignore-unfixed`) so base-layer CVEs beyond `pip-audit`'s reach surface.
-
-**Release rehearsal (`scripts/release_rehearsal.sh`, `scripts/rehearsal_seed.py`,
-`.github/workflows/release-rehearsal.yml`).** A release automation that has never been run is a
-plan, not a release. The **manual** `Release rehearsal` workflow (and the same script locally)
-proves four things against PostgreSQL on the commit about to be tagged and stops at the first
-failure: a **clean install** (migrate an empty database to head, boot the image, probes ready), a
-**seeded upgrade** (stage a database at the *previous* revision, seed a user/notebook/source/report,
-migrate forward with this release's job, read them back), a **backup and verified restore** (dump →
-restore into a fresh database → `iceberg-verify-files` + the seeded-data check), and the **rollback
-boundary** (classify every migration's `downgrade()`; most add schema, so rollback is
-restore-the-backup, not `alembic downgrade`). `scripts/verify_release.sh` checks a *published*
-release: the tag resolves to an immutable digest whose cosign signature was issued to this repo's
-release workflow for that tag, whose SLSA provenance verifies, and whose
-`org.opencontainers.image.revision` is the commit the tag points at. Compatibility, support and
-rollback policy live in [`docs/RELEASING.md`](docs/RELEASING.md).
-
-**Releases (`.github/workflows/release.yml`, [`docs/RELEASING.md`](docs/RELEASING.md)).** A release
-is a git tag: pushing a `v*` tag to `main` fires the workflow, which verifies the tag matches the
-`pyproject.toml` version (PEP 440 → SemVer normalised) and that the commit is on `main`, then builds
-and pushes `ghcr.io/icebergai/icebergcti` (SemVer tags; `:latest`/`major.minor` only for a stable
-tag) **with an SBOM + SLSA `mode=max` provenance**, attests provenance to the registry,
-**cosign-signs** the image (keyless/OIDC), and creates the GitHub Release. It runs as **two jobs for
-least privilege**: `build` (`contents: read`) does the tag/pyproject + commit-on-`main` validation and
-a never-pushed build, and `publish` — holding the `packages`/`contents`/`id-token`/`attestations`
-write scopes — is gated on it and on an actual tag push, so validation completes before any
-credential-bearing job starts and `workflow_dispatch` never touches the elevated scopes.
-`workflow_dispatch` is a build-only dry run. The version guard **rejects** PEP 440 forms outside
-{final, `aN`, `bN`, `rcN`} rather than passing them through un-normalised, and a `concurrency` group
-serialises releases per ref so two close tags can't land `:latest` out of order. Version bumps are documented in `docs/RELEASING.md`; notable changes in
-`CHANGELOG.md`. The `deploy/k8s/` manifests reference the published image (pin an immutable digest
-in prod via `deploy/k8s/release.sh`).
-
-## Maintenance
-- Maintain an up to date CLAUDE.md
-- Maintain an up to date README.md
-- Maintain an up-to-date ARCHITECTURE.md alongside CLAUDE.md/README.md.
-- **Runtime image package set** — the Dockerfile's `apt-get upgrade` reads from `snapshot.debian.org` at the `APT_SNAPSHOT` timestamp declared at the top of the file (applied by `docker/apt-snapshot.sh` over HTTPS — the transport is what authenticates *which* snapshot answered, since APT's signatures don't and a snapshot must disable the staleness check), so the same commit always produces the same package set. Dependabot bumps the base/uv digests but cannot see this pin: bump it deliberately (in a commit) when Trivy flags a fixable HIGH/CRITICAL the current snapshot doesn't fix, or on the same cadence as the frontend pins. `tests/test_image_pins.py` enforces that every stage running `apt-get` repoints at the snapshot first and that the upgrade is never left reading a live mirror.
-- **Frontend asset versions** — Tailwind/Alpine/fonts are pinned in `scripts/vendor_assets.py`. Periodically (e.g. quarterly) check upstream for newer releases, bump the pins, run `python scripts/vendor_assets.py`, and commit the regenerated `static/` assets + `assets.lock.json`. Dependabot can't track these CDN-script versions, so the bump is deliberate; the `assets` CI job enforces that the committed files match the pins.
+Use focused, resource-bounded checks for the affected surface; documentation-only work needs link and diff checks. Add focused regression tests for behavioral changes. Broad suites, release rehearsals, cloud publication, deployment, and any credential operation require explicit task authority. Report what was actually verified and label untested platforms or environments.
