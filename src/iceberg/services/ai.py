@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
+import httpx2
 
 from ..config import Settings, get_settings
 from ..models import ProxySettings, Report, Source, TLP, User, is_disseminable
@@ -336,13 +337,16 @@ class _AnthropicBackend(AIBackend):
     default_model: str = ""
 
     @abstractmethod
-    def _client(self, settings: Settings, http_client: httpx.Client):
+    def _client(self, settings: Settings, http_client: httpx2.Client):
         """Construct the provider SDK client. Raise ``BackendUnavailable`` when
         the optional SDK isn't installed."""
 
     def _complete(self, prompt, *, settings, proxy_settings):
         model = settings.ai_model or self.default_model
-        with httpx.Client(**_resolve_proxy(proxy_settings, _ANTHROPIC_URL)) as http_client:
+        # anthropic>=2 is built on httpx2 and rejects an ``httpx.Client`` with a
+        # TypeError, so the proxy-carrying client handed to it must be httpx2's
+        # (same ``proxy`` / ``trust_env`` kwargs). Other backends stay on httpx.
+        with httpx2.Client(**_resolve_proxy(proxy_settings, _ANTHROPIC_URL)) as http_client:
             client = self._client(settings, http_client)
             resp = client.messages.create(
                 model=model,

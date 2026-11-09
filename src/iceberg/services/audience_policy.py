@@ -32,6 +32,7 @@ from fastapi import HTTPException, status
 from sqlmodel import Session, col, select
 
 from ..models import (
+    persisted_id,
     AudienceGroup,
     DisseminationPolicy,
     DisseminationPolicyVersion,
@@ -259,6 +260,7 @@ def create_version(
 ) -> DisseminationPolicyVersion:
     """Draft the next version of a policy. Approved versions are never rewritten."""
 
+    effective_from, effective_to = _aware(effective_from), _aware(effective_to)
     if effective_from and effective_to and effective_to <= effective_from:
         raise PolicyError("The effective end must be after the effective start")
     latest = versions(session, policy)
@@ -269,7 +271,7 @@ def create_version(
             status.HTTP_409_CONFLICT,
         )
     version = DisseminationPolicyVersion(
-        policy_id=policy.id,
+        policy_id=persisted_id(policy),
         version=(latest[0].version + 1) if latest else 1,
         rules=validate_rules(rules),
         note=note.strip(),
@@ -299,6 +301,7 @@ def update_draft(
             "An approved version is immutable — draft the next version instead",
             status.HTTP_409_CONFLICT,
         )
+    effective_from, effective_to = _aware(effective_from), _aware(effective_to)
     if effective_from and effective_to and effective_to <= effective_from:
         raise PolicyError("The effective end must be after the effective start")
     version.rules = validate_rules(rules)
@@ -392,7 +395,13 @@ def delete_draft(session: Session, version: DisseminationPolicyVersion) -> None:
 
 
 def _aware(value: datetime | None) -> datetime | None:
-    """A DB round-trip drops ``tzinfo`` — read it back as the UTC it was written as."""
+    """Treat a naive datetime as UTC.
+
+    A DB round-trip drops ``tzinfo``, so stored values are read back as the UTC
+    they were written as. It also normalises naive client input (an ISO string
+    with no offset) before it is stored: SQLModel refuses to persist a naive
+    value into a timezone-aware column.
+    """
 
     if value is None or value.tzinfo is not None:
         return value

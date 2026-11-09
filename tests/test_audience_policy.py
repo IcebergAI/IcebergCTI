@@ -741,6 +741,41 @@ def test_a_future_dated_replacement_leaves_the_current_version_live_until_it_sta
     assert _versions(client, login, policy_id)[1]["effective_to"].startswith("2099-01-01")
 
 
+def test_a_naive_and_an_offset_window_bound_are_compared_as_utc(client, login):
+    """Regression: a naive ISO bound is UTC, not a 500.
+
+    SQLModel refuses to persist a naive datetime into an aware column, and
+    comparing a naive bound with an offset one raises ``TypeError``; both
+    surfaced as a server error before the service normalised its input.
+    """
+
+    policy_id, _ = _policy(client, login, [])
+    login("ADMIN", email="admin@example.com")
+
+    inverted = client.post(
+        f"/api/dissemination-policies/{policy_id}/versions",
+        json={
+            "rules": [],
+            "effective_from": "2099-02-01T00:00:00",
+            "effective_to": "2099-01-01T00:00:00+00:00",
+        },
+    )
+    assert inverted.status_code == 422, inverted.text
+
+    _next_version(
+        client,
+        login,
+        policy_id,
+        [],
+        approve=False,
+        effective_from="2099-01-01T00:00:00",
+        effective_to="2099-02-01T00:00:00+00:00",
+    )
+    draft = _versions(client, login, policy_id)[2]
+    assert draft["effective_from"].startswith("2099-01-01T00:00:00")
+    assert draft["effective_to"].startswith("2099-02-01T00:00:00")
+
+
 def test_a_retired_version_is_not_reopened_by_a_later_approval(client, login):
     policy_id, first = _policy(client, login, [])
     login("ADMIN", email="admin@example.com")

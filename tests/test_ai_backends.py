@@ -8,6 +8,8 @@ import json
 import sys
 import types
 
+import httpx
+import httpx2
 import pytest
 from pydantic import ValidationError
 
@@ -19,7 +21,7 @@ ACTOR = User(id=1, email="a@x.com", display_name="A")
 
 
 # --------------------------------------------------------------------------- #
-# Fakes — a stand-in `anthropic` module + a recording httpx.Client
+# Fakes — a stand-in `anthropic` module + a recording httpx2.Client
 # --------------------------------------------------------------------------- #
 def _install_fake_anthropic(monkeypatch, *, payload=None, stop_reason="end_turn", raises=False):
     """Inject a fake `anthropic` module. Returns a state dict capturing the
@@ -49,13 +51,20 @@ def _install_fake_anthropic(monkeypatch, *, payload=None, stop_reason="end_turn"
                 raise RuntimeError("provider boom")
             return _Resp()
 
+    def _check_http_client(kwargs):
+        # Mirror anthropic>=2: an httpx (not httpx2) client is a TypeError.
+        if isinstance(kwargs.get("http_client"), httpx.Client):
+            raise TypeError("this SDK uses httpx2; pass an httpx2.Client")
+
     class _Anthropic:
         def __init__(self, **kwargs):
+            _check_http_client(kwargs)
             state["ctor"].append(("Anthropic", kwargs))
             self.messages = _Messages()
 
     class _Bedrock:
         def __init__(self, **kwargs):
+            _check_http_client(kwargs)
             state["ctor"].append(("Bedrock", kwargs))
             self.messages = _Messages()
 
@@ -67,7 +76,7 @@ def _install_fake_anthropic(monkeypatch, *, payload=None, stop_reason="end_turn"
 
 
 def _capture_httpx_client(monkeypatch):
-    """Replace ai_service.httpx.Client with a recorder so we can assert the proxy
+    """Replace ai_service.httpx2.Client with a recorder so we can assert the proxy
     kwargs threaded into the SDK's custom http client."""
     captured: dict = {}
 
@@ -82,7 +91,7 @@ def _capture_httpx_client(monkeypatch):
         def __exit__(self, *a):
             return False
 
-    monkeypatch.setattr(ai_service.httpx, "Client", _C)
+    monkeypatch.setattr(ai_service.httpx2, "Client", _C)
     return captured
 
 
@@ -214,6 +223,21 @@ def test_claude_threads_proxy_into_http_client(monkeypatch):
     assert captured == {"trust_env": False, "proxy": "http://p:3128"}
     # The recorded http client is handed to the SDK constructor.
     assert "http_client" in state["ctor"][0][1]
+
+
+@pytest.mark.parametrize(
+    "settings_factory", [_claude_settings, _bedrock_settings]
+)
+def test_anthropic_sdk_receives_an_httpx2_client(monkeypatch, settings_factory):
+    """Regression: anthropic>=2 rejects an ``httpx.Client`` (TypeError), which
+    the fail-soft envelope would have turned into a permanently unavailable
+    assist. The real client handed to the SDK must be httpx2's."""
+    state = _install_fake_anthropic(monkeypatch)
+
+    out = _assist(settings_factory(), proxy_settings=_proxy(mode=ProxyMode.NONE))
+
+    assert out.available is True, out.message
+    assert isinstance(state["ctor"][0][1]["http_client"], httpx2.Client)
 
 
 # --------------------------------------------------------------------------- #

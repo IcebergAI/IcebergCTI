@@ -23,6 +23,7 @@ from sqlmodel import Session, col, select
 
 from ..config import get_settings
 from ..models import (
+    persisted_id,
     CommentStatus,
     Report,
     ReportComment,
@@ -273,7 +274,7 @@ def create_thread(
             )
 
     comment = ReportComment(
-        report_id=report.id,
+        report_id=persisted_id(report),
         author_id=author.id,
         section=section,
         anchor_version=report.version,
@@ -304,7 +305,7 @@ def reply(
     if len(body) > _MAX_BODY:
         raise CommentError(f"A reply is limited to {_MAX_BODY} characters")
     comment = ReportComment(
-        report_id=report.id,
+        report_id=persisted_id(report),
         thread_id=thread.id,
         author_id=author.id,
         section=thread.section,
