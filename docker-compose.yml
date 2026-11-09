@@ -109,7 +109,7 @@ services:
   # recommended production object-store deployment.
   object-storage:
     profiles: [object-storage]
-    image: chrislusf/seaweedfs:4.42@sha256:f7cbc8bdbbf60a1aaba7d61784a3bdff3ec1e0657f6ad0b26d5b6ab2cd9d0dc6
+    image: chrislusf/seaweedfs:4.46@sha256:08d516132314207d10c8e37cbffc1f32b147d870169688734cc61c6231625b62
     restart: unless-stopped
     environment:
       AWS_ACCESS_KEY_ID: ${ICEBERG_STORAGE_S3_ACCESS_KEY_ID:-iceberg-dev-access}
